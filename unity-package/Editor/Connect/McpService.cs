@@ -407,6 +407,7 @@ namespace UniMcp
             allToolNames.Add("async_call");
             allToolNames.Add("sync_call");
             allToolNames.Add("get_prompt");
+            allToolNames.Add("search_tool");
             return McpLocalSettings.Instance.FilterEnabledTools(allToolNames);
         }
 
@@ -674,6 +675,7 @@ namespace UniMcp
                 AddBatchMcpTool();
                 AddSyncMcpTool();
                 AddGetPromptDetailTool();
+                AddSearchMcpTool();
 
                 // 获取所有程序集
                 var assemblies = AppDomain.CurrentDomain.GetAssemblies();
@@ -1191,6 +1193,54 @@ namespace UniMcp
             catch (Exception ex)
             {
                 LogError($"[UniMcp] 添加 GetPromptDetail 工具失败: {ex.Message}\n{ex.StackTrace}");
+            }
+        }
+
+        /// <summary>
+        /// 添加 SearchTool 工具到可用工具列表（系统自带，供 MCP 客户端查询工具列表与详情）
+        /// </summary>
+        private void AddSearchMcpTool()
+        {
+            try
+            {
+                string toolName = "search_tool";
+                Log($"[UniMcp] 手动添加 SearchTool 工具: {toolName}");
+
+                mcpToolInstanceCache[toolName] = new SearchTool();
+
+                var toolInfo = new ToolInfo
+                {
+                    name = toolName,
+                    description = L.T("Search and query tool. Use type='list' to get all available tools, or type='detail' with a name parameter to get specific tool details.", "搜索与查询工具。使用 type='list' 获取所有可用工具列表，或使用 type='detail' 及 name 参数获取指定工具详情。"),
+                    inputSchema = new JsonClass
+                    {
+                        { "type", new JsonData("object") },
+                        { "properties", new JsonClass
+                            {
+                                { "type", new JsonClass {
+                                    { "type", new JsonData("string") },
+                                    { "description", new JsonData(L.T("Query type: 'list' for tool list, 'detail' for tool details", "查询类型: 'list' 获取工具列表, 'detail' 获取工具详情")) }
+                                }},
+                                { "name", new JsonClass {
+                                    { "type", new JsonData("string") },
+                                    { "description", new JsonData(L.T("Tool name to query (required when type='detail')", "要查询的工具名称（type='detail' 时必填）")) }
+                                }},
+                                { "preview", new JsonClass {
+                                    { "type", new JsonData("boolean") },
+                                    { "description", new JsonData(L.T("Whether to include state tree preview (optional, default false, only used when type='detail')", "是否包含状态树预览（可选，默认 false，仅 type='detail' 时有效）")) }
+                                }}
+                            }
+                        },
+                        { "required", new JsonArray { new JsonData("type") } }
+                    }
+                };
+                toolInfos[toolName] = toolInfo;
+
+                Log($"[UniMcp] 成功添加 SearchTool 工具: {toolName}");
+            }
+            catch (Exception ex)
+            {
+                LogError($"[UniMcp] 添加 SearchTool 工具失败: {ex.Message}\n{ex.StackTrace}");
             }
         }
 

@@ -265,6 +265,28 @@ namespace UniMcp.Executer
         }
 
         /// <summary>
+        /// 静态获取指定名称的工具方法
+        /// </summary>
+        public static IToolMethod GetToolMethodStatic(string toolName)
+        {
+            EnsureMethodsRegisteredStatic();
+            if (_registeredMethods != null && _registeredMethods.TryGetValue(toolName, out var method))
+                return method;
+            return null;
+        }
+
+        /// <summary>
+        /// 获取所有已注册的工具方法及元数据
+        /// </summary>
+        public static Dictionary<string, IToolMethod> GetAllRegisteredMethods()
+        {
+            EnsureMethodsRegisteredStatic();
+            return _registeredMethods != null
+                ? new Dictionary<string, IToolMethod>(_registeredMethods)
+                : new Dictionary<string, IToolMethod>();
+        }
+
+        /// <summary>
         /// 清除已注册的方法缓存，用于语言切换时重新加载
         /// </summary>
         public static void ClearRegisteredMethods()
