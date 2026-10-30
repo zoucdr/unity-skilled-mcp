@@ -197,22 +197,24 @@ const style = document.createElement('style');
 style.textContent = `
     .copy-btn {
         position: absolute;
-        top: 1rem;
-        right: 1rem;
-        padding: 0.5rem;
-        background: rgba(99, 102, 241, 0.1);
-        border: 1px solid rgba(99, 102, 241, 0.3);
-        border-radius: 0.5rem;
-        color: var(--text-primary);
+        top: 0.9rem;
+        right: 0.9rem;
+        padding: 0.45rem;
+        background: rgba(255, 255, 255, 0.04);
+        border: 1px solid var(--border-strong);
+        border-radius: 0.4rem;
+        color: var(--text-secondary);
         cursor: pointer;
-        transition: all 0.3s;
+        transition: color 0.25s ease, background 0.25s ease, border-color 0.25s ease;
         display: flex;
         align-items: center;
         justify-content: center;
     }
     
     .copy-btn:hover {
-        background: rgba(99, 102, 241, 0.2);
+        color: var(--primary-color);
+        background: rgba(227, 194, 144, 0.08);
+        border-color: rgba(227, 194, 144, 0.28);
     }
     
     @media (max-width: 768px) {
@@ -223,7 +225,7 @@ style.textContent = `
             top: 100%;
             left: 0;
             right: 0;
-            background: rgba(15, 23, 42, 0.95);
+            background: rgba(8, 9, 11, 0.96);
             backdrop-filter: blur(10px);
             padding: 1rem;
             border-bottom: 1px solid var(--border-color);
@@ -291,7 +293,7 @@ if (heroStats) {
     statsObserver.observe(heroStats);
 }
 
-console.log('%c Unity3d MCP ', 'background: linear-gradient(135deg, #6366f1, #8b5cf6); color: white; font-size: 20px; padding: 10px; border-radius: 5px;');
-console.log('%c AI驱动的Unity开发工作流 ', 'color: #6366f1; font-size: 14px;');
-console.log('%c GitHub: https://github.com/yourusername/unity3d-mcp ', 'color: #64748b; font-size: 12px;');
+console.log('%c Unity3d MCP ', 'background: linear-gradient(135deg, #f0d6ab, #c19c62); color: #17130c; font-size: 20px; font-weight: 600; padding: 10px 14px; border-radius: 6px;');
+console.log('%c Skill + MCP 渐进式发现 ', 'color: #e3c290; font-size: 14px; letter-spacing: 1px;');
+console.log('%c GitHub: https://github.com/zoucdr/unity3d-mcp ', 'color: #6b6862; font-size: 12px;');
 

@@ -3,9 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="Unity3d MCP - AI驱动的Unity开发工作流，通过自然语言控制Unity编辑器">
-    <meta name="keywords" content="Unity, MCP, AI, Game Development, Automation">
-    <title>Unity3d MCP - AI驱动的Unity开发工作流</title>
+    <meta name="description" content="Unity3d MCP - Skill + MCP 混合架构：渐进式发现工具、资源与提示词，先取目录再读参数，上下文可控">
+    <meta name="keywords" content="Unity, MCP, AI, Skill, Game Development, Automation, Agent">
+    <title>Unity3d MCP - Skill + MCP 渐进式发现</title>
     <link rel="stylesheet" href="styles.css">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -29,10 +29,9 @@
                 <ul class="nav-links">
                     <li><a href="#features">特性</a></li>
                     <li><a href="#architecture">架构</a></li>
-                    <li><a href="#examples">示例用法</a></li>
-                    <li><a href="#scenarios">应用场景</a></li>
-                    <li><a href="#resources-prompts">Resources & Prompts</a></li>
-                    <li><a href="#agent-skills">Agent 技能</a></li>
+                    <li><a href="#discovery">渐进式发现</a></li>
+                    <li><a href="#agent-skills">轻量技能</a></li>
+                    <li><a href="#examples">示例</a></li>
                     <li><a href="#quickstart">快速开始</a></li>
                     <li><a href="https://github.com/zoucdr/unity3d-mcp" target="_blank" class="github-link">
                         <svg width="20" height="20" fill="currentColor" viewBox="0 0 16 16">
@@ -56,16 +55,16 @@
             <div class="hero-content">
                 <div class="hero-badge">
                     <span class="badge-dot"></span>
-                    <span>AI驱动 · 模块化 · 高性能</span>
+                    <span>Skill + MCP · 渐进式发现 · 双运行时</span>
                 </div>
                 <h1 class="hero-title">
                     <span class="gradient-text">Unity3d MCP</span>
                     <br>
-                    AI驱动的Unity开发工作流
+                    Skill 与 MCP 结合的 Unity 工作流
                 </h1>
                 <p class="hero-description">
-                    通过内置MCP服务器将AI助手与Unity编辑器无缝连接，<br>
-                    使用自然语言控制Unity，提供40+专业工具，覆盖完整开发流程
+                    技能负责「怎么调」，MCP 负责「真正执行」。<br>
+                    先拿名称与短说明的目录，需要时再按名称读取完整参数，最后发起调用——40+ 专业工具全部可用，常驻上下文只有几 KB。
                 </p>
                 <div class="hero-cta">
                     <a href="#quickstart" class="btn btn-primary">
@@ -87,12 +86,12 @@
                         <div class="stat-label">专业工具</div>
                     </div>
                     <div class="stat-item">
-                        <div class="stat-number">6</div>
-                        <div class="stat-label">应用场景</div>
+                        <div class="stat-number">2</div>
+                        <div class="stat-label">客户端运行时</div>
                     </div>
                     <div class="stat-item">
-                        <div class="stat-number">100%</div>
-                        <div class="stat-label">开源免费</div>
+                        <div class="stat-number">0</div>
+                        <div class="stat-label">第三方依赖</div>
                     </div>
                 </div>
             </div>
@@ -104,7 +103,7 @@
                             <span></span>
                             <span></span>
                         </div>
-                        <div class="code-title">AI → Unity</div>
+                        <div class="code-title">Agent → Unity</div>
                     </div>
                     <div class="code-content">
                         <pre><code id="hero-code"></code></pre>
@@ -119,38 +118,38 @@
         <div class="container">
             <div class="section-header">
                 <h2 class="section-title">核心特性</h2>
-                <p class="section-subtitle">强大的功能，简单的使用</p>
+                <p class="section-subtitle">保留 MCP 的完整能力，同时把上下文压到最小</p>
             </div>
             <div class="features-grid">
                 <div class="feature-card">
-                    <div class="feature-icon">🤖</div>
-                    <h3>AI驱动开发</h3>
-                    <p>通过自然语言指令控制Unity编辑器，无需记忆复杂的API和命令</p>
-                </div>
-                <div class="feature-card">
-                    <div class="feature-icon">🚀</div>
-                    <h3>高性能通信</h3>
-                    <p>基于HTTP的高效通信机制，内置消息队列，支持批量操作</p>
-                </div>
-                <div class="feature-card">
-                    <div class="feature-icon">🧩</div>
-                    <h3>模块化架构</h3>
-                    <p>40+专业工具，覆盖层级管理、资源编辑、性能分析等全流程</p>
+                    <div class="feature-icon">🪶</div>
+                    <h3>渐进式发现</h3>
+                    <p>目录只返回名称、短说明与标签，完整参数按名称单独读取，不再一次性灌入全部 Schema</p>
                 </div>
                 <div class="feature-card">
                     <div class="feature-icon">🔌</div>
-                    <h3>零配置集成</h3>
-                    <p>Unity内置MCP服务器，支持Cursor、Claude等主流AI客户端，无需外部依赖</p>
+                    <h3>端口自动发现</h3>
+                    <p>服务每次启动成功即发布连接信息到本地 INI，客户端动态读取端口，改端口无需重配</p>
                 </div>
                 <div class="feature-card">
-                    <div class="feature-icon">🎯</div>
-                    <h3>消息队列引擎</h3>
-                    <p>基于EditorApplication.update的主线程安全执行机制，确保Unity API正确调用</p>
+                    <div class="feature-icon">🧩</div>
+                    <h3>按组取详情</h3>
+                    <p>固定标签组或本次动态成员集合，工具、提示词、资源可混合，一次拿一组完整定义</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">🧠</div>
+                    <h3>上下文可控</h3>
+                    <p>单次详情数量由服务配置决定（默认 32，可设不限），响应上限 64 KiB，禁止一次拉全量</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">♻️</div>
+                    <h3>原协议零改动</h3>
+                    <p>tools/list、prompts/get、resources/read、tools/call 行为保持原样，既有 MCP 客户端照常工作</p>
                 </div>
                 <div class="feature-card">
                     <div class="feature-icon">🛠️</div>
-                    <h3>易于扩展</h3>
-                    <p>插件化设计，支持自定义工具开发，动态方法调用</p>
+                    <h3>双运行时客户端</h3>
+                    <p>默认 Node.js，也可切换 Python，两套脚本命令与行为一致，均不依赖第三方库</p>
                 </div>
             </div>
         </div>
@@ -161,75 +160,279 @@
         <div class="container">
             <div class="section-header">
                 <h2 class="section-title">系统架构</h2>
-                <p class="section-subtitle">分层设计，清晰高效</p>
+                <p class="section-subtitle">技能管说明，MCP 管执行，同一个监听端口</p>
             </div>
             <div class="architecture-content">
                 <div class="arch-diagram">
                     <div class="arch-layer">
-                        <div class="layer-title">AI客户端层</div>
+                        <div class="layer-title">AI 客户端层</div>
                         <div class="layer-items">
                             <span class="layer-item">Cursor</span>
                             <span class="layer-item">Claude</span>
                             <span class="layer-item">Trae</span>
-                        </div>
-                    </div>
-                    <div class="arch-arrow">↓</div>
-                    <div class="arch-layer">
-                        <div class="layer-title">MCP协议层</div>
-                        <div class="layer-items">
-                            <span class="layer-item">Unity内置MCP服务器</span>
-                        </div>
-                    </div>
-                    <div class="arch-arrow">↓</div>
-                    <div class="arch-layer">
-                        <div class="layer-title">通信层</div>
-                        <div class="layer-items">
-                            <span class="layer-item">HTTP (可自定义端口，默认8000)</span>
-                            <span class="layer-item">JSON-RPC 2.0</span>
-                        </div>
-                    </div>
-                    <div class="arch-arrow">↓</div>
-                    <div class="arch-layer">
-                        <div class="layer-title">Unity编辑器层</div>
-                        <div class="layer-items">
-                            <span class="layer-item">Unity Editor</span>
-                            <span class="layer-item">Unity API</span>
+                            <span class="layer-item">WorkBuddy</span>
                         </div>
                     </div>
                     <div class="arch-arrow">↓</div>
                     <div class="arch-layer highlight">
-                        <div class="layer-title">工具层</div>
+                        <div class="layer-title">技能层（Skill）</div>
                         <div class="layer-items">
-                            <span class="layer-item">40+专业工具</span>
-                            <span class="layer-item">消息队列执行引擎</span>
+                            <span class="layer-item">SKILL.md：连接与调用流程</span>
+                            <span class="layer-item">unity_mcp.js / unity_mcp.py</span>
+                        </div>
+                    </div>
+                    <div class="arch-arrow">↓</div>
+                    <div class="arch-layer">
+                        <div class="layer-title">发现层（HTTP）</div>
+                        <div class="layer-items">
+                            <span class="layer-item">/discovery · /groups</span>
+                            <span class="layer-item">/tools · /prompts · /resources</span>
+                            <span class="layer-item">/capabilities/details</span>
+                        </div>
+                    </div>
+                    <div class="arch-arrow">↓</div>
+                    <div class="arch-layer">
+                        <div class="layer-title">MCP 协议层</div>
+                        <div class="layer-items">
+                            <span class="layer-item">JSON-RPC 2.0（/mcp）</span>
+                            <span class="layer-item">tools/call · prompts/get · resources/read</span>
+                        </div>
+                    </div>
+                    <div class="arch-arrow">↓</div>
+                    <div class="arch-layer">
+                        <div class="layer-title">Unity 编辑器层</div>
+                        <div class="layer-items">
+                            <span class="layer-item">主线程消息队列</span>
+                            <span class="layer-item">40+ 专业工具</span>
                         </div>
                     </div>
                     <div class="arch-arrow">↓</div>
                     <div class="arch-layer resources-prompts-layer">
                         <div class="layer-title">Resources & Prompts 层</div>
                         <div class="layer-items">
-                            <span class="layer-item">📦 Resources 资源系统</span>
-                            <span class="layer-item">💬 Prompts 提示词系统</span>
+                            <span class="layer-item">📦 IRes 资源定义</span>
+                            <span class="layer-item">💬 IPrompts 提示词模板</span>
                         </div>
                     </div>
                 </div>
                 <div class="arch-features">
                     <div class="arch-feature">
-                        <h4>双层调用架构</h4>
-                        <p>FacadeTools（async_call、batch_call）+ MethodTools（40+专业方法）</p>
+                        <h4>职责分离</h4>
+                        <p>技能只描述「何时用、怎么传参、按什么顺序」，实际执行始终由 MCP 完成</p>
                     </div>
                     <div class="arch-feature">
-                        <h4>消息队列系统</h4>
-                        <p>可自定义端口配置、主线程安全执行、智能资源管理和清理</p>
+                        <h4>主线程安全</h4>
+                        <p>发现快照在主线程构建，HTTP 线程只读快照，不触碰 Unity API 与项目设置</p>
                     </div>
                     <div class="arch-feature">
-                        <h4>协程支持</h4>
-                        <p>支持Unity协程的异步操作，不阻塞主线程，适用于长时间运行任务</p>
+                        <h4>单一端口</h4>
+                        <p>发现接口与 JSON-RPC 复用同一个 HttpListener（默认 8000，可在设置中修改）</p>
                     </div>
                     <div class="arch-feature">
-                        <h4>Resources & Prompts</h4>
-                        <p>扩展MCP协议，支持资源访问和提示词管理，提供结构化的数据和指令模板</p>
+                        <h4>自动纳入新工具</h4>
+                        <p>新增工具类会自动出现在目录中；用 CapabilityTags 标注即可加入自定义分组</p>
                     </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Progressive Discovery Section -->
+    <section id="discovery" class="resources-prompts">
+        <div class="container">
+            <div class="section-header">
+                <h2 class="section-title">渐进式发现</h2>
+                <p class="section-subtitle">目录 → 参数 → 执行，三步完成一次调用</p>
+            </div>
+            <div class="architecture-content">
+                <div class="arch-diagram">
+                    <div class="arch-layer">
+                        <div class="layer-title">1. 选目标</div>
+                        <div class="layer-items">
+                            <span class="layer-item">GET /groups — 有哪些标签组，各含多少项</span>
+                            <span class="layer-item">GET /tools · /prompts · /resources — 名称与短说明</span>
+                        </div>
+                    </div>
+                    <div class="arch-arrow">↓</div>
+                    <div class="arch-layer highlight">
+                        <div class="layer-title">2. 取参数</div>
+                        <div class="layer-items">
+                            <span class="layer-item">GET /tools/{name}/schema — 单个工具完整 Schema</span>
+                            <span class="layer-item">POST /capabilities/details — 一组详情</span>
+                        </div>
+                    </div>
+                    <div class="arch-arrow">↓</div>
+                    <div class="arch-layer">
+                        <div class="layer-title">3. 执行</div>
+                        <div class="layer-items">
+                            <span class="layer-item">POST /mcp — tools/call</span>
+                            <span class="layer-item">prompts/get · resources/read 保持原样</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="arch-features">
+                    <div class="arch-feature">
+                        <h4>目录不带参数</h4>
+                        <p>描述压缩空白并截断到约 160 字符，工具目录同时给出标签，便于先筛选后读取</p>
+                    </div>
+                    <div class="arch-feature">
+                        <h4>详情按需且有限</h4>
+                        <p>单次去重成员数不超过 max_details（默认 32，0 表示不限），响应硬上限 65536 字节</p>
+                    </div>
+                    <div class="arch-feature">
+                        <h4>禁止一次拉全量</h4>
+                        <p>覆盖全部可用能力的选择会被拒绝：请改用标签组或明确的动态成员，单项始终允许</p>
+                    </div>
+                    <div class="arch-feature">
+                        <h4>错误语义清晰</h4>
+                        <p>参数错误 400、成员未知或已禁用 404、响应过大 413，均返回结构化 JSON，不静默截断</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="config-sections">
+                <div class="config-section">
+                    <h4>🔎 发现与详情接口</h4>
+                    <div class="config-content">
+                        <div class="config-step">
+                            <h5>1. 连接与目录</h5>
+                            <div class="uri-schemes">
+                                <div class="uri-item"><code>GET /discovery</code> - 连接元数据、脚本语言、数量上限</div>
+                                <div class="uri-item"><code>GET /groups</code> - 标签组及工具/提示词/资源计数</div>
+                                <div class="uri-item"><code>GET /tools</code> - 工具名称、短说明、标签</div>
+                                <div class="uri-item"><code>GET /prompts</code> - 提示词目录</div>
+                                <div class="uri-item"><code>GET /resources</code> - 资源目录（uri、名称、mimeType）</div>
+                            </div>
+                        </div>
+                        <div class="config-step">
+                            <h5>2. 详情</h5>
+                            <div class="uri-item"><code>GET /tools/{name}/schema</code></div>
+                            <div class="uri-item"><code>POST /capabilities/details</code></div>
+                            <div class="code-block">
+                                <pre><code><span class="comment">// 方式一：固定标签组</span>
+{ <span class="key">"tag"</span>: <span class="string">"hierarchy-management"</span> }
+
+<span class="comment">// 方式二：本次动态成员，可混合三类</span>
+{
+  <span class="key">"members"</span>: [
+    { <span class="key">"kind"</span>: <span class="string">"tool"</span>, <span class="key">"name"</span>: <span class="string">"hierarchy_search"</span> },
+    { <span class="key">"kind"</span>: <span class="string">"prompt"</span>, <span class="key">"name"</span>: <span class="string">"实际提示词名"</span> },
+    { <span class="key">"kind"</span>: <span class="string">"resource"</span>, <span class="key">"uri"</span>: <span class="string">"file://path/to/resource.yaml"</span> }
+  ]
+}</code></pre>
+                            </div>
+                        </div>
+                        <div class="config-step">
+                            <h5>3. 命名空间别名</h5>
+                            <div class="param-config">
+                                <div class="param-item"><strong>/mcp/tools</strong> - 与 /tools 等价</div>
+                                <div class="param-item"><strong>/mcp/capabilities/details</strong> - 与 /capabilities/details 等价</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="config-section">
+                    <h4>🧾 MCP 协议接口（兼容保留）</h4>
+                    <div class="config-content">
+                        <div class="config-step">
+                            <h5>1. 仍然完全可用</h5>
+                            <div class="param-config">
+                                <div class="param-item"><strong>tools/list</strong> · <strong>tools/call</strong></div>
+                                <div class="param-item"><strong>prompts/list</strong> · <strong>prompts/get</strong></div>
+                                <div class="param-item"><strong>resources/list</strong> · <strong>resources/read</strong></div>
+                            </div>
+                            <p>既有 MCP 客户端无需任何改动；技能链路只是额外提供了一套更省上下文的入口。</p>
+                        </div>
+                        <div class="config-step">
+                            <h5>2. 调用示例</h5>
+                            <div class="code-block">
+                                <pre><code>{
+  <span class="key">"jsonrpc"</span>: <span class="string">"2.0"</span>,
+  <span class="key">"id"</span>: 1,
+  <span class="key">"method"</span>: <span class="string">"tools/call"</span>,
+  <span class="key">"params"</span>: {
+    <span class="key">"name"</span>: <span class="string">"hierarchy_search"</span>,
+    <span class="key">"arguments"</span>: { <span class="key">"pattern"</span>: <span class="string">"Player"</span> }
+  }
+}</code></pre>
+                            </div>
+                        </div>
+                        <div class="config-step">
+                            <h5>3. 连接信息不含 MCP 地址</h5>
+                            <p>INI 与 /discovery 只发布 base_url、port 与各发现接口地址，<strong>不发布 /mcp 端点</strong>，避免 Agent 绕过技能直接拼协议地址。</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Agent Skills Section -->
+    <section id="agent-skills" class="agent-skills">
+        <div class="container">
+            <div class="section-header">
+                <h2 class="section-title">轻量技能模块</h2>
+                <p class="section-subtitle">一份 SKILL.md + 一个无依赖客户端，即可接入任意 Agent</p>
+            </div>
+            <div class="skills-content">
+                <div class="skills-intro">
+                    <p>技能目录位于 <code>unity-package/Skills/unity3d-skill/</code>，只说明「服务怎么连、先取什么、再取什么、参数怎么传」，不枚举 40+ 工具的参数。SKILL.md 约 5 KB，替代过去动辄数十 KB 的技能正文。</p>
+                </div>
+
+                <div class="skills-mechanism">
+                    <h3>安装方式</h3>
+                    <ul>
+                        <li><strong>一键提示词</strong>：Unity 菜单 <code>Window/MCP/Status</code> → 点击「复制技能安装提示词」，把剪贴板内容粘贴到任意 Agent，即可按提示完成安装。</li>
+                        <li><strong>技能路径自动解析</strong>：窗口按技能目录 .meta 的 GUID 反向查找真实磁盘路径，无论是工程内、嵌入式包还是 PackageCache 中的包都能定位。</li>
+                        <li><strong>手动安装</strong>：把整个 <code>unity3d-skill</code> 文件夹复制到目标 Agent 的 skills 目录（如 <code>~/.workbuddy/skills/</code>），目录名保持不变。</li>
+                    </ul>
+                </div>
+
+                <div class="skills-integration">
+                    <h3>文件结构与运行方式</h3>
+                    <ul>
+                        <li><code>SKILL.md</code>：唯一的入口说明，含连接、解释器选择、命令与限制。</li>
+                        <li><code>scripts/unity_mcp.js</code>：默认运行时，Node.js 18+，无第三方依赖。</li>
+                        <li><code>scripts/unity_mcp.py</code>：等价实现，Python 3.8+，命令与参数完全一致。</li>
+                        <li>解释器由服务启动时写入 INI 的 <code>script_language</code> 决定（<code>js</code> / <code>python</code>，缺字段默认 <code>js</code>）。</li>
+                    </ul>
+                </div>
+
+                <div class="skills-usage">
+                    <h3>客户端命令</h3>
+                    <div class="code-block">
+                        <pre><code><span class="comment"># 1. 核对连接（读 INI，再验证 /discovery）</span>
+node scripts/unity_mcp.js discover
+
+<span class="comment"># 2. 先看有哪些组和目录</span>
+node scripts/unity_mcp.js groups
+node scripts/unity_mcp.js list --kind tools
+
+<span class="comment"># 3. 取参数：按标签组，或本次动态成员</span>
+node scripts/unity_mcp.js details --tag hierarchy-management
+node scripts/unity_mcp.js details --members-file selection.json
+
+<span class="comment"># 4. 取单个工具 Schema 后调用</span>
+node scripts/unity_mcp.js schema hierarchy_search
+node scripts/unity_mcp.js call hierarchy_search --args-file args.json</code></pre>
+                    </div>
+                </div>
+
+                <div class="skills-usage">
+                    <h3>连接信息（服务启动时发布）</h3>
+                    <div class="code-block">
+                        <pre><code><span class="comment"># ~/.unity-mcp/skill.ini</span>
+[unity3d-skilled-mcp]
+base_url=http://localhost:8000
+port=8000
+project_path=E:/YourUnityProject
+process_id=12345
+updated_at=2026-10-30T02:00:00.0000000Z
+script_language=js
+max_details=32</code></pre>
+                    </div>
+                    <p>启动或改端口重启都会重写该文件；最后成功启动的项目覆盖它。客户端每次命令都重新读取，不扫描端口，也不自动重试写操作。</p>
                 </div>
             </div>
         </div>
@@ -240,14 +443,14 @@
         <div class="container">
             <div class="section-header">
                 <h2 class="section-title">实际应用示例</h2>
-                <p class="section-subtitle">通过自然语言指令完成复杂的Unity开发任务</p>
+                <p class="section-subtitle">通过自然语言指令完成复杂的 Unity 开发任务</p>
             </div>
             <div class="examples-grid">
                 <div class="example-item">
                     <div class="example-icon">🔧</div>
                     <h4>智能问题修复</h4>
                     <p class="example-command">"修复控制台中的所有警告和报错"</p>
-                    <p class="example-desc">AI自动分析控制台日志，识别问题类型，提供修复建议并执行修复操作</p>
+                    <p class="example-desc">AI 自动分析控制台日志，识别问题类型，提供修复建议并执行修复操作</p>
                     <div class="example-tools">
                         <span>console_read</span>
                         <span>code_runner</span>
@@ -256,8 +459,8 @@
                 <div class="example-item">
                     <div class="example-icon">🎨</div>
                     <h4>程序化网格生成</h4>
-                    <p class="example-command">"创建一个60顶点的圆形雨伞网格，保存到Meshes目录"</p>
-                    <p class="example-desc">使用Python脚本生成复杂3D网格，自动导入Unity并保存为资源文件</p>
+                    <p class="example-command">"创建一个 60 顶点的圆形雨伞网格，保存到 Meshes 目录"</p>
+                    <p class="example-desc">使用 Python 脚本生成复杂 3D 网格，自动导入 Unity 并保存为资源文件</p>
                     <div class="example-tools">
                         <span>python_runner</span>
                         <span>edit_mesh</span>
@@ -266,8 +469,8 @@
                 <div class="example-item">
                     <div class="example-icon">📦</div>
                     <h4>自动化插件管理</h4>
-                    <p class="example-command">"安装android-logcat插件到Unity"</p>
-                    <p class="example-desc">通过Package Manager自动搜索、下载并安装Unity插件包，无需手动操作</p>
+                    <p class="example-command">"安装 android-logcat 插件到 Unity"</p>
+                    <p class="example-desc">通过 Package Manager 自动搜索、下载并安装 Unity 插件包，无需手动操作</p>
                     <div class="example-tools">
                         <span>manage_package</span>
                         <span>request_http</span>
@@ -276,8 +479,8 @@
                 <div class="example-item">
                     <div class="example-icon">📊</div>
                     <h4>代码架构可视化</h4>
-                    <p class="example-command">"分析Scripts目录下的代码，用Matplotlib绘制架构图"</p>
-                    <p class="example-desc">扫描项目代码结构，分析类依赖关系，生成专业的UML架构图</p>
+                    <p class="example-command">"分析 Scripts 目录下的代码，用 Matplotlib 绘制架构图"</p>
+                    <p class="example-desc">扫描项目代码结构，分析类依赖关系，生成专业的 UML 架构图</p>
                     <div class="example-tools">
                         <span>project_search</span>
                         <span>python_runner</span>
@@ -286,8 +489,8 @@
                 <div class="example-item">
                     <div class="example-icon">🏠</div>
                     <h4>智能场景布置</h4>
-                    <p class="example-command">"基于Prefabs下的美术资源及文档，在场景中布置一个房间"</p>
-                    <p class="example-desc">AI理解资源说明文档，自动选择合适的预制体，按照设计规范摆放场景物体</p>
+                    <p class="example-command">"基于 Prefabs 下的美术资源及文档，在场景中布置一个房间"</p>
+                    <p class="example-desc">AI 理解资源说明文档，自动选择合适的预制体，按照设计规范摆放场景物体</p>
                     <div class="example-tools">
                         <span>project_search</span>
                         <span>hierarchy_create</span>
@@ -296,9 +499,9 @@
                 </div>
                 <div class="example-item">
                     <div class="example-icon">🎯</div>
-                    <h4>规则驱动UI构建</h4>
-                    <p class="example-command">"使用规则文件，在场景中构建UGUI界面"</p>
-                    <p class="example-desc">根据JSON/YAML规则文件自动创建UI层级结构，设置布局和样式</p>
+                    <h4>规则驱动 UI 构建</h4>
+                    <p class="example-command">"使用规则文件，在场景中构建 UGUI 界面"</p>
+                    <p class="example-desc">根据 JSON/YAML 规则文件自动创建 UI 层级结构，设置布局和样式</p>
                     <div class="example-tools">
                         <span>ui_rule_manage</span>
                         <span>ugui_layout</span>
@@ -307,11 +510,21 @@
                 <div class="example-item">
                     <div class="example-icon">🖼️</div>
                     <h4>自动图集生成</h4>
-                    <p class="example-command">"将LoginView界面引用的图片打包为LoginViewAtlas，保存到Atlas文件夹"</p>
-                    <p class="example-desc">自动收集UI引用的所有Sprite，创建Sprite Atlas并优化纹理打包</p>
+                    <p class="example-command">"将 LoginView 界面引用的图片打包为 LoginViewAtlas"</p>
+                    <p class="example-desc">自动收集 UI 引用的所有 Sprite，创建 Sprite Atlas 并优化纹理打包</p>
                     <div class="example-tools">
                         <span>hierarchy_search</span>
                         <span>edit_sprite_atlas</span>
+                    </div>
+                </div>
+                <div class="example-item">
+                    <div class="example-icon">🔍</div>
+                    <h4>按需探查能力</h4>
+                    <p class="example-command">"看看场景相关都有哪些工具，把参数给我"</p>
+                    <p class="example-desc">先取 groups 与目录定位标签，再一次性取该组完整定义，避免逐个试错</p>
+                    <div class="example-tools">
+                        <span>groups</span>
+                        <span>details --tag</span>
                     </div>
                 </div>
             </div>
@@ -329,18 +542,18 @@
                 <div class="scenario-card">
                     <div class="scenario-number">01</div>
                     <div class="scenario-icon">🎨</div>
-                    <h3>AI图片生成</h3>
-                    <p>集成Stable Diffusion批量生成游戏纹理，自动创建Material并应用</p>
+                    <h3>AI 图片生成</h3>
+                    <p>集成 Stable Diffusion 批量生成游戏纹理，自动创建 Material 并应用</p>
                     <div class="scenario-tags">
                         <span>Python Runner</span>
-                        <span>AI生成</span>
+                        <span>AI 生成</span>
                     </div>
                 </div>
                 <div class="scenario-card">
                     <div class="scenario-number">02</div>
                     <div class="scenario-icon">📦</div>
                     <h3>批量爬取资源</h3>
-                    <p>从Poly Haven等平台批量下载PBR材质，自动创建完整配置</p>
+                    <p>从 Poly Haven 等平台批量下载 PBR 材质，自动创建完整配置</p>
                     <div class="scenario-tags">
                         <span>资源管理</span>
                         <span>自动化</span>
@@ -350,7 +563,7 @@
                     <div class="scenario-number">03</div>
                     <div class="scenario-icon">📊</div>
                     <h3>架构图生成</h3>
-                    <p>分析Unity项目结构，生成可视化架构图和依赖关系</p>
+                    <p>分析 Unity 项目结构，生成可视化架构图和依赖关系</p>
                     <div class="scenario-tags">
                         <span>文档自动化</span>
                         <span>代码分析</span>
@@ -360,7 +573,7 @@
                     <div class="scenario-number">04</div>
                     <div class="scenario-icon">⚡</div>
                     <h3>性能分析</h3>
-                    <p>自动检测Draw Call、高多边形模型，提供优化建议</p>
+                    <p>自动检测 Draw Call、高多边形模型，提供优化建议</p>
                     <div class="scenario-tags">
                         <span>Code Runner</span>
                         <span>性能优化</span>
@@ -370,7 +583,7 @@
                     <div class="scenario-number">05</div>
                     <div class="scenario-icon">🧪</div>
                     <h3>测试数据生成</h3>
-                    <p>使用Faker批量生成游戏配置数据，用于压力测试</p>
+                    <p>使用 Faker 批量生成游戏配置数据，用于压力测试</p>
                     <div class="scenario-tags">
                         <span>测试</span>
                         <span>数据生成</span>
@@ -380,9 +593,9 @@
                     <div class="scenario-number">06</div>
                     <div class="scenario-icon">🌍</div>
                     <h3>本地化翻译</h3>
-                    <p>集成GPT-4批量翻译游戏文本，支持多语言版本生成</p>
+                    <p>集成 GPT-4 批量翻译游戏文本，支持多语言版本生成</p>
                     <div class="scenario-tags">
-                        <span>AI翻译</span>
+                        <span>AI 翻译</span>
                         <span>国际化</span>
                     </div>
                 </div>
@@ -395,16 +608,16 @@
         <div class="container">
             <div class="section-header">
                 <h2 class="section-title">快速开始</h2>
-                <p class="section-subtitle">四步完成配置，零依赖开始AI驱动开发</p>
+                <p class="section-subtitle">四步完成配置，零第三方依赖</p>
             </div>
             <div class="quickstart-steps">
                 <div class="step">
                     <div class="step-number">1</div>
                     <div class="step-content">
-                        <h3>导入Unity Package</h3>
+                        <h3>导入 Unity Package</h3>
                         <div class="code-block">
-                            <pre><code><span class="comment">// 将unity-package目录导入Unity项目</span>
-<span class="comment">// 或通过Package Manager添加Git URL</span>
+                            <pre><code><span class="comment">// 将 unity-package 目录导入 Unity 项目</span>
+<span class="comment">// 或通过 Package Manager 添加 Git URL</span>
 "io.uframe.unity3d-mcp": "https://github.com/zoucdr/unity3d-mcp.git?path=/unity-package"</code></pre>
                         </div>
                     </div>
@@ -412,29 +625,31 @@
                 <div class="step">
                     <div class="step-number">2</div>
                     <div class="step-content">
-                        <h3>启动Unity编辑器</h3>
+                        <h3>启动 MCP 服务</h3>
                         <div class="code-block">
-                            <pre><code><span class="comment">// 打开Unity项目</span>
-<span class="comment">// Unity Package会自动启动内置MCP服务器</span>
-<span class="comment">// 默认监听端口：8000（可在Project Settings → MCP中自定义）</span></code></pre>
+                            <pre><code><span class="comment">// 菜单 Window/MCP/Status → Start Server</span>
+<span class="comment">// 默认端口 8000，可在设置或状态窗口中修改</span>
+<span class="comment">// 启动成功即写入 ~/.unity-mcp/skill.ini</span>
+<span class="comment">// 同时决定 script_language（js / python）与 max_details</span></code></pre>
                         </div>
                     </div>
                 </div>
                 <div class="step">
                     <div class="step-number">3</div>
                     <div class="step-content">
-                        <h3>配置MCP客户端</h3>
+                        <h3>安装技能 / 接入 MCP</h3>
                         <div class="code-block">
-                            <pre><code><span class="comment">// MCP客户端配置</span>
+                            <pre><code><span class="comment">// 方式一：技能（省上下文）</span>
+<span class="comment">// 状态窗口点击「复制技能安装提示词」→ 粘贴给任意 Agent</span>
+
+<span class="comment">// 方式二：直接用 MCP 客户端（能力全量）</span>
 {
   <span class="key">"mcpServers"</span>: {
     <span class="key">"unity3d-mcp"</span>: {
-      <span class="key">"url"</span>: <span class="string">"http://127.0.0.1:8000"</span>
+      <span class="key">"url"</span>: <span class="string">"http://localhost:8000"</span>
     }
   }
-}
-
-<span class="comment">// 支持Cursor、Claude、VS、Trae等AI客户端</span></code></pre>
+}</code></pre>
                         </div>
                     </div>
                 </div>
@@ -443,13 +658,12 @@
                     <div class="step-content">
                         <h3>开始使用</h3>
                         <div class="code-block">
-                            <pre><code><span class="comment">// 在AI客户端中测试连接</span>
-<span class="string">"请帮我创建一个Cube对象"</span>
+                            <pre><code><span class="comment">// 技能链路：先核对连接，再按需读取</span>
+node scripts/unity_mcp.js discover
+node scripts/unity_mcp.js list
 
-<span class="comment">// 批量操作示例</span>
-<span class="string">"创建10个随机位置的Sphere，并设置不同颜色的材质"</span>
-
-<span class="comment">// 复杂任务示例</span>
+<span class="comment">// 直接对话也可以</span>
+<span class="string">"请帮我创建一个 Cube 对象"</span>
 <span class="string">"分析当前场景的性能问题并提供优化建议"</span></code></pre>
                         </div>
                     </div>
@@ -471,23 +685,23 @@
         <div class="container">
             <div class="section-header">
                 <h2 class="section-title">Resources & Prompts 支持</h2>
-                <p class="section-subtitle">扩展MCP协议，提供资源访问和提示词管理</p>
+                <p class="section-subtitle">目录看摘要，详情按组取，读取仍走原协议</p>
             </div>
             <div class="rp-grid">
                 <div class="rp-card">
                     <div class="rp-icon">📦</div>
                     <h3>Resources 资源系统</h3>
-                    <p>通过MCP协议访问Unity项目资源，支持文件、配置、数据等多种资源类型</p>
+                    <p>实现 IRes 即可注册资源；目录接口只返回 uri、名称与 mimeType，详情返回注册定义，不隐式读取正文</p>
                     <div class="rp-features">
                         <span>文件访问</span>
                         <span>配置管理</span>
-                        <span>数据读取</span>
+                        <span>按组取详情</span>
                     </div>
                 </div>
                 <div class="rp-card">
                     <div class="rp-icon">💬</div>
                     <h3>Prompts 提示词系统</h3>
-                    <p>自定义AI提示词模板，为特定任务提供结构化的指令和上下文</p>
+                    <p>实现 IPrompts 注册模板；目录给出名称与短说明，需要参数时按名称或标签组取完整定义</p>
                     <div class="rp-features">
                         <span>模板化</span>
                         <span>参数化</span>
@@ -495,7 +709,7 @@
                     </div>
                 </div>
             </div>
-            
+
             <div class="config-sections">
                 <div class="config-section">
                     <h4>🔧 Resources 配置方法</h4>
@@ -503,7 +717,7 @@
                         <div class="config-step">
                             <h5>1. 实现 IRes 接口</h5>
                             <div class="code-block">
-                                <pre><code><span class="keyword">public class</span> <span class="class">ProjectTreeRes</span> : <span class="interface">IRes</span>
+                                <pre><code><span class="keyword">public class</span> <span class="keyword">ProjectTreeRes</span> : <span class="keyword">IRes</span>
 {
     <span class="keyword">public string</span> Url => <span class="string">"file://path/to/resource.yaml"</span>;
     <span class="keyword">public string</span> Name => <span class="string">"project_tree"</span>;
@@ -513,35 +727,26 @@
                             </div>
                         </div>
                         <div class="config-step">
-                            <h5>2. 支持的URI方案</h5>
+                            <h5>2. 支持的 URI 方案</h5>
                             <div class="uri-schemes">
-                                <div class="uri-item">
-                                    <code>file://</code> - 本地文件访问
-                                </div>
-                                <div class="uri-item">
-                                    <code>http://</code> - HTTP资源访问
-                                </div>
-                                <div class="uri-item">
-                                    <code>mcp://</code> - MCP自定义协议
-                                </div>
-                                <div class="uri-item">
-                                    <code>data:</code> - 内联数据
-                                </div>
+                                <div class="uri-item"><code>file://</code> - 本地文件访问</div>
+                                <div class="uri-item"><code>http://</code> - HTTP 资源访问</div>
+                                <div class="uri-item"><code>mcp://</code> - MCP 自定义协议</div>
+                                <div class="uri-item"><code>data:</code> - 内联数据</div>
                             </div>
                         </div>
                         <div class="config-step">
-                            <h5>3. 使用方法</h5>
+                            <h5>3. 使用方式</h5>
                             <div class="code-block">
-                                <pre><code><span class="comment">// AI客户端中访问资源</span>
-<span class="string">"请读取project_tree资源的内容"</span>
+                                <pre><code><span class="comment">// 目录：只看摘要</span>
+GET /resources
 
-<span class="comment">// 或通过MCP函数调用</span>
-{
-  <span class="key">"method"</span>: <span class="string">"resources/read"</span>,
-  <span class="key">"params"</span>: {
-    <span class="key">"uri"</span>: <span class="string">"file://path/to/resource.yaml"</span>
-  }
-}</code></pre>
+<span class="comment">// 详情：按标签组或指定 URI</span>
+POST /capabilities/details
+{ <span class="key">"members"</span>: [{ <span class="key">"kind"</span>: <span class="string">"resource"</span>, <span class="key">"uri"</span>: <span class="string">"file://path/to/resource.yaml"</span> }] }
+
+<span class="comment">// 读取正文：沿用原协议</span>
+{ <span class="key">"method"</span>: <span class="string">"resources/read"</span>, <span class="key">"params"</span>: { <span class="key">"uri"</span>: <span class="string">"file://path/to/resource.yaml"</span> } }</code></pre>
                             </div>
                         </div>
                     </div>
@@ -553,7 +758,7 @@
                         <div class="config-step">
                             <h5>1. 实现 IPrompts 接口</h5>
                             <div class="code-block">
-                                <pre><code><span class="keyword">public class</span> <span class="class">TestTalkStepPrompts</span> : <span class="interface">IPrompts</span>
+                                <pre><code><span class="keyword">public class</span> <span class="keyword">TestTalkStepPrompts</span> : <span class="keyword">IPrompts</span>
 {
     <span class="keyword">public string</span> Name => <span class="string">"test_talk_step"</span>;
     <span class="keyword">public string</span> Description => <span class="string">"测试对话步骤"</span>;
@@ -569,79 +774,22 @@
                         <div class="config-step">
                             <h5>2. 参数配置</h5>
                             <div class="param-config">
-                                <div class="param-item">
-                                    <strong>Name</strong> - 提示词唯一标识符
-                                </div>
-                                <div class="param-item">
-                                    <strong>Description</strong> - 功能描述
-                                </div>
-                                <div class="param-item">
-                                    <strong>PromptText</strong> - 实际提示词内容
-                                </div>
-                                <div class="param-item">
-                                    <strong>Keys</strong> - 参数定义和示例
-                                </div>
+                                <div class="param-item"><strong>Name</strong> - 提示词唯一标识符</div>
+                                <div class="param-item"><strong>Description</strong> - 功能描述（目录中的短说明）</div>
+                                <div class="param-item"><strong>PromptText</strong> - 实际提示词内容</div>
+                                <div class="param-item"><strong>Keys</strong> - 参数定义和示例</div>
                             </div>
                         </div>
                         <div class="config-step">
-                            <h5>3. 使用方法</h5>
+                            <h5>3. 使用方式</h5>
                             <div class="code-block">
-                                <pre><code><span class="comment">// AI客户端中调用提示词</span>
-<span class="string">"使用test_talk_step提示词生成对话内容"</span>
+                                <pre><code><span class="comment">// 目录</span>
+GET /prompts
 
-<span class="comment">// 或通过MCP函数调用</span>
-{
-  <span class="key">"method"</span>: <span class="string">"prompts/get"</span>,
-  <span class="key">"params"</span>: {
-    <span class="key">"name"</span>: <span class="string">"test_talk_step"</span>
-  }
-}</code></pre>
+<span class="comment">// 调用：沿用原协议</span>
+{ <span class="key">"method"</span>: <span class="string">"prompts/get"</span>, <span class="key">"params"</span>: { <span class="key">"name"</span>: <span class="string">"test_talk_step"</span> } }</code></pre>
                             </div>
                         </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </section>
-
-    <!-- Agent Skills Section -->
-    <section id="agent-skills" class="agent-skills">
-        <div class="container">
-            <div class="section-header">
-                <h2 class="section-title">Agent 技能模块</h2>
-                <p class="section-subtitle">统一技能入口 + JSON Schema 按需加载，与 MCP 结合节省 Token</p>
-            </div>
-            <div class="skills-content">
-                <div class="skills-intro">
-                    <p>MCP 协议会向 AI 提供完整的工具列表与参数 Schema，在工具数量较多时<strong>占用大量 Token</strong>。为降低上下文消耗，项目增加了 <strong>Skill 模块</strong>（<code>unity-package/Skills/unity3d-skill/</code>），与 MCP 配合使用，实现「按需加载、用时再读」。</p>
-                </div>
-                <div class="skills-mechanism">
-                    <h3>实现方式</h3>
-                    <ul>
-                        <li><strong>统一技能入口</strong>：一个 <code>SKILL.md</code> 提供 32 个函数的概览摘要，按 7 大分类组织（编辑器与偏好设置、代码执行、场景与层级、GameObject与组件编辑、项目与资源管理、UI与布局、游戏与网络）。</li>
-                        <li><strong>JSON Schema 引用</strong>：每个函数在 <code>references/&lt;func_name&gt;.json</code> 中有独立的 JSON Schema 文件，包含完整的参数定义、actions 枚举（含条件参数）和响应格式。</li>
-                        <li><strong>按需加载</strong>：Agent 先阅读 <code>SKILL.md</code> 概览定位目标函数，再按需加载对应的 JSON Schema，而非一次性加载全部 32 个工具 Schema。</li>
-                    </ul>
-                </div>
-                <div class="skills-integration">
-                    <h3>与 MCP 系统的结合</h3>
-                    <ul>
-                        <li>MCP 仍负责实际的工具发现与调用；Skill 负责「何时用、怎么传参」的说明。</li>
-                        <li>可在 Cursor Rules 或 Agent 配置中引用 <code>SKILL.md</code>，使 Agent 先查阅概览、按需加载 JSON Schema，再通过 MCP 发起调用。</li>
-                        <li>这样既保留 MCP 的完整能力，又避免把 32+ 工具的完整描述常驻上下文，<strong>显著节省 Token</strong>。</li>
-                    </ul>
-                </div>
-                <div class="skills-usage">
-                    <h3>文件结构</h3>
-                    <div class="code-block">
-                        <pre><code>unity-package/Skills/unity3d-skill/
-├── SKILL.md                    # 函数概览与分类摘要
-└── references/                 # 每个函数的 JSON Schema 定义
-    ├── base_editor.json        # 编辑器状态管理
-    ├── hierarchy_create.json   # 场景层级创建
-    ├── gameplay.json           # 游戏玩法控制
-    ├── request_http.json       # HTTP请求
-    └── ... (共 32 个 Schema)</code></pre>
                     </div>
                 </div>
             </div>
@@ -653,7 +801,7 @@
         <div class="container">
             <div class="section-header">
                 <h2 class="section-title">工具生态</h2>
-                <p class="section-subtitle">40+专业工具，覆盖Unity开发全流程</p>
+                <p class="section-subtitle">40+ 专业工具，全部进入同一个目录</p>
             </div>
             <div class="tools-categories">
                 <div class="tool-category">
@@ -683,7 +831,7 @@
                     </ul>
                 </div>
                 <div class="tool-category">
-                    <h4>UI工具</h4>
+                    <h4>UI 工具</h4>
                     <ul>
                         <li>ugui_layout</li>
                         <li>ui_rule_manage</li>
@@ -705,9 +853,18 @@
                     </ul>
                 </div>
                 <div class="tool-category">
+                    <h4>内置入口</h4>
+                    <ul>
+                        <li>async_call / batch_call</li>
+                        <li>sync_call</li>
+                        <li>search_tool</li>
+                        <li>get_prompt</li>
+                    </ul>
+                </div>
+                <div class="tool-category">
                     <h4>其他工具</h4>
                     <ul>
-                        <li>console_read/write</li>
+                        <li>console_read / write</li>
                         <li>request_http</li>
                         <li>gameplay</li>
                         <li>base_editor</li>
@@ -723,7 +880,7 @@
             <div class="footer-content">
                 <div class="footer-section">
                     <h4>Unity3d MCP</h4>
-                    <p>AI驱动的Unity开发工作流</p>
+                    <p>Skill + MCP，渐进式发现的 Unity 开发工作流</p>
                     <div class="footer-social">
                         <a href="https://github.com/zoucdr/unity3d-mcp" target="_blank">
                             <svg width="24" height="24" fill="currentColor" viewBox="0 0 16 16">
@@ -751,15 +908,15 @@
                 <div class="footer-section">
                     <h4>技术栈</h4>
                     <ul>
-                        <li>Unity C# (内置MCP服务器)</li>
+                        <li>Unity C#（内置服务）</li>
                         <li>HTTP + JSON-RPC 2.0</li>
-                        <li>消息队列系统</li>
-                        <li>主线程安全执行</li>
+                        <li>Skill 渐进式发现</li>
+                        <li>Node.js / Python 客户端</li>
                     </ul>
                 </div>
             </div>
             <div class="footer-bottom">
-                <p>&copy; 2025 Unity3d MCP. Released under the MIT License.</p>
+                <p>&copy; 2026 Unity3d MCP. Released under the MIT License.</p>
                 <p>Built with ❤️ for Unity Developers</p>
             </div>
         </div>
@@ -768,4 +925,3 @@
     <script src="script.js"></script>
 </body>
 </html>
-
