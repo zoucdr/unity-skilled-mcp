@@ -1,6 +1,6 @@
-# Unity3d MCP 用户使用指南
+# Unity Skilled MCP 用户使用指南
 
-![Unity3d MCP Logo](docs/unity3d-mcp.png)
+![Unity Skilled MCP Logo](docs/unity3d-mcp.png)
 
 ---
 
@@ -19,9 +19,9 @@
 
 ## 🎯 项目概述
 
-### 什么是 Unity3d MCP？
+### 什么是 Unity Skilled MCP？
 
-Unity3d MCP (Model Context Protocol) 是一个革命性的AI-Unity集成系统，它通过内置的MCP服务器将AI助手（如Cursor、Claude、Trae）与Unity编辑器无缝连接，实现AI驱动的Unity开发工作流。
+Unity Skilled MCP (Model Context Protocol) 是一个革命性的AI-Unity集成系统，它通过内置的MCP服务器将AI助手（如Cursor、Claude、Trae）与Unity编辑器无缝连接，实现AI驱动的Unity开发工作流。
 
 ### 🌟 核心价值
 
@@ -148,7 +148,7 @@ Unity编辑器API
 
 ### 双层调用架构
 
-Unity3d MCP采用独特的双层调用架构：
+Unity Skilled MCP采用独特的双层调用架构：
 
 ```
 AI指令 → FacadeTools → MethodTools → Unity API
@@ -572,8 +572,8 @@ Renderer数量: 89
 
 **文档版本：** v1.0  
 **最后更新：** 2024年12月  
-**维护团队：** Unity3d MCP Development Team  
+**维护团队：** Unity Skilled MCP Development Team
 
 ---
 
-*本文档基于Unity3d MCP系统编写，旨在帮助用户快速上手和高效使用该系统。如有疑问或建议，欢迎反馈。*
+*本文档基于Unity Skilled MCP系统编写，旨在帮助用户快速上手和高效使用该系统。如有疑问或建议，欢迎反馈。*

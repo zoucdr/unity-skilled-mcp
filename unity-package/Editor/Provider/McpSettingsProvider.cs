@@ -87,10 +87,10 @@ namespace UniMcp.Gui
             };
             
             string helpText = L.IsChinese()
-                ? "🚀 Unity3d-MCP是一个强大的Unity扩展工具，提供了智能的UI生成、代码管理和项目优化功能。\n" +
-                  "💡 通过与AI模型的深度集成，Unity3D MCP能够帮助开发者快速创建高质量的Unity项目。"
-                : "🚀 Unity3d-MCP is a powerful Unity extension tool that provides intelligent UI generation, code management and project optimization features.\n" +
-                  "💡 Through deep integration with AI models, Unity3D MCP helps developers quickly create high-quality Unity projects.";
+                ? "🚀 Unity Skilled MCP是一个强大的Unity扩展工具，提供了智能的UI生成、代码管理和项目优化功能。\n" +
+                  "💡 通过与AI模型的深度集成，Unity Skilled MCP能够帮助开发者快速创建高质量的Unity项目。"
+                : "🚀 Unity Skilled MCP is a powerful Unity extension tool that provides intelligent UI generation, code management and project optimization features.\n" +
+                  "💡 Through deep integration with AI models, Unity Skilled MCP helps developers quickly create high-quality Unity projects.";
             
             EditorGUILayout.LabelField(helpText, helpTextStyle);
             

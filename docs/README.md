@@ -1,6 +1,6 @@
-# Unity3d MCP 官方网站
+# Unity Skilled MCP 官方网站
 
-这是Unity3d MCP项目的官方静态网站，用于GitHub Pages展示。
+这是Unity Skilled MCP项目的官方静态网站，用于GitHub Pages展示。
 
 ## 🎨 特性
 
@@ -165,7 +165,7 @@ serve
 示例 Open Graph 标签：
 
 ```html
-<meta property="og:title" content="Unity3d MCP - AI驱动的Unity开发工作流">
+<meta property="og:title" content="Unity Skilled MCP - AI驱动的Unity开发工作流">
 <meta property="og:description" content="通过MCP协议将AI助手与Unity编辑器无缝连接">
 <meta property="og:image" content="https://yourusername.github.io/unity3d-mcp/preview.png">
 <meta property="og:url" content="https://yourusername.github.io/unity3d-mcp/">

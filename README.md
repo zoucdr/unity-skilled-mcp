@@ -1,336 +1,200 @@
-**English** | [中文](README.zh-CN.md)
+[English](README.md) | [中文](README.zh-CN.md)
 
 ---
 
-# Unity3d MCP Documentation
+# Unity Skilled MCP
 
-![Unity3d MCP](docs/unity3d-mcp.png)
+**A lightweight Skill + MCP workflow for controlling the Unity Editor with AI.**
 
-## Table of Contents
-1. [System Overview](#system-overview)
-2. [Architecture](#architecture)
-3. [Source Code](#source-code)
-4. [Usage](#usage)
-5. [Agent Skills Module](#agent-skills-module)
-6. [Innovation](#innovation)
-7. [Technical Features](#technical-features)
-8. [API Reference](#api-reference)
-9. [Troubleshooting](#troubleshooting)
+Unity Skilled MCP runs its service inside the Unity Editor and exposes a large set of Unity development capabilities. The lightweight Skill keeps the agent's initial context small: it discovers short capability summaries first, loads only the relevant definitions when needed, and delegates execution to the Unity service.
 
----
+![Unity Skilled MCP](docs/unity3d-mcp.png)
 
-## System Overview
+## Why Skill + MCP?
 
-*Unity3d MCP — Bridging AI and Unity for intelligent game development*
-
-Unity3d MCP (Model Context Protocol) is an AI–Unity integration system that connects AI assistants (e.g. Cursor, Claude, Trae) with the Unity Editor via a built-in MCP server, enabling an AI-driven Unity workflow.
-
-### Core Value
-- **AI-driven development**: Control the Unity Editor with natural language
-- **Seamless integration**: Works with mainstream AI clients without changing your workflow
-- **Rich tooling**: 40+ tools covering the full Unity development pipeline
-- **High performance**: HTTP-based communication
-- **Extensible**: Modular design for easy extension
-- **Zero config**: Built-in MCP server inside Unity, no external dependencies
-
-### System Components
-- **Built-in MCP Server** (C#): MCP protocol server inside the Unity Editor
-- **Unity Package** (C#): Full Unity Editor plugin
-- **Tool ecosystem**: 40+ Unity development tools
-- **Protocol**: HTTP + JSON-RPC 2.0
-
----
+- **Progressive discovery:** start with capability names, short descriptions, and tags; retrieve full schemas only when needed.
+- **Tools, prompts, and resources:** browse each catalog, retrieve a tagged group, or request a task-specific mixed set.
+- **Automatic local connection discovery:** Unity writes the active service information to `~/.unity-mcp/skill.ini` whenever the service starts successfully.
+- **Configurable detail limits:** the per-request item limit is configurable in Unity; the response is also capped at 64 KiB, and full-catalog detail requests are rejected.
+- **JavaScript or Python:** the Skill includes equivalent dependency-free clients. JavaScript is the default.
+- **Legacy MCP compatibility:** existing clients can continue using the original MCP list, call, prompt, and resource operations.
+- **Unity-safe execution:** editor operations are dispatched through the Unity Editor's main-thread execution flow.
 
 ## Architecture
 
-### Overall Architecture
+```text
+AI agent
+  └─ Unity Skill (SKILL.md + unity_mcp.js / unity_mcp.py)
+       ├─ Reads ~/.unity-mcp/skill.ini and validates the active service
+       ├─ Discovers short summaries and selected capability definitions over HTTP
+       └─ Invokes the requested operation through the client script
+            └─ Unity Editor service → main-thread execution → Unity APIs
 
-Layers (top to bottom):
-
-1. **AI client layer**: Cursor, Claude, Trae, etc.
-2. **MCP protocol layer**: Unity built-in MCP server
-3. **Communication layer**: HTTP (configurable port, default 8000) + JSON-RPC 2.0
-4. **Unity Editor layer**: Unity Editor + Unity API
-5. **Tool layer**: 40+ tools + message-queue execution engine
-
-#### Architecture Diagram
-
-![Unity3d MCP Architecture](docs/architecture.png)
-
-*Figure 1: Data flow from AI clients to the Unity Editor*
-
-#### Data Flow
-
-![Unity3d MCP Data Flow](docs/data_flow_graph.png)
-
-*Figure 2: Flow from AI instructions to Unity execution*
-
-### Design Principles
-
-#### 1. Two-tier call architecture
-```
-AI client → FacadeTools → MethodTools → Unity API
+Existing MCP clients ────────────────────────────────┘
 ```
 
-- **FacadeTools**: `async_call` and `batch_call`
-- **MethodTools**: 40+ methods, invoked only via FacadeTools
+The Skill is the recommended path for agents that support local Skills. Do not have an agent bypass the Skill and construct MCP requests itself. The INI intentionally does **not** contain an MCP endpoint field.
 
-#### 2. State-tree execution engine
-- State-based routing
-- Parameter validation and type conversion
-- Unified error handling
+## Quick start
 
-#### 3. Connection management
-- Configurable port (default 8000)
-- Message queue processing
-- Main-thread–safe execution
+### 1. Install the Unity package
 
----
+Import the `unity-package` folder into a Unity project using your normal package workflow.
 
-## Source Code
+### 2. Start the service
 
-### 1. Unity MCP server (C#)
+In Unity, open **Window → MCP → Status**, review the service settings, and start the server. The default port is `8000`. On every successful start, Unity writes the current connection and Skill runtime settings to:
 
-#### Main files
-```
-unity-package/Editor/Connect/
-├── McpService.cs
-├── McpServiceStatusWindow.cs
-└── McpServiceGUI.cs
+```text
+~/.unity-mcp/skill.ini
 ```
 
-#### Components
-- **McpService.cs**: HTTP listener, MCP request handling
-- **Message queue**: EnqueueTask / ProcessMessageQueue, main-thread execution
-- **Tool discovery**: DiscoverTools, reflection-based registration of async_call / batch_call
+Changing the port takes effect when the service is restarted. The most recently started Unity project publishes the active connection information to this file.
 
-### 2. Unity tool package (C#)
+### 3. Install the Skill
 
-#### Structure
-- **Runtime**: StateTreeContext
-- **Editor/Executer**: AsyncCall, BatchCall, ToolsCall, CoroutineRunner, McpTool, StateMethodBase, IToolMethod, etc.
-- **Editor/StateTree**: StateTree, StateTreeBuilder
-- **Editor/Selector**: HierarchySelector, ProjectSelector, IObjectSelector
-- **Editor/Tools**: Hierarchy, ResEdit, Console, RunCode, UI, Storage, etc.
-- **Editor/GUI**: McpServiceGUI, McpDebugWindow
+Recommended: in the MCP Status window, click **Copy skill install prompt** and paste the prompt into your AI agent. It includes the Skill installation instructions and the Skill folder's resolved disk path.
 
-### 3. Tool categories
+You can also install it manually:
 
-1. **Hierarchy**: hierarchy_create, hierarchy_search, hierarchy_apply  
-2. **ResEdit**: edit_gameobject, edit_component, edit_material, edit_texture, …  
-3. **Project**: project_search, project_operate  
-4. **UI**: ugui_layout, ui_rule_manage, figma_manage  
-5. **Console**: console_read, console_write  
-6. **RunCode**: code_runner, python_runner  
-7. **Editor**: base_editor, manage_package, gameplay, object_delete  
-8. **Storage**: prefers, source_location  
-9. **Network**: request_http  
+- Copy `unity-package/Skills/unity3d-skill/` into the agent's Skills directory, keeping the folder name `unity3d-skill`.
+- Or use the packaged archive at `dist/unity3d-skill.zip`.
 
----
+### 4. Use it from the agent
 
-## Usage
+Ask the agent to use the Unity Skill, then describe the Unity task in natural language. The Skill guides the agent to verify the connection, discover the relevant capability, read its definition, and invoke it.
 
-### 1. Requirements
+## Unity settings and connection file
 
-- Unity 2020.3+ (recommended 2022.3.61f1c1)
-- MCP-capable AI client (Cursor / Claude / Trae)
-- Windows / macOS / Linux
+The MCP Status window exposes the client runtime and the maximum number of capability details returned by one request. These settings are published on the next successful service start.
 
-No extra Python or external dependencies for the Unity package.
+| Setting | Values | Default / behavior |
+| --- | --- | --- |
+| Service port | Valid port number | `8000` |
+| Client script language | `js` or `python` | `js`; selects the client runtime the Skill should use |
+| Maximum details per request | Non-negative integer | `32`; `0` removes the item-count limit |
 
-### 2. Configuration
+The response-size limit remains **65,536 UTF-8 bytes** even when the item-count limit is `0`. A request that selects every available capability is rejected. The service does not silently truncate an oversized result.
 
-#### MCP client config
-Add to your AI client MCP config (e.g. `~/.cursor/mcp.json`, Claude/VS/Trae equivalents):
+Example `~/.unity-mcp/skill.ini`:
+
+```ini
+[unity3d-skilled-mcp]
+base_url=http://localhost:8000
+port=8000
+project_path=/path/to/UnityProject
+process_id=12345
+updated_at=2026-10-30T02:00:00.0000000Z
+script_language=js
+max_details=32
+```
+
+The file contains local connection metadata and runtime settings, but **does not publish `mcp_url`**. The Skill client reads the file dynamically on each command and validates the service before proceeding; it does not scan ports or automatically replay failed write operations.
+
+## How progressive discovery works
+
+1. **Verify the service:** read the INI and check the current service's discovery metadata.
+2. **Browse summaries:** read groups or a specific tools, prompts, or resources catalog.
+3. **Load only what is needed:** read one tool schema, request a fixed tag group, or submit a task-specific list of members.
+4. **Execute:** call the selected operation through the Skill client.
+
+Typical commands, run from the Skill folder:
+
+```sh
+# Confirm project and service metadata
+node scripts/unity_mcp.js discover
+
+# Browse groups and short catalogs
+node scripts/unity_mcp.js groups
+node scripts/unity_mcp.js list --kind tools
+node scripts/unity_mcp.js list --kind prompts
+node scripts/unity_mcp.js list --kind resources
+
+# Load one group or a curated mixed set
+node scripts/unity_mcp.js details --tag hierarchy-management
+node scripts/unity_mcp.js details --members-file selection.json
+
+# Load a single tool definition, then call it
+node scripts/unity_mcp.js schema hierarchy_search
+node scripts/unity_mcp.js call hierarchy_search --args-file args.json
+```
+
+The tag in `details --tag` must come from the live group catalog. A `selection.json` file contains the members array itself, for example:
 
 ```json
-{
-  "mcpServers": {
-    "unity3d-mcp": {
-      "url": "http://localhost:8000"
-    }
-  }
-}
+[
+  { "kind": "tool", "name": "hierarchy_search" },
+  { "kind": "prompt", "name": "replace-with-a-listed-prompt" },
+  { "kind": "resource", "uri": "replace-with-a-listed-resource-uri" }
+]
 ```
 
-#### Unity Editor
+Set `script_language=python` in Unity to use the equivalent Python client instead:
 
-- **MCP Settings** (`Edit → Project Settings → MCP`): connection toggle, tool list, port (default 8000), log level, UI/Figma settings.
-- **MCP Debug Window** (`Window → MCP → Debug Window`): call history, re-run, filter, export logs.
-
-### 3. Agent skills and token saving
-
-To avoid large context from full MCP tool lists and schemas, the project provides an **Agent Skills** module (see [Agent Skills Module](#agent-skills-module)). Reference `demo/.cursor/skills` SKILL.md files in Cursor Rules or Agent config so the agent loads only the needed skill docs and then calls MCP, reducing token usage.
-
-### 4. Quick start
-
-1. Import the Unity package and open the project.
-2. The built-in MCP server starts automatically (default port 8000).
-3. In the AI client, try: *"Create a Cube named Player"*.
-
-### 5. Examples
-
-- Create GameObject: *"Create a Cube named Player"*
-- Batch: *"Create 5 Enemy objects at (0,0,0), (1,0,0), …"*
-- Resources: *"Download a random image and apply it to an Image component"*
-
-### 6. Advanced
-
-- **Custom tools**: Add classes under `unity-package/Editor/Tools/`, inherit `StateMethodBase` or `IToolMethod`, use `ToolNameAttribute`; Unity discovers and registers them.
-- **Batch**: Use `batch_call` with an array of `{ "func", "args" }` for better performance.
-
-### 7. Extended scenarios
-
-The doc in [README.zh-CN.md](README.zh-CN.md) describes extended scenarios (AI texture generation, Poly Haven batch download, project architecture diagrams, performance analysis, test data generation, localization). Use `python_runner` and `code_runner` for automation.
-
----
-
-## Agent Skills Module
-
-The MCP protocol exposes full tool lists and parameter schemas to the AI, which can **consume many tokens**. The project adds a **Skill** module (`unity-package/Skills/unity3d-skill/`) used together with MCP: load skill docs on demand instead of all tool schemas at once.
-
-### How it works
-
-- **Unified skill entry**: A single `SKILL.md` provides a function overview (32 functions across 7 categories: Editor & Preferences, Code Execution, Scene & Hierarchy, GameObject & Component Editing, Project & Asset Management, UI & Layout, Gameplay & Networking).
-- **JSON Schema references**: Each function has a dedicated JSON Schema file in `references/<func_name>.json`, containing full `args` schema, `actions` enum (with conditional params), and `response` format.
-- **On-demand load**: The agent reads the overview in `SKILL.md` to find the right function, then loads the specific `references/<func_name>.json` for detailed parameter info — instead of loading all 32 tool schemas at once.
-
-### With MCP
-
-- **MCP** handles tool discovery and execution; **Skills** describe when and how to pass arguments.
-- Reference `SKILL.md` in Cursor Rules or Agent config so the agent consults the overview and loads the relevant JSON schema on demand, then calls MCP.
-- This keeps full MCP capability while **reducing tokens** by not keeping 32+ tool descriptions in context.
-
-### File structure
-
-```
-unity-package/Skills/unity3d-skill/
-├── SKILL.md                    # Function overview & category summary
-└── references/                 # JSON Schema for each function
-    ├── base_editor.json
-    ├── hierarchy_create.json
-    ├── gameplay.json
-    ├── request_http.json
-    └── ... (32 schemas total)
+```sh
+python scripts/unity_mcp.py discover
+python scripts/unity_mcp.py groups
+python scripts/unity_mcp.py details --tag hierarchy-management
+python scripts/unity_mcp.py schema hierarchy_search
+python scripts/unity_mcp.py call hierarchy_search --args-file args.json
 ```
 
----
+The clients require no third-party packages: Node.js 18+ or Python 3.8+ is required, according to the selected runtime. Consult [`SKILL.md`](unity-package/Skills/unity3d-skill/SKILL.md) for the complete command reference, argument formats, failure behavior, and safety rules.
 
-## Innovation
+## HTTP discovery API
 
-### 1. Two-tier call architecture
-- FacadeTools (`async_call`, `batch_call`) + 40+ MethodTools invoked only through them.
+The Skill clients use these discovery routes on the active Unity service:
 
-### 2. State-tree execution engine
-- State-based routing, parameter validation, unified error handling.
+| Route | Purpose |
+| --- | --- |
+| `GET /discovery` | Verify the active service and read non-MCP connection metadata |
+| `GET /groups` | List available tags and tool/prompt/resource counts |
+| `GET /tools` | List tool names, short descriptions, and tags |
+| `GET /prompts` | List prompt names, short descriptions, and tags |
+| `GET /resources` | List resource URIs, names, short descriptions, and tags |
+| `GET /tools/{name}/schema` | Read one tool's full schema |
+| `POST /capabilities/details` | Read details by one tag or an explicit mixed `members` array |
 
-### 3. Message-queue execution
-- Configurable port (default 8000), main-thread safety, EditorApplication.update–based queue.
+The details endpoint accepts exactly one selection mode: `{ "tag": "..." }` or `{ "members": [...] }`. It rejects empty or unknown selections, wildcard/all selectors, and requests that cover the complete capability set. Duplicate members are counted once. Resource details describe registered metadata; they do not implicitly read the resource contents.
 
-### 4. Coroutine support
-- Async operations (e.g. HTTP, downloads) without blocking the main thread.
+## Existing MCP clients
 
-### 5. Smart file/data handling
-- Detect file types; for large content return metadata instead of full data to save memory and bandwidth.
+The Skill workflow is an additional access path, not a replacement for the existing MCP protocol. Current MCP clients can continue using the original operations, including `tools/list`, `tools/call`, `prompts/list`, `prompts/get`, `resources/list`, and `resources/read`, with their existing client configuration. No Skill installation is required for that legacy workflow.
 
----
+The Skill's discovery requests do not change the behavior of those MCP operations. For the lower-context workflow, use the Skill client rather than asking an agent to connect directly to the MCP transport.
 
-## Technical Features
+## Extending the capability set
 
-- **Communication**: HTTP, JSON-RPC 2.0, message queue, batch calls  
-- **Reliability**: Configurable port, main-thread safety, error handling, timeouts  
-- **Extensibility**: Modular tools, reflection, custom tools, configurable parameters  
-- **DX**: Natural language, real-time feedback, logging, documentation  
+The Unity package discovers registered tools, prompts, and resources and exposes their summaries and definitions through the discovery API. Tool grouping is represented by tags; prompts and resources can also be organized with capability tags. Keep descriptions concise so catalog summaries remain useful, and add or adjust tags when a capability should be discoverable as part of a group.
 
----
+Relevant implementation areas:
 
-## API Reference
-
-### Facade tools
-
-**async_call** — single call:
-```json
-{
-  "func": "async_call",
-  "args": {
-    "func": "hierarchy_create",
-    "args": { "name": "Player", "primitive_type": "Cube", "source": "primitive" }
-  }
-}
+```text
+unity-package/Editor/Connect/       Unity service and discovery implementation
+unity-package/Editor/GUI/           MCP status window and controls
+unity-package/Editor/Model/         Local service settings
+unity-package/Skills/unity3d-skill/ Skill instructions and JS/Python clients
+unity-package/Skills/unity3d-skill/tests/  Client regression tests
 ```
 
-**batch_call** — batch:
-```json
-{
-  "func": "batch_call",
-  "args": [
-    { "func": "hierarchy_create", "args": { "name": "Player", "primitive_type": "Cube" } },
-    { "func": "edit_gameobject", "args": { "path": "Player", "position": [0, 1, 0] } }
-  ]
-}
+## Run the Skill client tests
+
+From `unity-package/Skills/unity3d-skill/`:
+
+```sh
+node --test tests/test_unity_mcp.js
+python -B -m unittest discover -s tests -p 'test_*.py'
 ```
-
-### Core tools (examples)
-
-- Hierarchy: hierarchy_create, hierarchy_search, hierarchy_apply  
-- ResEdit: edit_gameobject, edit_component, edit_material, edit_texture  
-- Project: project_search, project_operate  
-- Network: request_http, figma_manage  
-
-### Response format
-
-Success: `{ "success": true, "message": "...", "data": { ... } }`  
-Error: `{ "success": false, "message": "...", "error": "..." }`
-
----
 
 ## Troubleshooting
 
-### Connection
-
-- **Cannot connect**: Ensure Unity is running, port 8000 (or your port) is free, firewall allows it; check Unity console.
-- **Disconnects**: Check network, Unity performance, and timeout settings.
-
-### Tool execution
-
-- **Call fails**: Check parameter format and types, ensure target objects exist, permissions.
-- **Partial batch failure**: Reorder operations, check resource conflicts, try smaller batches.
-
-### Performance
-
-- **Slow response**: Improve network, reduce Unity load, simplify operations.
-- **High memory**: Destroy unused objects, release resources, check coroutine lifecycle.
-
-### Debugging
-
-- Enable detailed logs (e.g. `McpLogger` in Unity).
-- Use MCP Debug Window for history and re-run.
-- Use network tools (e.g. Wireshark) if needed for HTTP.
+- **The Skill cannot find a service:** make sure the Unity service is running and `~/.unity-mcp/skill.ini` exists. Restart the service after changing its port.
+- **The INI and running service disagree:** restart the intended Unity project's MCP service so it republishes its current settings.
+- **A tag has no details:** get the current tag from `groups`; tags are generated from the active capabilities and may change as configuration changes.
+- **A detail request is rejected:** reduce the selected group or member list. Check `max_details`; the 64 KiB response limit and full-set rejection still apply.
+- **A capability is not listed:** check whether it is enabled in the Unity MCP settings and whether the target project has completed initialization.
+- **A call fails:** inspect Unity's Console and the MCP Status window's request records; confirm the argument JSON matches the selected definition.
 
 ---
 
-## Summary
-
-Unity3d MCP connects AI assistants to the Unity Editor via a built-in MCP server, using a two-tier call architecture, message-queue execution, and main-thread safety. It provides 40+ tools across the Unity development pipeline.
-
-### Advantages
-1. **AI-driven**: Natural language control of the Editor  
-2. **Rich**: 40+ tools for the full pipeline  
-3. **Performant**: HTTP + message queue  
-4. **Extensible**: Modular, custom tools  
-5. **Compatible**: Works with major AI clients  
-6. **Zero config**: No external MCP process  
-
-### Use cases
-- AI-assisted game development  
-- Automated resource and batch operations  
-- Education and training  
-
-### Roadmap
-- More Unity tools, visual tool authoring, performance and monitoring, multi-platform support, better debugging.
-
----
-
-*Document version: v2.0*  
-*Last updated: September 2025*  
-*Unity3d MCP Development Team*
+For additional project information and examples, see the [Chinese README](README.zh-CN.md), the [project website](docs/index.html), and the [Unity Skill](unity-package/Skills/unity3d-skill/SKILL.md).

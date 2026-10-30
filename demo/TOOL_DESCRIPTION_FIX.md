@@ -1,4 +1,4 @@
-# Unity3D-MCP 工具描述修复指南
+# Unity Skilled MCP 工具描述修复指南
 
 ## 问题描述
 在创建工具信息时，未获取到有效的unity工具description，需要使用IToolMethod中的Description属性，并将所有继承于IToolMethod的非抽象子类实现Description。

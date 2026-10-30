@@ -89,7 +89,7 @@ namespace UniMcp.Gui
                 fontStyle = FontStyle.Bold,
                 normal = { textColor = new Color(0.2f, 0.4f, 0.8f) }
             };
-            EditorGUILayout.LabelField("⚡ Unity3D MCP Service", titleStyle, GUILayout.ExpandWidth(true));
+            EditorGUILayout.LabelField("⚡ Unity Skilled MCP Service", titleStyle, GUILayout.ExpandWidth(true));
 
             // 日志级别下拉菜单 - 美化样式
             EditorGUILayout.BeginVertical();

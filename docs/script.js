@@ -293,7 +293,7 @@ if (heroStats) {
     statsObserver.observe(heroStats);
 }
 
-console.log('%c Unity3d MCP ', 'background: linear-gradient(135deg, #f0d6ab, #c19c62); color: #17130c; font-size: 20px; font-weight: 600; padding: 10px 14px; border-radius: 6px;');
+console.log('%c Unity Skilled MCP ', 'background: linear-gradient(135deg, #f0d6ab, #c19c62); color: #17130c; font-size: 20px; font-weight: 600; padding: 10px 14px; border-radius: 6px;');
 console.log('%c Skill + MCP 渐进式发现 ', 'color: #e3c290; font-size: 14px; letter-spacing: 1px;');
 console.log('%c GitHub: https://github.com/zoucdr/unity3d-mcp ', 'color: #6b6862; font-size: 12px;');
 

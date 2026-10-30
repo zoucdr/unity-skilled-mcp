@@ -2,9 +2,9 @@
 
 ---
 
-# Unity3d MCP 系统说明文档
+# Unity Skilled MCP 系统说明文档
 
-![Unity3d MCP 宣传图](docs/unity3d-mcp.png)
+![Unity Skilled MCP 宣传图](docs/unity3d-mcp.png)
 
 ## 目录
 1. [系统概述](#系统概述)
@@ -21,9 +21,9 @@
 
 ## 系统概述
 
-*Unity3d MCP - 连接AI与Unity的桥梁，实现智能化游戏开发*
+*Unity Skilled MCP - 连接AI与Unity的桥梁，实现智能化游戏开发*
 
-Unity3d MCP (Model Context Protocol) 是一个创新的AI-Unity集成系统，它通过内置的MCP服务器将AI助手（如Cursor、Claude、Trae）与Unity编辑器无缝连接，实现AI驱动的Unity开发工作流。
+Unity Skilled MCP (Model Context Protocol) 是一个创新的AI-Unity集成系统，它通过内置的MCP服务器将AI助手（如Cursor、Claude、Trae）与Unity编辑器无缝连接，实现AI驱动的Unity开发工作流。
 
 ### 核心价值
 - **AI驱动开发**：通过自然语言指令控制Unity编辑器
@@ -55,15 +55,15 @@ Unity3d MCP (Model Context Protocol) 是一个创新的AI-Unity集成系统，�
 
 #### 系统架构图
 
-![Unity3d MCP 系统架构图](docs/architecture.png)
+![Unity Skilled MCP 系统架构图](docs/architecture.png)
 
-*图1：Unity3d MCP系统整体架构图，展示了从AI客户端到Unity编辑器的完整数据流和组件关系*
+*图1：Unity Skilled MCP系统整体架构图，展示了从AI客户端到Unity编辑器的完整数据流和组件关系*
 
 #### 数据流图
 
-![Unity3d MCP 数据流图](docs/data_flow_graph.png)
+![Unity Skilled MCP 数据流图](docs/data_flow_graph.png)
 
-*图2：Unity3d MCP数据流图，详细展示了从AI指令到Unity执行的完整数据流转过程*
+*图2：Unity Skilled MCP数据流图，详细展示了从AI指令到Unity执行的完整数据流转过程*
 
 ### 核心设计原则
 
@@ -1260,7 +1260,7 @@ McpLogger.EnableLog = true;
 
 ## 总结
 
-Unity3d MCP系统是一个创新的AI-Unity集成解决方案，通过内置MCP服务器实现了AI助手与Unity编辑器的无缝连接。系统采用双层调用架构、消息队列执行引擎、主线程安全机制等创新技术，提供了40+专业工具，覆盖Unity开发全流程。
+Unity Skilled MCP系统是一个创新的AI-Unity集成解决方案，通过内置MCP服务器实现了AI助手与Unity编辑器的无缝连接。系统采用双层调用架构、消息队列执行引擎、主线程安全机制等创新技术，提供了40+专业工具，覆盖Unity开发全流程。
 
 ### 核心优势
 1. **AI驱动**：通过自然语言控制Unity编辑器
@@ -1292,10 +1292,10 @@ Unity3d MCP系统是一个创新的AI-Unity集成解决方案，通过内置MCP�
 - **内置MCP服务器**：移除Python依赖，Unity内置完整MCP协议支持
 - **消息队列系统**：基于EditorApplication.update的主线程安全执行机制
 
-通过Unity3d MCP系统，开发者可以享受AI驱动的Unity开发体验，提高开发效率，降低学习成本，实现更智能的游戏开发工作流。
+通过Unity Skilled MCP系统，开发者可以享受AI驱动的Unity开发体验，提高开发效率，降低学习成本，实现更智能的游戏开发工作流。
 
 ---
 
 *文档版本：v2.0*  
 *最后更新：2025年09月*  
-*维护团队：Unity3d MCP Development Team*
+*维护团队：Unity Skilled MCP Development Team*
