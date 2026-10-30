@@ -57,6 +57,7 @@ namespace UniMcp.Executer
 
             foreach (var kvp in allMethods.OrderBy(k => k.Key))
             {
+                if (!McpLocalSettings.Instance.IsToolEnabled(kvp.Key)) continue;
                 var entry = new Dictionary<string, object>
                 {
                     ["name"] = kvp.Key,
@@ -84,6 +85,12 @@ namespace UniMcp.Executer
             if (string.IsNullOrWhiteSpace(name))
             {
                 callback(Response.Error("Required parameter 'name' is missing for detail query."));
+                return;
+            }
+
+            if (!McpLocalSettings.Instance.IsToolEnabled(name))
+            {
+                callback(Response.Error($"Tool '{name}' not found or disabled."));
                 return;
             }
 

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Collections;
+using System.IO;
 using System.Net;
 using System.Net.NetworkInformation;
 using System.Threading.Tasks;
@@ -448,6 +449,13 @@ namespace UniMcp.Gui
 
             EditorGUILayout.Space(8);
 
+            DrawScriptLanguageConfiguration();
+            EditorGUILayout.Space(8);
+            DrawDiscoveryMaxDetailsConfiguration();
+            EditorGUILayout.Space(8);
+            DrawSkillInstallConfiguration();
+            EditorGUILayout.Space(8);
+
             // 按钮区域
             EditorGUILayout.BeginHorizontal();
             
@@ -832,8 +840,146 @@ namespace UniMcp.Gui
         }
 
         /// <summary>
-        /// 绘制端口配置
+        /// 绘制客户端脚本语言配置
         /// </summary>
+        private static void DrawScriptLanguageConfiguration()
+        {
+            var settings = McpLocalSettings.Instance;
+            int current = settings.ScriptLanguage == "python" ? 1 : 0;
+            int selected = EditorGUILayout.Popup(
+                L.T("Client script", "客户端脚本"), current,
+                new[] { "JavaScript (Node.js)", "Python" });
+            if (selected != current)
+                settings.ScriptLanguage = selected == 1 ? "python" : "js";
+            EditorGUILayout.HelpBox(
+                L.T("Written to INI on the next service start. Restart the service to apply changes.",
+                    "下次启动服务时写入 INI，修改后请重启服务生效。"),
+                MessageType.Info);
+        }
+
+        private static string discoveryMaxDetailsInput;
+
+        private static void DrawDiscoveryMaxDetailsConfiguration()
+        {
+            var settings = McpLocalSettings.Instance;
+            if (discoveryMaxDetailsInput == null)
+                discoveryMaxDetailsInput = settings.DiscoveryMaxDetails.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            discoveryMaxDetailsInput = EditorGUILayout.TextField(
+                L.T("Max details (max_details)", "单次详情数量 (max_details)"), discoveryMaxDetailsInput);
+            bool valid = int.TryParse(discoveryMaxDetailsInput, System.Globalization.NumberStyles.Integer,
+                System.Globalization.CultureInfo.InvariantCulture, out int value) && value >= 0;
+            if (!valid)
+                EditorGUILayout.HelpBox(
+                    L.T("Enter a non-negative 32-bit integer. Out-of-range input is not saved.",
+                        "请输入非负的32位整数；负数、无效或溢出输入不会保存。"), MessageType.Warning);
+            using (new EditorGUI.DisabledScope(!valid || value == settings.DiscoveryMaxDetails))
+            {
+                if (GUILayout.Button(L.T("Save max details", "保存详情数量")))
+                    settings.DiscoveryMaxDetails = value;
+            }
+            EditorGUILayout.HelpBox(
+                L.T("0 = unlimited count. Saved per project; written to INI on the next service start. Restart to apply. The 65536-byte limits and full-catalog restriction still apply.",
+                    "0 表示不限制数量。按项目保存，下次启动写入 INI，重启服务生效；65536字节上限及禁止全量详情规则仍有效。"),
+                MessageType.Info);
+        }
+
+        // 技能目录的 .meta GUID：包放在 Assets、Packages 或 PackageCache 都能解析到实际路径。
+        private const string SkillFolderGuid = "a122fdfd26dd44eabd19bcabc70a561f";
+
+        /// <summary>
+        /// 通过 GUID 解析技能目录的绝对路径；找不到时返回 null。
+        /// </summary>
+        internal static string SkillFolderPath
+        {
+            get
+            {
+                if (!string.IsNullOrEmpty(skillFolderPath) && Directory.Exists(skillFolderPath))
+                    return skillFolderPath;
+                string assetPath = AssetDatabase.GUIDToAssetPath(SkillFolderGuid);
+                if (string.IsNullOrEmpty(assetPath))
+                {
+                    // 兜底：GUID 失效（例如 meta 被重新生成）时按目录名定位。
+                    foreach (string guid in AssetDatabase.FindAssets("unity3d-skill"))
+                    {
+                        string candidate = AssetDatabase.GUIDToAssetPath(guid);
+                        if (!string.IsNullOrEmpty(candidate)
+                            && candidate.Replace('\\', '/').EndsWith("/Skills/unity3d-skill", StringComparison.Ordinal))
+                        {
+                            assetPath = candidate;
+                            break;
+                        }
+                    }
+                }
+                if (string.IsNullOrEmpty(assetPath)) return null;
+                skillFolderPath = ResolveDiskPath(assetPath.Replace('\\', '/').TrimEnd('/'));
+                return skillFolderPath;
+            }
+        }
+
+        private static string skillFolderPath;
+
+        private static string ResolveDiskPath(string assetPath)
+        {
+            // 注册表安装的包是虚拟路径，真实文件在 Library/PackageCache，需用 PackageInfo 定位。
+            var package = UnityEditor.PackageManager.PackageInfo.FindForAssetPath(assetPath);
+            if (package != null && !string.IsNullOrEmpty(package.resolvedPath)
+                && assetPath.StartsWith(package.assetPath + "/", StringComparison.Ordinal))
+            {
+                string relative = assetPath.Substring(package.assetPath.Length + 1);
+                return Path.GetFullPath(Path.Combine(package.resolvedPath, relative.Replace('/', Path.DirectorySeparatorChar)))
+                    .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            }
+            return Path.GetFullPath(assetPath).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        }
+
+        internal static string BuildSkillInstallPrompt()
+        {
+            string path = SkillFolderPath ?? "技能目录未找到（请在 Unity 中确认 unity-package/Skills/unity3d-skill 已导入）";
+            string iniPath = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".unity-mcp", "skill.ini");
+            return string.Join("\n", new[] {
+                "请帮我安装 Unity MCP 轻量技能 unity3d-skill。",
+                "",
+                "技能目录（绝对路径）：",
+                path,
+                "",
+                "安装步骤：",
+                "1. 读取该目录下的 SKILL.md，严格按它的说明操作；不要凭猜测调用 Unity 接口。",
+                "2. 把整个 unity3d-skill 文件夹复制到你所在 agent 的技能目录（例如 WorkBuddy 的 ~/.workbuddy/skills/，其他 agent 用各自的 skills 目录），目录名保持不变。",
+                "3. 复制后确认存在 SKILL.md、scripts/unity_mcp.js、scripts/unity_mcp.py；脚本无第三方依赖，默认 Node.js 18+，也可改用 Python 3.8+。",
+                "4. 使用前先在 Unity 中启动 MCP 服务：启动时会把连接信息写入 " + iniPath + "（即 ~/.unity-mcp/skill.ini），其中包含 script_language（js 或 python）和 max_details。",
+                "5. 按 SKILL.md 的流程执行：discover → groups / list → schema 或 details → call；不要一次拉取全部详情。",
+                "6. 连接信息不发布 MCP 端点，不要自行拼接或直连 MCP 地址；INI 缺失或端口失效时提示我在 Unity 中重启服务，不要扫描端口。",
+                "",
+                "技能目录只读：除复制外不要修改其中任何文件。"
+            });
+        }
+
+        private void DrawSkillInstallConfiguration()
+        {
+            string path = SkillFolderPath;
+            EditorGUILayout.BeginHorizontal();
+            using (new EditorGUI.DisabledScope(string.IsNullOrEmpty(path)))
+            {
+                if (GUILayout.Button(L.T("Copy skill install prompt", "复制技能安装提示词"), GUILayout.Width(150)))
+                {
+                    EditorGUIUtility.systemCopyBuffer = BuildSkillInstallPrompt();
+                    ShowNotification(new GUIContent(L.T("Prompt copied", "已复制安装提示词")));
+                }
+            }
+            EditorGUILayout.LabelField(
+                string.IsNullOrEmpty(path)
+                    ? L.T("Skill folder not found", "未找到技能目录")
+                    : path,
+                EditorStyles.miniLabel);
+            EditorGUILayout.EndHorizontal();
+            if (string.IsNullOrEmpty(path))
+                EditorGUILayout.HelpBox(
+                    L.T("Make sure unity-package/Skills/unity3d-skill is imported, then reopen this window.",
+                        "请确认 unity-package/Skills/unity3d-skill 已导入后重新打开本窗口。"),
+                    MessageType.Warning);
+        }
+
         private static void DrawPortConfiguration()
         {
             // 初始化端口输入字符串

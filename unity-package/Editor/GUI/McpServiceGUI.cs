@@ -323,9 +323,9 @@ namespace UniMcp.Gui
             // 工具暴露模式下拉框：全部开启(纯MCP) / 全部关闭(技能方式) / 选择性开启(混合)
             string[] toolModeOptions = new string[]
             {
-                L.T("All On (Pure MCP)", "全部开启 (纯MCP)"),
-                L.T("All Off (Skill Mode)", "全部关闭 (技能方式)"),
-                L.T("Selective (Hybrid)", "选择性开启 (混合模式)")
+                L.T("All On (Pure MCP)", "全部开启"),
+                L.T("All Off (Skill Mode)", "全部关闭"),
+                L.T("Selective (Hybrid)", "选择性开启")
             };
             var localSettings = McpService.GetLocalSettings();
             bool allEnabled = methodNames.Count() > 0 && methodNames.All(n => localSettings.IsToolEnabled(n));

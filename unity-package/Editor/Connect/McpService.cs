@@ -365,6 +365,7 @@ namespace UniMcp
         /// </summary>
         public static void ClearToolsListCache()
         {
+            Interlocked.Exchange(ref Instance.discoveryDirty, 1);
             Instance.responseCache?.Remove("tools/list");
             Instance.responseCache?.Remove("prompts/list");
             Instance.responseCache?.Remove("resources/list");
@@ -656,7 +657,9 @@ namespace UniMcp
         /// </summary>
         private void DiscoverTools()
         {
+            if (!IsMainThread()) { EnqueueTask(DiscoverTools); return; }
             Log("[UniMcp] 开始发现工具...");
+            Interlocked.Exchange(ref discoveryDirty, 1);
             // 清空现有工具
             availableTools.Clear();
             toolInfos.Clear();
@@ -774,6 +777,8 @@ namespace UniMcp
         /// </summary>
         private void DiscoverPrompts()
         {
+            if (!IsMainThread()) { EnqueueTask(DiscoverPrompts); return; }
+            Interlocked.Exchange(ref discoveryDirty, 1);
             Log("[UniMcp] 开始发现Prompts...");
             // 清空现有prompts
             availablePrompts.Clear();
@@ -876,6 +881,8 @@ namespace UniMcp
         /// </summary>
         private void DiscoverResources()
         {
+            if (!IsMainThread()) { EnqueueTask(DiscoverResources); return; }
+            Interlocked.Exchange(ref discoveryDirty, 1);
             Log("[UniMcp] 开始发现Resources...");
             // 清空现有resources
             availableResources.Clear();
@@ -983,7 +990,7 @@ namespace UniMcp
                 Log($"[UniMcp] 手动添加AsyncCall工具: {toolName}");
 
                 // 将AsyncCall工具添加到缓存中，供GetMcpTool使用
-                mcpToolInstanceCache[toolName] = new AsyncCall();
+                if (!mcpToolInstanceCache.ContainsKey(toolName)) mcpToolInstanceCache[toolName] = new AsyncCall();
 
                 // 简化工具信息和输入模式定义
                 var toolInfo = new ToolInfo
@@ -1040,7 +1047,7 @@ namespace UniMcp
                 Log($"[UniMcp] 手动添加BatchCall工具: {toolName}");
 
                 // 将BatchCall工具添加到缓存中，供GetMcpTool使用
-                mcpToolInstanceCache[toolName] = new BatchCall();
+                if (!mcpToolInstanceCache.ContainsKey(toolName)) mcpToolInstanceCache[toolName] = new BatchCall();
 
                 // 创建工具信息并合并写法
                 var toolInfo = new ToolInfo
@@ -1097,7 +1104,7 @@ namespace UniMcp
                 string toolName = "sync_call";
                 Log($"[UniMcp] 手动添加SyncCall工具: {toolName}");
 
-                mcpToolInstanceCache[toolName] = new SyncCall();
+                if (!mcpToolInstanceCache.ContainsKey(toolName)) mcpToolInstanceCache[toolName] = new SyncCall();
 
                 var toolInfo = new ToolInfo
                 {
@@ -1140,11 +1147,12 @@ namespace UniMcp
         /// <returns>详情 JsonNode（name + prompt_text），未找到时返回 null</returns>
         private JsonNode BuildPromptDetailResult(string promptName)
         {
-            if (string.IsNullOrEmpty(promptName) || !availablePrompts.TryGetValue(promptName, out var prompt))
-                return null;
+            if (IsMainThread()) UpdateDiscoverySnapshot();
+            var prompt = discoverySnapshot.GetPrompt(promptName);
+            if (prompt == null) return null;
             var result = new JsonClass();
-            result.Add("name", new JsonData(prompt.Name));
-            result.Add("prompt_text", new JsonData(prompt.PromptText));
+            result.Add("name", prompt["name"]);
+            result.Add("prompt_text", prompt["prompt_text"]);
             return result;
         }
 
@@ -1166,12 +1174,12 @@ namespace UniMcp
                 string toolName = "get_prompt";
                 Log($"[UniMcp] 手动添加 GetPromptDetail 工具: {toolName}");
 
-                mcpToolInstanceCache[toolName] = new GetPromptTool();
+                if (!mcpToolInstanceCache.ContainsKey(toolName)) mcpToolInstanceCache[toolName] = new GetPromptTool();
 
                 var toolInfo = new ToolInfo
                 {
                     name = toolName,
-                    description = L.T("Get the prompt text by name. Returns name and prompt_text. Use after prompts/list to get the content of a specific prompt.", "根据名称获取提示词正文。返回 name 与 prompt_text。可在 prompts/list 之后查询指定提示词内容。"),
+                    description = L.T("Get one enabled prompt by name. Returns name and prompt_text. Discover names with HTTP GET /prompts.", "根据名称获取一个已启用提示词的正文，返回 name 与 prompt_text。先通过 HTTP GET /prompts 发现名称。"),
                     inputSchema = new JsonClass
                     {
                         { "type", new JsonData("object") },
@@ -1179,7 +1187,7 @@ namespace UniMcp
                             {
                                 { "name", new JsonClass {
                                     { "type", new JsonData("string") },
-                                    { "description", new JsonData(L.T("Prompt name to query (from prompts/list)", "要查询的提示词名称（来自 prompts/list）")) }
+                                    { "description", new JsonData(L.T("Prompt name to query (from HTTP GET /prompts)", "要查询的提示词名称（来自 HTTP GET /prompts）")) }
                                 }}
                             }
                         },
@@ -1206,7 +1214,7 @@ namespace UniMcp
                 string toolName = "search_tool";
                 Log($"[UniMcp] 手动添加 SearchTool 工具: {toolName}");
 
-                mcpToolInstanceCache[toolName] = new SearchTool();
+                if (!mcpToolInstanceCache.ContainsKey(toolName)) mcpToolInstanceCache[toolName] = new SearchTool();
 
                 var toolInfo = new ToolInfo
                 {
@@ -1756,6 +1764,22 @@ namespace UniMcp
                     throw new Exception($"无法在端口 {mcpPort} 启动HTTP监听器。请检查端口是否被占用或需要管理员权限。");
                 }
 
+                // 数量设置仅在启动时捕获；运行期间重建快照仍使用此值。
+                startedDiscoveryMaxDetails = McpLocalSettings.Instance.DiscoveryMaxDetails;
+                System.Threading.Interlocked.Exchange(ref discoveryDirty, 1);
+                // 先在主线程准备只读发现数据，再允许后台处理请求。
+                DiscoverTools();
+                DiscoverPrompts();
+                DiscoverResources();
+                isRunning = true;
+                UpdateDiscoverySnapshot();
+                // 发现快照失败不应阻断原有 MCP 协议；仅提示技能发现数据可能过期。
+                if (discoverySnapshot.MaxDetails != startedDiscoveryMaxDetails)
+                    LogWarning("[UniMcp] 发现快照未应用本次启动的详情数量设置（" + startedDiscoveryMaxDetails + "），原有 MCP 接口继续可用。");
+                PublishConnectionInfo();
+                EditorApplication.update -= UpdateDiscoverySnapshot;
+                EditorApplication.update += UpdateDiscoverySnapshot;
+
                 // 在启动监听循环前缓存端口值，避免在后台线程访问EditorPrefs
                 int port = mcpPort;
                 // 启动监听循环并保存任务引用
@@ -1773,11 +1797,6 @@ namespace UniMcp
                         isRunning = false;
                     }
                 });
-
-                // 在启动服务时重新发现工具、prompts和resources，确保列表是最新的
-                DiscoverTools();
-                DiscoverPrompts();
-                DiscoverResources();
 
                 McpLogger.Log($"[UniMcp] <color=green>MCP服务器成功启动!</color> 监听地址: {successPrefix}");
                 McpLogger.Log($"[UniMcp] 本机访问: http://127.0.0.1:{mcpPort}/ 或 http://localhost:{mcpPort}/mcp");
@@ -1822,6 +1841,8 @@ namespace UniMcp
 
                 // 确保服务状态正确
                 isRunning = false;
+                EditorApplication.update -= UpdateDiscoverySnapshot;
+                listener?.Close();
                 listener = null;
                 McpLocalSettings.Instance.McpOpenState = false;
             }
@@ -1836,6 +1857,7 @@ namespace UniMcp
         // 实例方法
         public void Stop()
         {
+            EditorApplication.update -= UpdateDiscoverySnapshot;
             if (!isRunning && listener == null)
             {
                 return;
@@ -2123,6 +2145,20 @@ namespace UniMcp
                 // 尝试匹配自定义路由（在 MCP 处理之前）
                 string requestPath = request.Url.AbsolutePath;
 
+                // 有范围发现先于自定义路由及 JSON-RPC 的无界正文读取。
+                if (await TryHandleCapabilityDetailsAsync(request, response, requestPath, cancellationToken)) return;
+                if (request.HttpMethod == "GET"
+                    && TryGetDiscoveryResponse(requestPath, out int discoveryStatus, out string discoveryResponse))
+                {
+                    response.StatusCode = discoveryStatus;
+                    response.ContentType = "application/json; charset=utf-8";
+                    byte[] bytes = Encoding.UTF8.GetBytes(discoveryResponse);
+                    response.ContentLength64 = bytes.Length;
+                    await response.OutputStream.WriteAsync(bytes, 0, bytes.Length);
+                    response.Close();
+                    return;
+                }
+
                 // 内置 /files 路由：基于当前端口将 Unity 工程目录作为只读 HTTP 文件服务
                 if (await ProjectFilesHttpService.TryHandleRequestAsync(request, response, requestPath))
                 {
@@ -2189,6 +2225,7 @@ namespace UniMcp
                     }
                     return;
                 }
+
 
                 // 处理GET请求 - 返回服务器状态信息（如果不是自定义路由）
                 if (request.HttpMethod == "GET")
@@ -2511,6 +2548,7 @@ namespace UniMcp
                                 return CreateMcpErrorResponse(id, -32000, "Tool call timed out after 10 seconds");
                             }
                             break;
+
 
                         case "prompts/list":
                             result = HandlePromptsList(id);
@@ -4318,7 +4356,7 @@ namespace UniMcp
                     return CreateMcpErrorResponse(id, -32602, "Tool name is required");
                 }
 
-                // 检查工具是否启用
+                // 检查工具是否启用（保持原 MCP 调用链行为，含 ToolsCall 注册的二级方法）
                 if (!McpLocalSettings.Instance.IsToolEnabled(toolName))
                 {
                     McpLogger.LogError($"[UniMcp] 工具已禁用: {toolName}, ID: {id}");

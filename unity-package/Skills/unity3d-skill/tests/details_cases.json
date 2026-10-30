@@ -1,0 +1,38 @@
+{
+  "mixed": [
+    {"kind": "tool", "name": "hierarchy_search"},
+    {"kind": "prompt", "name": "foo"},
+    {"kind": "resource", "uri": "res://foo"}
+  ],
+  "uris": ["res://foo", "res://中文/路径?x=1&y=%2F#片段", "urn:unity:scene", "file:///C:/项目/场景.unity", "https://example.invalid/resource?q=%23"],
+  "invalid_tags": ["", " ", "all", "ALL", "*", "hierarchy-*", " hierarchy-management", "hierarchy-management\n"],
+  "invalid_members": [
+    null, {}, {"members": [{"kind": "tool", "name": "demo"}]}, [],
+    [null], ["all"], [[]],
+    [{"kind": "tools", "name": "demo"}],
+    [{"kind": "tool"}], [{"name": "demo"}],
+    [{"kind": "tool", "name": ""}],
+    [{"kind": "tool", "name": "all"}],
+    [{"kind": "prompt", "name": "*"}],
+    [{"kind": "resource", "uri": "*"}],
+    [{"kind": "resource", "uri": "all"}],
+    [{"kind": "tool", "name": 1}],
+    [{"kind": "tool", "name": true}],
+    [{"kind": "prompt", "name": null}],
+    [{"kind": "resource", "uri": {}}],
+    [{"kind": "resource", "name": "foo"}],
+    [{"kind": "tool", "uri": "res://foo"}],
+    [{"kind": "tool", "name": "demo", "extra": true}],
+    [{"kind": "resource", "uri": "res://foo", "name": "foo"}],
+    [{"kind": "tool", "name": "demo", "__proto__": {}}],
+    [{"kind": "resource", "uri": "/relative/path"}],
+    [{"kind": "resource", "uri": "noscheme"}],
+    [{"kind": "resource", "uri": "1res://foo"}],
+    [{"kind": "resource", "uri": "res:"}],
+    [{"kind": "resource", "uri": "res://a b"}],
+    [{"kind": "resource", "uri": "res://foo\nbar"}],
+    [{"kind": "resource", "uri": "res://*"}],
+    [{"kind": "tool", "name": "demo\u0000"}],
+    [{"kind": "tool", "name": "demo"}, {"kind": "tool", "name": "demo", "extra": true}]
+  ]
+}

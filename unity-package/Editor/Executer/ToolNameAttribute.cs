@@ -3,6 +3,18 @@ using UniMcp.Utils;
 
 namespace UniMcp
 {
+    [AttributeUsage(AttributeTargets.Class, AllowMultiple = false, Inherited = false)]
+    public sealed class CapabilityTagsAttribute : Attribute
+    {
+        private readonly string[] tags;
+        public string[] Tags => (string[])tags.Clone();
+
+        public CapabilityTagsAttribute(params string[] tags)
+        {
+            this.tags = tags == null ? new string[0] : (string[])tags.Clone();
+        }
+    }
+
     /// <summary>
     /// 用于标记工具方法类的名称和分组的特性
     /// 优先级高于通过类名自动转换的snake_case命名
@@ -31,6 +43,8 @@ namespace UniMcp
             }
         }
 
+        public string GroupNameEnglish => _groupNameEnglish;
+
         private readonly string _groupNameEnglish;
         private readonly string _groupNameChinese;
 
@@ -46,10 +60,11 @@ namespace UniMcp
                 throw new ArgumentException("Tool name cannot be null or empty", nameof(toolName));
 
             ToolName = toolName;
-            _groupNameEnglish = string.IsNullOrWhiteSpace(groupNameEnglish) 
-                ? L.T("Uncategorized", "未分组") 
+            _groupNameEnglish = string.IsNullOrWhiteSpace(groupNameEnglish)
+                ? "Uncategorized"
                 : groupNameEnglish;
-            _groupNameChinese = groupNameChinese;
+            _groupNameChinese = string.IsNullOrWhiteSpace(groupNameEnglish) && string.IsNullOrWhiteSpace(groupNameChinese)
+                ? "未分组" : groupNameChinese;
         }
     }
 }
