@@ -1,12 +1,12 @@
 {
-  "name": "io.uframe.unity3d-mcp",
-  "version": "1.1.0",
-  "displayName": "UniMCP",
-  "description": "unity3d mcp system!",
+  "name": "io.uframe.unity-skilled-mcp",
+  "version": "1.2.0",
+  "displayName": "SkilledMCP",
+  "description": "unity3d skilled mcp system!",
   "unity": "2021.3",
-  "documentationUrl": "https://zoucdr.github.io/unity3d-mcp",
+  "documentationUrl": "https://zoucdr.github.io/unity-skilled-mcp",
   "repository": {
     "type": "git",
-    "url": "https://github.com/zoucdr/unity3d-mcp"
+    "url": "https://github.com/zoucdr/unity-skilled-mcp"
   }
 }
