@@ -1,5 +1,5 @@
 {
-  "name": "io.uframe.unity3d-mcp-runtime",
+  "name": "io.uframe.unity-skilled-mcp-runtime",
   "displayName": "Unity Runtime MCP",
   "version": "1.0.0",
   "description": "MCP (Model Context Protocol) server for Unity Runtime - enables MCP tools in built applications",
