@@ -19,6 +19,8 @@
 
 ---
 
+> 说明：本文出现的工具名、动作与参数均为**源码内置能力示例**，不代表当前 Unity 服务一定可用。实际能力一律以技能脚本的 `discover` / `list` / `schema` 返回为准；技能客户端只有 `unity_mcp.js`（Node.js 18+），INI 与 Unity 设置中不再有脚本语言选项。
+
 ## 系统概述
 
 *Unity Skilled MCP - 连接AI与Unity的桥梁，实现智能化游戏开发*
@@ -366,7 +368,7 @@ public class ProjectSelector : IObjectSelector { }
    - `console_write`：写入控制台日志
 
 6. **代码运行工具** (Tools/RunCode/)
-   - `code_runner`：运行C#代码
+   - `code_runner`：运行 C# 代码，必须显式传 `mode` 才会编译。`mode=none`（默认）**不编译、不执行**；`mode=runtime` 走 CodeDOM `GenerateInMemory` 内存编译（不落盘、不生成工程内 DLL、不触发 Unity 编译管线，接收 C# 语句片段）；`mode=dll` 走原 `AssemblyBuilder` 流程（写临时 `.cs` → 编译 DLL → 加载，支持完整类/命名空间）。`action` 支持 `probe` / `validate` / `execute`
    - `python_runner`：运行Python脚本
 
 7. **编辑器工具** (Tools/)
@@ -435,7 +437,7 @@ public class ToolClass : StateMethodBase
 ```bash
 # Unity Package
 # 将unity-package导入Unity项目
-# 无需额外的Python依赖
+# 技能客户端只需 Node.js 18+，无第三方依赖
 ```
 
 ### 2. 配置设置
@@ -979,9 +981,9 @@ MCP 协议会向 AI 提供完整的工具列表与参数 Schema，在工具数�
 - **目录检索**：`find QUERY [--kind tools|prompts|resources]` 只在本地对目录摘要（名称、URI、说明、标签）做大小写不敏感过滤，工具变多时不必把整份目录塞进上下文，也不取详情。
 - **内容读取**：`details` 只给注册定义；`prompt NAME` 与 `resource URI` 会先校验目录成员，再走 `prompts/get` / `resources/read` 取正文。资源 URI 只允许目录中已注册项，避免服务端对任意 `http://`、`file://` URI 的兼容读取绕过外发授权。
 - **批量调用**：`calls --calls-file steps.json`（或 `--calls` / `--calls-stdin`）按数组顺序执行多个工具，任一步失败即停，并保留已执行步骤与 `exit_code`；不提供事务回滚。
-- **引擎操作**：`engine_control` 统一承载构建、平台切换、构建设景、工程设置、编译状态、选择集与编辑器工具切换；构建默认排队执行，用 `get_build_status` 查询结果，构建期间编辑器会阻塞。
-- **专业工作流**：`edit_animator`（Animator 状态机）、`ui_toolkit`（UXML/USS/UIDocument/PanelSettings）、`manage_camera`（相机与 Cinemachine）、`edit_effects`（Line/Trail 与 VFX Graph）、`run_tests`（Test Runner）、`edit_probuilder`（ProBuilder 建模）各自覆盖专用领域；可选包未安装时只影响对应工具，并返回明确提示。
-- **连接发现**：Unity 服务启动时把地址、端口、脚本语言和详情上限写入 `~/.unity-mcp/skill.ini`，客户端每次命令重新读取并校验；INI 不发布 MCP 端点，Agent 应始终通过 Skill 脚本访问。
+- **不内联能力清单**：SKILL.md 不描述任何具体工具、动作或参数；工具名、参数与可用性只能来自本次 `discover` / `list` / `find` / `schema` 的返回。源码里存在的能力也可能因版本、包依赖或设置而在当前服务中不可用。
+- **发现优先**：`discover` → `groups` / `list` / `find` → `details` / `schema` / `schemas` → `call` / `calls` 是固定顺序，跳过发现直接调用、凭名字猜参数都属于错误。
+- **连接发现**：Unity 服务启动时把地址、端口和详情上限写入 `~/.unity-mcp/skill.ini`（不再发布脚本语言字段，客户端固定为 Node.js 18+ 的 `unity_mcp.js`），客户端每次命令重新读取并校验；INI 不发布 MCP 端点，Agent 应始终通过 Skill 脚本访问。
 
 ### 与 MCP 系统的结合
 
@@ -995,11 +997,34 @@ MCP 协议会向 AI 提供完整的工具列表与参数 Schema，在工具数�
 node scripts/unity_mcp.js find camera --kind tools
 node scripts/unity_mcp.js prompt NAME
 node scripts/unity_mcp.js resource URI
-node scripts/unity_mcp.js calls --calls '[{"name":"hierarchy_search","arguments":{}},{"name":"edit_gameobject","arguments":{"action":"get_components"}}]'
-# Python 客户端命令完全一致：python scripts/unity_mcp.py find camera --kind tools
+node scripts/unity_mcp.js discover
+node scripts/unity_mcp.js list --kind tools
+node scripts/unity_mcp.js schema NAME_FROM_LIST
+node scripts/unity_mcp.js calls --calls '[{"name":"NAME_FROM_LIST","arguments":{}}]'
 ```
 
 `calls` 的输入是数组本身，元素仅含 `name` 与可选 `arguments`（JSON 对象，省略为 `{}`）；返回 `{steps, executed, total, stopped_at, exit_code}`。全部成功时 `stopped_at=null`；中途失败时 stdout 仍输出已成功步骤，退出码由 `exit_code` 给出，便于先核实编辑器状态再决定是否重放剩余步骤。
+
+### 脚本作为库调用（程序化访问）
+
+`unity_mcp.js` 既是 CLI 也是零依赖 CommonJS 库，`require(...)` 后可用原生对象直接调用，让 AI 自己写代码组织多步访问，无需拼 JSON 字符串或起子进程。库函数复用 CLI 的 `execute()`，因此 INI/discovery 校验、`max_details`、64 KiB 上限、目录白名单、不重试与错误码全部一致。
+
+```js
+const unity = require('./scripts/unity_mcp.js');
+unity.configure({ timeout: 15 });
+const catalog = await unity.listCapabilities('tools');     // 先发现
+const { name, args } = pickFrom(catalog, await unity.getSchema(name));
+const summary = await unity.workflowContext('TASK', 'DESCRIPTION', async wf => {
+  await unity.callSkill(name, args);
+  return wf.summary();
+});
+```
+
+- `pickFrom` 是伪代码，表示由调用方根据目录与 schema 选择工具和参数；示例不含任何真实工具名。
+- `callSkill` 返回 MCP `result`；`callTool` 返回完整 JSON-RPC 信封；`*Text` / `*Json` 提取并解析 `content[*].text`。
+- `workflowContext` 只记录调用（`wf.calls`、`wf.summary()`），不重试、不回滚；失败照常抛出。所有方法均为 `async`，异常为带 `.code` 的 `ClientError`。
+- 多连接用 `new Client({...})`；库模式默认静默 stderr。完整 API 对照表见 `SKILL.md`。
+- Windows Git Bash 会把 `request /ROUTE` 转成本地路径，客户端已按 `EXEPATH` 自动还原，也支持裸路由 `request groups`。
 
 ### 约束
 
@@ -1013,9 +1038,8 @@ node scripts/unity_mcp.js calls --calls '[{"name":"hierarchy_search","arguments"
 unity-package/Skills/unity3d-skill/
 ├── SKILL.md                    # 连接、命令与安全说明
 ├── scripts/
-│   ├── unity_mcp.js            # 默认 JS 客户端（无依赖）
-│   └── unity_mcp.py            # Python 客户端（无依赖）
-└── tests/                      # JS / Python 回归测试
+│   └── unity_mcp.js            # 唯一客户端，Node.js 18+，无依赖
+└── tests/                      # 客户端回归测试
 ```
 
 ---

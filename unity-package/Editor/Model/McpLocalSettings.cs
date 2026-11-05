@@ -47,9 +47,6 @@ namespace UniMcp
         private string _currentLanguage = "English";
 
         [SerializeField]
-        private string _scriptLanguage = "js";
-
-        [SerializeField]
         private int _discoveryMaxDetails = McpDiscoverySnapshot.DefaultMaxDetails;
 
         /// <summary>
@@ -67,29 +64,6 @@ namespace UniMcp
                     SaveSettings();
                 }
             }
-        }
-
-        /// <summary>
-        /// 客户端脚本语言，保存到当前项目，服务下次启动时发布。
-        /// </summary>
-        public string ScriptLanguage
-        {
-            get => NormalizeScriptLanguage(_scriptLanguage);
-            set
-            {
-                string normalized = NormalizeScriptLanguage(value);
-                if (_scriptLanguage != normalized)
-                {
-                    _scriptLanguage = normalized;
-                    SaveSettings();
-                }
-            }
-        }
-
-        internal static string NormalizeScriptLanguage(string value)
-        {
-            return string.Equals(value?.Trim(), "python", System.StringComparison.OrdinalIgnoreCase)
-                ? "python" : "js";
         }
 
         [SerializeField]
@@ -502,8 +476,7 @@ namespace UniMcp
                 Debug.Log($"[McpLocalSettings] 记录主线程ID: {mainThreadId}");
             }
             
-            // 兼容旧配置，并将无效脚本语言归一化后持久化。
-            ScriptLanguage = _scriptLanguage;
+            // 兼容旧配置，并将非法数量归一化后持久化。
             DiscoveryMaxDetails = _discoveryMaxDetails;
 
             // 确保设置被正确初始化

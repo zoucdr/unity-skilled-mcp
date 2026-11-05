@@ -449,8 +449,6 @@ namespace UniMcp.Gui
 
             EditorGUILayout.Space(8);
 
-            DrawScriptLanguageConfiguration();
-            EditorGUILayout.Space(8);
             DrawDiscoveryMaxDetailsConfiguration();
             EditorGUILayout.Space(8);
             DrawSkillInstallConfiguration();
@@ -839,24 +837,6 @@ namespace UniMcp.Gui
             }
         }
 
-        /// <summary>
-        /// 绘制客户端脚本语言配置
-        /// </summary>
-        private static void DrawScriptLanguageConfiguration()
-        {
-            var settings = McpLocalSettings.Instance;
-            int current = settings.ScriptLanguage == "python" ? 1 : 0;
-            int selected = EditorGUILayout.Popup(
-                L.T("Client script", "客户端脚本"), current,
-                new[] { "JavaScript (Node.js)", "Python" });
-            if (selected != current)
-                settings.ScriptLanguage = selected == 1 ? "python" : "js";
-            EditorGUILayout.HelpBox(
-                L.T("Written to INI on the next service start. Restart the service to apply changes.",
-                    "下次启动服务时写入 INI，修改后请重启服务生效。"),
-                MessageType.Info);
-        }
-
         private static string discoveryMaxDetailsInput;
 
         private static void DrawDiscoveryMaxDetailsConfiguration()
@@ -946,8 +926,8 @@ namespace UniMcp.Gui
                 "安装步骤：",
                 "1. 读取该目录下的 SKILL.md，严格按它的说明操作；不要凭猜测调用 Unity 接口。",
                 "2. 把整个 unity3d-skill 文件夹复制到你所在 agent 的技能目录（例如 WorkBuddy 的 ~/.workbuddy/skills/，其他 agent 用各自的 skills 目录），目录名保持不变。",
-                "3. 复制后确认存在 SKILL.md、scripts/unity_mcp.js、scripts/unity_mcp.py；脚本无第三方依赖，默认 Node.js 18+，也可改用 Python 3.8+。",
-                "4. 使用前先在 Unity 中启动 MCP 服务：启动时会把连接信息写入 " + iniPath + "（即 ~/.unity-mcp/skill.ini），其中包含 script_language（js 或 python）和 max_details。",
+                "3. 复制后确认存在 SKILL.md 与 scripts/unity_mcp.js；脚本无第三方依赖，需要 Node.js 18+。",
+                "4. 使用前先在 Unity 中启动 MCP 服务：启动时会把连接信息写入 " + iniPath + "（即 ~/.unity-mcp/skill.ini），其中包含 max_details 等本次启动配置。",
                 "5. 按 SKILL.md 的流程执行：discover → groups / list → schema 或 details → call；不要一次拉取全部详情。",
                 "6. 连接信息不发布 MCP 端点，不要自行拼接或直连 MCP 地址；INI 缺失或端口失效时提示我在 Unity 中重启服务，不要扫描端口。",
                 "",

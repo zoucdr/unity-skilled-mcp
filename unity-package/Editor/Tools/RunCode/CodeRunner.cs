@@ -17,13 +17,16 @@ using ReflectionAssembly = System.Reflection.Assembly;
 namespace UniMcp.Tools
 {
     /// <summary>
-    /// Handles C# code execution including compilation and running arbitrary C# methods.
+    /// Handles C# code execution. mode=none (default) never compiles; mode=runtime uses CodeDOM
+    /// in-memory compilation; mode=dll keeps the legacy AssemblyBuilder flow.
     /// 对应方法名: code_runner
     /// </summary>
     [ToolName("code_runner", "Development Tools", "开发工具")]
     public class CodeRunner : StateMethodBase
     {
-        public override string Description => L.T("Compile and execute C# code in the Unity editor", "在Unity编辑器中编译和执行C#代码");
+        public override string Description => L.T(
+            "Compile and execute C# code; requires an explicit mode (runtime=in-memory, dll=legacy AssemblyBuilder), default none does not compile",
+            "编译执行C#代码；必须显式选择 mode（runtime=内存编译，dll=原DLL编译），默认 none 不编译");
 
         // Code execution tracking
         private class CodeOperation
@@ -62,11 +65,20 @@ namespace UniMcp.Tools
             {
                 // Operation type
                 new MethodStr("action", L.T("Operation type", "操作类型"), false)
-                    .SetEnumValues("execute", "validate")
+                    .SetEnumValues("execute", "validate", "probe")
                     .SetDefault("execute"),
+
+                // Execution mode. Default "none" never compiles and never executes user code.
+                new MethodStr("mode", L.T(
+                        "Execution mode: none=no compilation (default), runtime=in-memory CodeDOM, dll=legacy AssemblyBuilder DLL",
+                        "执行模式：none=不编译（默认），runtime=内存编译，dll=原DLL编译流程"))
+                    .SetEnumValues("none", "runtime", "dll")
+                    .SetDefault("none"),
                 
                 // C# code content
-                new MethodStr("code", L.T("C# code content to execute", "要执行的C#代码内容"))
+                new MethodStr("code", L.T(
+                        "C# code: statement snippet for runtime mode, full class/namespace for dll mode",
+                        "C#代码：runtime 模式为语句片段，dll 模式为完整类/命名空间"))
                     .SetDefault(""),
                 
                 // Code function description
@@ -85,8 +97,10 @@ namespace UniMcp.Tools
                 new MethodStr("namespace", L.T("Namespace, default is CodeNamespace", "命名空间，默认为CodeNamespace"))
                     .SetDefault("CodeNamespace"),
                 
-                // Using statements list
-                new MethodArr("includes", L.T("Using statement list, JSON array format", "using语句列表，JSON数组格式"))
+                // Using statements list (dll mode: wrapper usings; runtime mode: extra namespaces)
+                new MethodArr("includes", L.T(
+                        "Using statements; runtime mode treats them as extra namespaces",
+                        "using语句列表；runtime 模式下作为追加命名空间"), true)
                     .SetItemType("string")
                     .AddExample("[\"System\", \"UnityEngine\"]"),
                 
@@ -106,7 +120,31 @@ namespace UniMcp.Tools
                 
                 // Return output
                 new MethodBool("return_output", L.T("Capture and return console output, default true", "捕获并返回控制台输出，默认为true"))
-                    .SetDefault(true)
+                    .SetDefault(true),
+
+                // --- runtime mode only parameters ---
+
+                new MethodArr("assembly_patterns", L.T(
+                        "runtime mode: extra regex patterns for loaded assembly names",
+                        "runtime 模式：追加的程序集名称正则"))
+                    .SetItemType("string")
+                    .AddExample("^MyGame", "^Protocol$"),
+
+                new MethodBool("capture_logs", L.T(
+                        "runtime mode: capture Debug.Log/Warning/Error emitted while running",
+                        "runtime 模式：捕获执行期间的 Debug 日志"))
+                    .SetDefault(true),
+
+                new MethodInt("max_log_chars", L.T(
+                        "runtime mode: max captured log characters",
+                        "runtime 模式：日志捕获字符上限"))
+                    .SetRange(256, 65536)
+                    .SetDefault(RuntimeCodeExecutor.MaxLogCharsDefault),
+
+                new MethodBool("include_source", L.T(
+                        "runtime mode: include the generated wrapper source in the response",
+                        "runtime 模式：在响应中返回生成的包装源码"))
+                    .SetDefault(false)
             };
         }
 
@@ -120,8 +158,53 @@ namespace UniMcp.Tools
                 .Key("action")
                     .Leaf("execute", HandleExecuteCode)
                     .Leaf("validate", HandleValidateCode)
+                    .Leaf("probe", HandleProbe)
                     .DefaultLeaf(HandleExecuteCode)
                 .Build();
+        }
+
+        // --- 模式选择 ---
+        // mode 不传（默认 none）时绝不会进入任何编译流程，也不会执行用户代码。
+        // 只有显式选择 runtime / dll 才会编译；dll 保留原 AssemblyBuilder 流程。
+
+        private static string NormalizeMode(JsonClass args, out string raw)
+        {
+            var node = args == null ? null : args["mode"];
+            raw = node == null ? "" : (node.Value ?? "").Trim();
+            string mode = raw.ToLowerInvariant();
+            if (mode.Length == 0 || mode == "none" || mode == "off" || mode == "no_compile")
+                return "none";
+            if (mode == "runtime" || mode == "memory" || mode == "in_memory" || mode == "codedom")
+                return "runtime";
+            if (mode == "dll" || mode == "assembly" || mode == "legacy" || mode == "assemblybuilder")
+                return "dll";
+            return "invalid";
+        }
+
+        private static object InvalidMode(string raw)
+        {
+            return Response.Error("未知 mode：" + raw + "；未进行任何编译或执行。", new
+            {
+                mode = raw,
+                available_modes = new string[] { "none", "runtime", "dll" },
+                compiled = false,
+                executed = false
+            });
+        }
+
+        private static object ModeRequired(string action)
+        {
+            return Response.Success("未指定 mode：不编译、不执行任何代码（mode=none）。", new
+            {
+                operation = action,
+                mode = "none",
+                compiled = false,
+                executed = false,
+                available_modes = new string[] { "runtime", "dll" },
+                runtime = "CodeDOM GenerateInMemory 内存编译，接收 C# 语句片段，不落盘、不触发 Unity 编译管线",
+                dll = "原 AssemblyBuilder 流程，写临时 .cs 并编译 DLL，接收完整类/命名空间",
+                hint = "确认要执行代码后，显式传入 mode=runtime 或 mode=dll 再调用。"
+            });
         }
 
         // --- 代码执行操作处理方法 ---
@@ -131,7 +214,16 @@ namespace UniMcp.Tools
         /// </summary>
         private object HandleExecuteCode(StateTreeContext ctx)
         {
-            McpLogger.Log("[CodeRunner] Executing C# code");
+            string raw;
+            string mode = NormalizeMode(ctx.JsonData, out raw);
+            if (mode == "invalid") return InvalidMode(raw);
+            if (mode == "none") return ModeRequired("execute");
+            if (mode == "runtime")
+            {
+                McpLogger.Log("[CodeRunner] mode=runtime: executing C# snippet in memory");
+                return RunRuntime(ctx.JsonData, true);
+            }
+            McpLogger.Log("[CodeRunner] mode=dll: executing C# code via AssemblyBuilder");
             // 为C#代码执行设置超时时间（90秒）
             return ctx.AsyncReturn(ExecuteCodeCoroutine(ctx.JsonData), 90f);
         }
@@ -141,9 +233,175 @@ namespace UniMcp.Tools
         /// </summary>
         private object HandleValidateCode(StateTreeContext ctx)
         {
-            McpLogger.Log("[CodeRunner] Validating C# code");
+            string raw;
+            string mode = NormalizeMode(ctx.JsonData, out raw);
+            if (mode == "invalid") return InvalidMode(raw);
+            if (mode == "none") return ModeRequired("validate");
+            if (mode == "runtime")
+            {
+                McpLogger.Log("[CodeRunner] mode=runtime: validating C# snippet in memory");
+                return RunRuntime(ctx.JsonData, false);
+            }
+            McpLogger.Log("[CodeRunner] mode=dll: validating C# code via AssemblyBuilder");
             // 为C#代码验证设置超时时间（30秒）
             return ctx.AsyncReturn(ValidateCodeCoroutine(ctx.JsonData), 30f);
+        }
+
+        /// <summary>
+        /// 探测内存编译器。mode=none / dll 时只做类型解析，不编译；
+        /// 只有 mode=runtime 才做一次真实的最小编译探测。
+        /// </summary>
+        private object HandleProbe(StateTreeContext ctx)
+        {
+            string raw;
+            string mode = NormalizeMode(ctx.JsonData, out raw);
+            if (mode == "invalid") return InvalidMode(raw);
+
+            Type providerType;
+            Type parametersType;
+            string reason;
+            bool available = RuntimeCodeExecutor.TryResolve(out providerType, out parametersType, out reason);
+            var patterns = ReadStringArray(ctx.JsonData, "assembly_patterns");
+            int references = available ? RuntimeCodeExecutor.CountReferences(patterns) : 0;
+
+            bool compileCheck = false;
+            string compileCheckError = "";
+            double compileCheckSeconds = 0;
+            bool compileCheckSkipped = mode != "runtime";
+            if (mode == "runtime" && available)
+            {
+                // 类型存在不代表编译器可用（Mono 的 CodeDOM 可能缺少外部 csc/mcs）。
+                try
+                {
+                    var check = RuntimeCodeExecutor.Run("return 1;", null, patterns, false, 256, false, false);
+                    compileCheck = check.Compiled;
+                    compileCheckError = check.Error;
+                    compileCheckSeconds = check.CompileSeconds;
+                }
+                catch (Exception ex)
+                {
+                    compileCheckError = ex.GetType().FullName + ": " + ex.Message;
+                }
+            }
+
+            return Response.Success("代码执行引擎探测", new
+            {
+                operation = "probe",
+                mode = mode,
+                compiled = compileCheck,
+                executed = false,
+                compile_check = compileCheck,
+                compile_check_skipped = compileCheckSkipped,
+                compile_check_error = compileCheckError,
+                compile_check_seconds = compileCheckSeconds,
+                available = available,
+                engine = RuntimeCodeExecutor.EngineName,
+                dll_engine = "AssemblyBuilder",
+                provider_type = providerType == null ? null : providerType.FullName,
+                parameters_type = parametersType == null ? null : parametersType.FullName,
+                unity_version = Application.unityVersion,
+                clr_version = Environment.Version.ToString(),
+                default_usings = RuntimeCodeExecutor.GetDefaultUsings(),
+                default_assembly_patterns = RuntimeCodeExecutor.GetDefaultAssemblyPatterns(),
+                reference_count = references,
+                reason = reason,
+                hint = compileCheckSkipped ? "显式传 mode=runtime 才会进行真实编译探测。" : "",
+                fallback_mode = "dll"
+            });
+        }
+
+        /// <summary>
+        /// runtime 模式：内存编译（可选执行）C# 语句片段，不落盘、不进工程、不触发 Unity 编译管线。
+        /// </summary>
+        private object RunRuntime(JsonClass args, bool execute)
+        {
+            string code = args["code"] == null ? null : args["code"].Value;
+            bool captureLogs = BoolArg(args, "capture_logs", true);
+            bool includeSource = BoolArg(args, "include_source", false);
+            int maxLogChars = IntArg(args, "max_log_chars", RuntimeCodeExecutor.MaxLogCharsDefault);
+            if (maxLogChars < 256) maxLogChars = 256;
+            if (maxLogChars > 65536) maxLogChars = 65536;
+
+            // includes 在 dll 模式是包装 using；runtime 模式复用为追加命名空间。
+            var usings = ReadStringArray(args, "includes");
+            var patterns = ReadStringArray(args, "assembly_patterns");
+
+            RuntimeCodeExecutor.Result result;
+            try
+            {
+                result = RuntimeCodeExecutor.Run(code, usings, patterns,
+                    captureLogs, maxLogChars, execute, includeSource);
+            }
+            catch (Exception ex)
+            {
+                McpLogger.LogError("[CodeRunner] runtime mode unexpected failure: " + ex.Message);
+                return Response.Error("内存编译执行发生未处理异常", new
+                {
+                    mode = "runtime",
+                    operation = execute ? "execute" : "validate",
+                    error = ex.GetType().FullName + ": " + ex.Message,
+                    fallback_mode = "dll"
+                });
+            }
+
+            var data = new
+            {
+                mode = "runtime",
+                operation = execute ? "execute" : "validate",
+                engine = result.Engine,
+                compiled = result.Compiled,
+                success = result.Success,
+                executed = result.Executed,
+                return_value = result.ReturnValue,
+                logs = result.Output,
+                log_count = result.LogCount,
+                errors = result.Errors,
+                warnings = result.Warnings,
+                error = result.Error,
+                stack_trace = result.StackTrace,
+                compile_seconds = result.CompileSeconds,
+                execute_seconds = result.ExecuteSeconds,
+                reference_count = result.ReferenceCount,
+                source = includeSource ? result.Source : null,
+                fallback_mode = "dll"
+            };
+
+            if (!result.Compiled || (!string.IsNullOrEmpty(result.Error) && execute && !result.Success))
+            {
+                return Response.Error(string.IsNullOrEmpty(result.Error)
+                    ? "内存编译失败"
+                    : result.Error, data);
+            }
+
+            if (execute && !result.Success)
+                return Response.Error("代码片段执行失败", data);
+
+            return Response.Success(execute
+                ? "代码片段执行完成"
+                : "代码片段编译校验通过（未执行）", data);
+        }
+
+        private static string[] ReadStringArray(JsonClass args, string key)
+        {
+            if (args == null) return new string[0];
+            var node = args[key] as JsonArray;
+            if (node == null) return new string[0];
+            var list = node.ToStringList();
+            return list == null ? new string[0] : list.ToArray();
+        }
+
+        private static bool BoolArg(JsonClass args, string key, bool fallback)
+        {
+            if (args == null) return fallback;
+            var node = args[key];
+            return node == null ? fallback : node.AsBoolDefault(fallback);
+        }
+
+        private static int IntArg(JsonClass args, string key, int fallback)
+        {
+            if (args == null) return fallback;
+            var node = args[key];
+            return node == null ? fallback : node.AsIntDefault(fallback);
         }
 
         // --- 异步执行方法 ---

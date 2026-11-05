@@ -16,7 +16,7 @@ Unity Skilled MCP runs its service inside the Unity Editor and exposes a large s
 - **Tools, prompts, and resources:** browse each catalog, retrieve a tagged group, or request a task-specific mixed set.
 - **Automatic local connection discovery:** Unity writes the active service information to `~/.unity-mcp/skill.ini` whenever the service starts successfully.
 - **Configurable detail limits:** the per-request item limit is configurable in Unity; the response is also capped at 64 KiB, and full-catalog detail requests are rejected.
-- **JavaScript or Python:** the Skill includes equivalent dependency-free clients. JavaScript is the default.
+- **Single runtime:** one dependency-free Node.js 18+ client (`scripts/unity_mcp.js`); no language selection in Unity or in the INI.
 - **Legacy MCP compatibility:** existing clients can continue using the original MCP list, call, prompt, and resource operations.
 - **Engine-level control:** build the player, switch platforms, manage build scenes, read or change engine settings, inspect compilation, and control the editor selection and active tool.
 - **Unity-safe execution:** editor operations are dispatched through the Unity Editor's main-thread execution flow.
@@ -25,7 +25,7 @@ Unity Skilled MCP runs its service inside the Unity Editor and exposes a large s
 
 ```text
 AI agent
-  └─ Unity Skill (SKILL.md + unity_mcp.js / unity_mcp.py)
+  └─ Unity Skill (SKILL.md + unity_mcp.js)
        ├─ Reads ~/.unity-mcp/skill.ini and validates the active service
        ├─ Discovers short summaries and selected capability definitions over HTTP
        └─ Invokes the requested operation through the client script
@@ -67,12 +67,11 @@ Ask the agent to use the Unity Skill, then describe the Unity task in natural la
 
 ## Unity settings and connection file
 
-The MCP Status window exposes the client runtime and the maximum number of capability details returned by one request. These settings are published on the next successful service start.
+The MCP Status window exposes the maximum number of capability details returned by one request. The setting is published on the next successful service start.
 
 | Setting | Values | Default / behavior |
 | --- | --- | --- |
 | Service port | Valid port number | `8000` |
-| Client script language | `js` or `python` | `js`; selects the client runtime the Skill should use |
 | Maximum details per request | Non-negative integer | `32`; `0` removes the item-count limit |
 
 The response-size limit remains **65,536 UTF-8 bytes** even when the item-count limit is `0`. A request that selects every available capability is rejected. The service does not silently truncate an oversized result.
@@ -86,11 +85,10 @@ port=8000
 project_path=/path/to/UnityProject
 process_id=12345
 updated_at=2026-10-30T02:00:00.0000000Z
-script_language=js
 max_details=32
 ```
 
-The file contains local connection metadata and runtime settings, but **does not publish `mcp_url`**. The Skill client reads the file dynamically on each command and validates the service before proceeding; it does not scan ports or automatically replay failed write operations.
+The file contains local connection metadata and startup settings, but **does not publish `mcp_url`** and no longer publishes a script language. The Skill client reads the file dynamically on each command and validates the service before proceeding; it does not scan ports or automatically replay failed write operations.
 
 ## How progressive discovery works
 
@@ -138,22 +136,7 @@ The tag in `details --tag` must come from the live group catalog. A `selection.j
 ]
 ```
 
-Set `script_language=python` in Unity to use the equivalent Python client instead:
-
-```sh
-python scripts/unity_mcp.py discover
-python scripts/unity_mcp.py groups
-python scripts/unity_mcp.py details --tag hierarchy-management
-python scripts/unity_mcp.py schema hierarchy_search
-python scripts/unity_mcp.py schemas hierarchy_search hierarchy_apply
-python scripts/unity_mcp.py call hierarchy_search --args-file args.json
-python scripts/unity_mcp.py find camera --kind tools
-python scripts/unity_mcp.py prompt NAME
-python scripts/unity_mcp.py resource URI
-python scripts/unity_mcp.py calls --calls-file steps.json
-```
-
-The clients require no third-party packages: Node.js 18+ or Python 3.8+ is required, according to the selected runtime. Consult [`SKILL.md`](unity-package/Skills/unity3d-skill/SKILL.md) for the complete command reference, argument formats, failure behavior, and safety rules.
+The client requires Node.js 18+ and no third-party packages. Consult [`SKILL.md`](unity-package/Skills/unity3d-skill/SKILL.md) for the complete command reference, argument formats, failure behavior, and safety rules.
 
 ### Using prompts, resources and batches
 
@@ -161,57 +144,39 @@ The clients require no third-party packages: Node.js 18+ or Python 3.8+ is requi
 
 `calls` accepts an array of `{ "name": "...", "arguments": {} }` (inline, from a file, or from stdin) and executes them in order, one `tools/call` each. It shares the `max_details` limit (default `32`, `0` means unlimited) and a 64 KiB request cap, and **stops at the first failure** without sending the remaining steps. The result still contains every completed step plus `stopped_at` and `exit_code`, since earlier writes may already have taken effect — inspect the editor state before replaying anything. `find` is a purely local, case-insensitive filter over catalog summaries (name, URI, description, tags); it never fetches definitions or content.
 
-## Engine operations
+### Use the client as a library
 
-`engine_control` groups engine-level work that is not about editing one specific asset:
+The script is dual-purpose: the CLI above and a zero-dependency CommonJS library. `require(...)` it and call functions with native objects instead of assembling JSON strings or spawning a process — useful when an agent wants to script a multi-step workflow itself. Library calls go through the same `execute()` path as the CLI, so INI/discovery validation, `max_details`, the 64 KiB cap, catalog whitelists, no-retry and exit codes are all preserved.
 
-| Action | Purpose |
-| --- | --- |
-| `get_info` | Unity version, platform, build target, play/compile state, active tool, active scene, focused window |
-| `get_selection` / `set_selection` / `clear_selection` | Read or replace the editor selection by instance ID or asset/scene path |
-| `set_active_tool` | Switch the Scene view tool: `move`, `rotate`, `scale`, `rect`, `transform`, `custom`, `view`, `none` |
-| `get_build_settings` / `set_build_scenes` / `set_build_target` | Inspect or edit the build scene list and switch the active platform |
-| `build_player` / `get_build_status` | Queue or run a player build, then poll the result |
-| `get_project_settings` / `set_project_settings` | Player, time, quality, physics, serialization, and enter-play-mode settings |
-| `get_compilation` / `recompile` | Read the latest compiler messages or request script compilation |
-| `undo` / `redo` / `step` | Undo, redo, or advance one frame while paused |
-
-Builds run on the Unity main thread. `build_player` queues a job and returns immediately by default; poll `get_build_status` for the final result, or pass `wait` to block. Do not build or switch platforms while in play mode. Build output paths may be absolute or relative to the project root.
-
-```sh
-node scripts/unity_mcp.js call engine_control --args '{"action":"get_info"}'
-node scripts/unity_mcp.js call engine_control --args '{"action":"get_build_settings"}'
-node scripts/unity_mcp.js call engine_control --args '{"action":"build_player","output_path":"Builds/Windows/Game.exe","development":true}'
-node scripts/unity_mcp.js call engine_control --args '{"action":"get_build_status"}'
-node scripts/unity_mcp.js call engine_control --args '{"action":"set_project_settings","color_space":"linear","quality_level":2}'
+```js
+const unity = require('./scripts/unity_mcp.js');
+unity.configure({ timeout: 15 });
+const catalog = await unity.listCapabilities('tools');
+const { name, args } = pickFrom(catalog, await unity.getSchema(name));
+const summary = await unity.workflowContext('TASK', 'DESCRIPTION', async wf => {
+  await unity.callSkill(name, args);
+  return wf.summary();
+});
 ```
 
-## Animation, UI, camera, effects, tests and modeling
+`callSkill` returns the MCP `result`; `callTool` returns the full JSON-RPC envelope; `*Text` / `*Json` helpers extract and parse `content[*].text`. A workflow context only records calls (`wf.calls`, `wf.summary()`), never retries or rolls back — a failed call rejects as usual. `pickFrom` is pseudocode for choosing a tool and its arguments from the live catalog and schema, not a library function. Tool names must come from `find` / `list --kind tools`. `new Client({...})` allows multiple connections; all methods are async and errors are `ClientError` with a `.code`. See [`SKILL.md`](unity-package/Skills/unity3d-skill/SKILL.md) for the full API table and safety rules.
 
-These tools close the gaps that plain GameObject/asset editing does not cover. All of them follow the same pattern: read one schema, then call with an `action`.
+On Windows Git Bash, MSYS rewrites `/ROUTE` arguments into local paths. The client now restores those paths via `EXEPATH` and also accept bare routes (`request groups`); absolute URLs and CMD / PowerShell / POSIX shells are unchanged.
 
-| Tool | Actions | Notes |
-| --- | --- | --- |
-| `edit_animator` | `create`, `get_info`, `list_states`, `add_parameter`, `remove_parameter`, `add_layer`, `remove_layer`, `add_state`, `remove_state`, `set_state`, `set_default_state`, `add_transition`, `set_transition`, `remove_transition`, `add_blend_tree`, `add_blend_tree_child`, `play`, `crossfade`, `set_parameter`, `get_runtime` | Animator Controller structure (layers, states, transitions, parameters, 1D blend trees) plus runtime Animator control. Complements `edit_anim_clip`, which edits clips. |
-| `ui_toolkit` | `create_uxml`, `read_uxml`, `write_uxml`, `add_element`, `set_element`, `remove_element`, `list_elements`, `create_uss`, `read_uss`, `append_uss`, `create_panel_settings`, `update_panel_settings`, `attach_document`, `detach_document`, `get_document`, `screenshot` | UXML/USS are read and written as text, so it works on any Unity version. `ugui_layout` remains the UGUI/Canvas tool. |
-| `manage_camera` | `create`, `list`, `get`, `set`, `look_at`, `screenshot`, `screenshot_multiview`, `cm_status`, `cm_create`, `cm_set`, `cm_brain` | Scene cameras plus Cinemachine virtual cameras when the package is installed. |
-| `edit_effects` | `create_line`, `set_line_points`, `set_line_style`, `get_line_info`, `create_trail`, `set_trail_style`, `get_trail_info`, `vfx_list`, `vfx_info`, `vfx_set`, `vfx_event`, `vfx_control` | LineRenderer/TrailRenderer directly; VFX Graph parameters, events and playback. `edit_particle_system` stays the classic particle tool. |
-| `run_tests` | `run`, `get_status`, `clear` | Unity Test Runner in Edit or Play mode with name/category/assembly filters; `run` returns immediately, poll `get_status`. |
-| `edit_probuilder` | `status`, `create_shape`, `get_mesh_info`, `extrude_faces`, `delete_faces`, `set_smoothing` | Only usable when `com.unity.probuilder` is installed; call `status` first. |
+## Tool use is discovery-driven
 
-Transition conditions use `NAME:MODE:THRESHOLD`, for example `["Speed:Greater:0.5","Jump:If:0"]`, where mode is `If`, `IfNot`, `Greater`, `Less`, `Equals` or `NotEqual`.
+The Skill does **not** document any concrete Unity tool, action, parameter or mode. Which tools are registered depends on the Unity project, its version, installed packages and the service configuration, and it can change between sessions. A name seen in older docs, examples or source files is not a promise that it exists in the running service.
+
+Every task follows the same order: `discover` → `groups` / `list` / `find` → `details` / `schema` / `schemas` → `call` / `calls`. Names, URIs, tags, parameters and allowed values must all come from the live service response for that task. If a tool is missing, disabled, or reports that an optional package is not installed, report it and stop — do not guess a replacement name or retry with different arguments.
+
+The package source contains tool categories for engine operations, animation, UI Toolkit, cameras, effects, Test Runner, modeling and C# execution, among others. That inventory is a description of the source tree, **not** a runtime guarantee; see [`SKILL.md`](unity-package/Skills/unity3d-skill/SKILL.md) for the full contract. Optional packages are resolved through reflection, so the package still compiles when they are absent and only the affected tool returns an explicit `not installed` error.
 
 ```sh
-node scripts/unity_mcp.js call edit_animator --args '{"action":"add_state","path":"Assets/Anim/Player.controller","state":"Idle","motion":"Assets/Anim/Idle.anim"}'
-node scripts/unity_mcp.js call edit_animator --args '{"action":"add_transition","path":"Assets/Anim/Player.controller","state":"Idle","target_state":"Run","conditions":["Speed:Greater:0.1"]}'
-node scripts/unity_mcp.js call ui_toolkit --args '{"action":"set_element","path":"Assets/UI/Main.uxml","name":"title","attribute":"text","value":"Main Menu"}'
-node scripts/unity_mcp.js call manage_camera --args '{"action":"screenshot","name":"Main Camera","save_path":"Assets/Screenshots/main.png"}'
-node scripts/unity_mcp.js call edit_effects --args '{"action":"create_line","name":"Laser","points":[[0,0,0],[0,0,10]],"color":"#FF4040FF","width":0.05}'
-node scripts/unity_mcp.js call run_tests --args '{"action":"run","mode":"EditMode","category_names":["Fast"]}'
-node scripts/unity_mcp.js call run_tests --args '{"action":"get_status"}'
+node scripts/unity_mcp.js discover
+node scripts/unity_mcp.js list --kind tools
+node scripts/unity_mcp.js schema NAME_FROM_LIST
+node scripts/unity_mcp.js call NAME_FROM_LIST --args-file args.json
 ```
-
-Optional packages (Cinemachine, VFX Graph, ProBuilder, Test Framework) are resolved through reflection at runtime, so the package compiles and the other tools keep working when they are absent. Each tool returns an explicit `not installed` error instead of failing at compile time.
 
 ## HTTP discovery API
 
@@ -248,7 +213,7 @@ Relevant implementation areas:
 unity-package/Editor/Connect/       Unity service and discovery implementation
 unity-package/Editor/GUI/           MCP status window and controls
 unity-package/Editor/Model/         Local service settings
-unity-package/Skills/unity3d-skill/ Skill instructions and JS/Python clients
+unity-package/Skills/unity3d-skill/ Skill instructions and the JS client
 unity-package/Skills/unity3d-skill/tests/  Client regression tests
 ```
 
@@ -258,7 +223,6 @@ From `unity-package/Skills/unity3d-skill/`:
 
 ```sh
 node --test tests/test_unity_mcp.js
-python -B -m unittest discover -s tests -p 'test_*.py'
 ```
 
 ## Troubleshooting

@@ -523,16 +523,10 @@ namespace UniMcp
             var time = new DateTime(2026, 10, 29, 1, 2, 3, DateTimeKind.Utc);
             var info = new McpConnectionInfo(new[] { "http://127.0.0.1:8000/", "http://localhost:8000/", "http://+:8000/" }, "E:/工程", 1234, time);
             Check(info.BaseUrl == "http://localhost:8000", "优先显式 localhost 绑定");
-            Check(info.ScriptLanguage == "js", "客户端默认 JavaScript");
             Check(info.MaxDetails == 32 && info.ToIni().Contains("\nmax_details=32\n")
                 && Json.Parse(info.ToJson())["max_details"].AsInt == 32, "连接默认32及INI/discovery默认值一致");
-            Check(info.ToIni().Contains("script_language=js\n"), "INI 发布默认 JS");
-            Check(Json.Parse(info.ToJson())["script_language"].Value == "js", "HTTP 发布默认 JS");
-            var python = new McpConnectionInfo(new[] { "http://localhost:8000/" }, "E:/工程", 1234, time, "python");
-            Check(python.ToIni().Contains("script_language=python\n"), "INI 发布 Python");
-            Check(Json.Parse(python.ToJson())["script_language"].Value == "python", "HTTP 发布 Python");
-            Check(McpLocalSettings.NormalizeScriptLanguage(null) == "js", "旧配置默认 JS");
-            Check(McpLocalSettings.NormalizeScriptLanguage("invalid") == "js", "无效配置回退 JS");
+            Check(!info.ToIni().Contains("script_language"), "INI 不再发布脚本语言");
+            Check(!info.ToJson().Contains("script_language"), "discovery 不再发布脚本语言");
             var loopback = new McpConnectionInfo(new[] { "http://127.0.0.1:8001/" }, "E:/工程", 1234, time);
             Check(loopback.BaseUrl == "http://127.0.0.1:8001", "仅 IPv4 绑定时发布可用地址");
             var wildcard = new McpConnectionInfo(new[] { "http://+:8002/" }, "E:/工程", 1234, time);

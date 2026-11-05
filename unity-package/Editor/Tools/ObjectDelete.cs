@@ -14,9 +14,9 @@ namespace UniMcp.Tools
     /// Supports GameObjects, assets, and other Unity objects.
     /// Target tree: IObjectSelector handles target location
     /// Action tree: 'confirm' parameter determines confirmation behavior:
-    ///   - confirm=true: Always shows confirmation dialog before deletion
-    ///   - confirm=false/unset: Asset deletion requires confirmation, scene object deletion is direct
-    /// Uses coroutines with EditorUtility.DisplayDialog for interactive user confirmation.
+    ///   - confirm=true: caller explicitly authorizes deletion, skip the modal dialog (required for unattended calls)
+    ///   - confirm=false/unset: asset deletion shows a modal confirmation dialog; scene objects are deleted directly
+    /// A modal dialog blocks the editor main thread, so unattended clients must pass confirm=true.
     /// 对应方法名: object_delete
     /// </summary>
     [ToolName("object_delete", "Resource Management", "资源管理")]
@@ -46,8 +46,8 @@ namespace UniMcp.Tools
                 new MethodStr("instance_id", L.T("Object instance ID", "对象实例ID"))
                     .AddExample("-2524"),
                 
-                // Confirmation dialog control
-                new MethodBool("confirm", L.T("Force confirmation dialog: true=always confirm, false/unset=smart confirm (≤3 auto, >3 dialog)", "强制确认对话框：true=总是确认，false/未设置=智能确认（≤3自动，>3对话框）"))
+                // Confirmation control: true means the caller has explicitly authorized the deletion
+                new MethodBool("confirm", L.T("Explicit authorization: true=delete directly without a modal dialog (needed for unattended calls); false/unset=asset deletion shows a confirmation dialog, scene objects are deleted directly", "显式授权：true=跳过模态确认框直接删除（无人值守调用必须用此项）；false/未设置=删除资源时弹出确认框，场景对象直接删除"))
             };
         }
 
@@ -74,7 +74,8 @@ namespace UniMcp.Tools
         }
 
         /// <summary>
-        /// 异步处理需要用户确认的删除操作（仅用于资源文件删除）
+        /// 异步处理调用方已显式授权（confirm=true）的删除：场景对象与资源都直接删除，不弹模态框。
+        /// 模态框会阻塞 Editor 主线程，无人值守的 MCP 调用必须走这条路径。
         /// </summary>
         private IEnumerator HandleConfirmedDeleteActionAsync(StateTreeContext ctx)
         {
@@ -85,42 +86,13 @@ namespace UniMcp.Tools
                 yield break;
             }
 
-            // 检查是否是资源文件删除
-            bool isAssetDeletion = IsAssetDeletion(ctx);
-            if (!isAssetDeletion)
-            {
-                // 不是资源删除，直接删除Object
-                var result = DeleteSingleObject(target);
-                yield return result;
-                yield break;
-            }
-
-            // 资源删除需要确认对话框
-            string confirmationMessage = $"Are you sure you want to delete the asset '{target.name}' ({target.GetType().Name})?\n\nThis action cannot be undone.";
-
-            bool confirmed = EditorUtility.DisplayDialog(
-                "Confirm Asset Deletion",
-                confirmationMessage,
-                "Delete Asset",
-                "Cancel"
-            );
-
-            if (!confirmed)
-            {
-                McpLogger.Log($"[ObjectDelete] User cancelled asset deletion for Object '{target.name}'");
-                yield return Response.Success($"Asset deletion cancelled by user. Object '{target.name}' was not deleted.", new { cancelled = true, target_name = target.name });
-                yield break;
-            }
-
-            McpLogger.Log($"[ObjectDelete] User confirmed asset deletion for Object '{target.name}'");
-
-            // 用户确认后执行删除
-            var deleteResult = DeleteSingleObject(target);
-            yield return deleteResult;
+            McpLogger.Log($"[ObjectDelete] Authorized deletion of {target.GetType().Name} '{target.name}' without dialog");
+            var result = DeleteSingleObject(target);
+            yield return result;
         }
 
         /// <summary>
-        /// 处理需要用户确认的删除操作
+        /// 处理调用方已显式授权的删除操作
         /// </summary>
         private object HandleConfirmedDeleteAction(StateTreeContext ctx)
         {

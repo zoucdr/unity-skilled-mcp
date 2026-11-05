@@ -9,6 +9,7 @@ const path = require('node:path');
 const { spawn } = require('node:child_process');
 
 const cli = path.resolve(__dirname, '../scripts/unity_mcp.js');
+const lib = require(cli);
 
 async function fixture(t) {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'unity-mcp-js-'));
@@ -145,18 +146,16 @@ function failure(result, code) {
   assert.doesNotMatch(result.stderr, /\n\s+at /);
 }
 
-test('discover 保留语言和未知字段；旧响应无语言字段仍可用', async t => {
+test('discover 保留未知扩展字段；旧 INI 的 script_language 被忽略', async t => {
   const f = await fixture(t);
   assert.equal(success(await f.run(['discover'])).port, f.port);
-  for (const language of ['js', 'python']) {
-    await f.writeIni('[unity3d-skilled-mcp]\nbase_url=' + f.base + '\nport=' + f.port + '\nscript_language=' + language + '\nfuture_setting=保留\n');
-    f.state.discovery = { script_language: language, extension: { version: 2 } };
-    const result = await f.run(['discover']);
-    assert.deepEqual(success(result).extension, { version: 2 });
-    assert.equal(success(result).script_language, language);
-    assert.match(result.stderr, /连接信息：/);
-    assert.match(result.stderr, /测试项目/);
-  }
+  await f.writeIni('[unity3d-skilled-mcp]\nbase_url=' + f.base + '\nport=' + f.port + '\nscript_language=python\nfuture_setting=保留\n');
+  f.state.discovery = { extension: { version: 2 } };
+  const result = await f.run(['discover']);
+  assert.deepEqual(success(result).extension, { version: 2 });
+  assert.equal(success(result).script_language, undefined);
+  assert.match(result.stderr, /连接信息：/);
+  assert.match(result.stderr, /测试项目/);
 });
 
 test('list 只取摘要；schema 按需获取并编码工具名', async t => {
@@ -888,4 +887,139 @@ test('calls 支持文件与 stdin、BOM，且 0 上限解除数量限制', async
   const unlimited = await f.run(['calls', '--calls', ten]);
   assert.equal(unlimited.code, 0, unlimited.stderr);
   assert.equal(JSON.parse(unlimited.stdout).executed, 10);
+});
+
+test('require 模块不会触发 CLI 主流程，并导出库 API', () => {
+  assert.equal(typeof lib.main, 'undefined');
+  assert.equal(typeof lib.Client, 'function');
+  assert.equal(typeof lib.callSkill, 'function');
+  assert.equal(typeof lib.workflowContext, 'function');
+  assert.equal(lib.DEFAULT_MAX_DETAILS, 32);
+});
+
+test('normalizeRequestTarget 还原 MSYS 路径、支持裸路由与绝对 URL', () => {
+  const previous = process.env.EXEPATH;
+  process.env.EXEPATH = 'C:\\PortableGit\\bin';
+  try {
+    assert.equal(lib.normalizeRequestTarget('C:/PortableGit/groups'), '/groups');
+    assert.equal(lib.normalizeRequestTarget('C:/PortableGit/capabilities/details'), '/capabilities/details');
+    assert.equal(lib.normalizeRequestTarget('C:\\PortableGit\\groups'), '/groups');
+    assert.equal(lib.normalizeRequestTarget('groups'), '/groups');
+    assert.equal(lib.normalizeRequestTarget('capabilities/details'), '/capabilities/details');
+    assert.equal(lib.normalizeRequestTarget('/groups'), '/groups');
+    assert.equal(lib.normalizeRequestTarget('http://localhost:8000/groups'), 'http://localhost:8000/groups');
+    assert.equal(lib.normalizeRequestTarget('file:///tmp/data'), 'file:///tmp/data');
+    assert.throws(() => lib.normalizeRequestTarget('//example.invalid/x'), /相对路由/);
+    assert.throws(() => lib.normalizeRequestTarget('D:/Other/groups'), /Git Bash/);
+  } finally {
+    if (previous === undefined) delete process.env.EXEPATH;
+    else process.env.EXEPATH = previous;
+  }
+});
+
+test('request 自动还原 Git Bash 转换路径并接受省略斜杠的路由', async t => {
+  const f = await fixture(t);
+  const env = { EXEPATH: 'C:\\PortableGit\\bin' };
+  success(await f.run(['request', 'C:/PortableGit/custom'], '', env));
+  assert.equal(f.requests.at(-1).url, '/custom');
+  success(await f.run(['request', 'custom'], '', env));
+  assert.equal(f.requests.at(-1).url, '/custom');
+  const before = f.requests.length;
+  const bad = await f.run(['request', 'D:/Other/custom'], '', env);
+  failure(bad, 2);
+  assert.equal(f.requests.length, before);
+  assert.match(bad.stderr, /Git Bash/);
+});
+
+test('resultText / resultJson 解析 MCP 工具结果', () => {
+  assert.equal(lib.resultText({ content: [{ type: 'text', text: '{"a":1}' }] }), '{"a":1}');
+  assert.deepEqual(lib.resultJson({ content: [{ type: 'text', text: '{"a":1}' }] }), { a: 1 });
+  assert.equal(lib.resultText({ content: [] }), '');
+  assert.throws(() => lib.resultJson({ content: [] }), /不含文本内容/);
+  assert.throws(() => lib.resultJson({ content: [{ type: 'text', text: 'oops' }] }), /不是 JSON/);
+});
+
+test('库 API：Client 与顶层函数复用 CLI 校验并可直接调用工具', async t => {
+  const f = await fixture(t);
+  const c = new lib.Client({ ini: f.ini, timeout: 5 });
+  assert.equal((await c.discover()).port, f.port);
+  assert.equal((await c.list('tools')).tools[0].name, 'demo');
+  assert.equal((await c.groups()).groups.length, 1);
+  assert.equal((await c.find('demo')).count, 1);
+  assert.equal((await c.schema('demo')).inputSchema.type, 'object');
+  assert.equal((await c.schemas(['demo'])).count, 1);
+  assert.equal((await c.details({ members: [{ kind: 'tool', name: 'demo' }] })).count, 1);
+  assert.equal((await c.details({ tag: 'hierarchy-management' })).count, 1);
+  assert.equal((await c.call('demo', { 文本: '你好' })).result.content[0].text, '完成');
+  assert.equal((await c.callSkill('demo', {})).content[0].text, '完成');
+  assert.equal(await c.callSkillText('demo', {}), '完成');
+  assert.equal((await c.prompt('foo')).result.messages.length, 1);
+  assert.equal((await c.resource('res://foo')).result.contents.length, 1);
+  assert.equal((await c.calls([{ name: 'demo', arguments: {} }])).executed, 1);
+  assert.equal((await c.request('custom')).custom, true);
+  assert.equal((await c.request('/custom', { method: 'POST', data: { a: 1 }, headers: ['X-Test: yes'] })).method, 'POST');
+  await assert.rejects(c.details(), /只能选一种/);
+  await assert.rejects(c.call('demo', { x: NaN }), /非有限数值/);
+
+  lib.configure({ ini: f.ini, timeout: 5 });
+  try {
+    assert.equal((await lib.connectionInfo()).port, f.port);
+    assert.equal((await lib.listCapabilities()).tools[0].name, 'demo');
+    assert.equal((await lib.getGroups()).groups.length, 1);
+    assert.equal((await lib.findCapabilities('demo')).count, 1);
+    assert.equal((await lib.getDetails({ members: [{ kind: 'tool', name: 'demo' }] })).count, 1);
+    assert.equal((await lib.getSchema('demo')).inputSchema.type, 'object');
+    assert.equal((await lib.getSchemas(['demo'])).count, 1);
+    assert.equal((await lib.callTool('demo', {})).result.content[0].text, '完成');
+    assert.equal(await lib.callSkillText('demo', {}), '完成');
+    assert.equal((await lib.readPrompt('foo')).result.messages.length, 1);
+    assert.equal((await lib.readResource('res://foo')).result.contents.length, 1);
+    assert.equal((await lib.callMany([{ name: 'demo', arguments: {} }])).executed, 1);
+    assert.equal((await lib.requestRoute('custom')).custom, true);
+  } finally {
+    lib.configure();
+  }
+});
+
+test('workflowContext 记录成功与失败调用，并支持省略描述', async t => {
+  const f = await fixture(t);
+  const c = new lib.Client({ ini: f.ini, timeout: 5 });
+  const summary = await lib.workflowContext('build_scene', 'Create player and camera', async wf => {
+    await c.callSkill('demo', { name: 'Player' });
+    await c.callSkillText('demo', {});
+    await c.calls([{ name: 'demo', arguments: {} }]);
+    return wf.summary();
+  });
+  assert.equal(summary.name, 'build_scene');
+  assert.equal(summary.description, 'Create player and camera');
+  assert.equal(summary.calls, 3);
+  assert.equal(summary.succeeded, 3);
+  assert.ok(summary.duration_ms >= 0);
+
+  f.state.failToolName = 'demo';
+  const failing = await lib.workflowContext('failing', async wf => {
+    await assert.rejects(c.callSkill('demo', {}), /MCP isError/);
+    return wf;
+  });
+  assert.equal(failing.summary().calls, 1);
+  assert.equal(failing.summary().failed, 1);
+});
+
+test('库模式默认静默 stderr，不输出连接信息', async t => {
+  const f = await fixture(t);
+  const code = 'const u=require(' + JSON.stringify(cli) + ');'
+    + 'u.configure({ini:' + JSON.stringify(f.ini) + ',timeout:5});'
+    + 'u.connectionInfo().then(()=>console.log("done"));';
+  const result = await new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, ['-e', code], { stdio: ['ignore', 'pipe', 'pipe'] });
+    let stdout = '';
+    let stderr = '';
+    child.stdout.setEncoding('utf8').on('data', text => { stdout += text; });
+    child.stderr.setEncoding('utf8').on('data', text => { stderr += text; });
+    child.on('error', reject);
+    child.on('close', value => resolve({ code: value, stdout, stderr }));
+  });
+  assert.equal(result.code, 0, result.stderr);
+  assert.equal(result.stdout.trim(), 'done');
+  assert.equal(result.stderr, '');
 });

@@ -95,7 +95,7 @@ namespace UniMcp
             var info = new McpConnectionInfo(listener.Prefixes.Cast<string>(),
                 Path.GetDirectoryName(UnityEngine.Application.dataPath),
                 System.Diagnostics.Process.GetCurrentProcess().Id, DateTime.UtcNow,
-                McpLocalSettings.Instance.ScriptLanguage, startedDiscoveryMaxDetails);
+                maxDetails: startedDiscoveryMaxDetails);
             discoveryJson = info.ToJson();
             try
             {
@@ -664,11 +664,10 @@ namespace UniMcp
         internal string ProjectPath { get; }
         internal int ProcessId { get; }
         internal string UpdatedAt { get; }
-        internal string ScriptLanguage { get; }
         internal int MaxDetails { get; }
 
         internal McpConnectionInfo(IEnumerable<string> boundPrefixes, string projectPath, int processId, DateTime updatedAt,
-            string scriptLanguage = "js", int maxDetails = McpDiscoverySnapshot.DefaultMaxDetails)
+            int maxDetails = McpDiscoverySnapshot.DefaultMaxDetails)
         {
             var prefixes = boundPrefixes.ToArray();
             // 优先选择显式成功绑定的 localhost，其次 127.0.0.1；通配监听只发布回环地址。
@@ -685,7 +684,6 @@ namespace UniMcp
             ProjectPath = projectPath;
             ProcessId = processId;
             UpdatedAt = updatedAt.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture);
-            ScriptLanguage = McpLocalSettings.NormalizeScriptLanguage(scriptLanguage);
             MaxDetails = McpDiscoverySnapshot.NormalizeMaxDetails(maxDetails);
         }
 
@@ -697,7 +695,6 @@ namespace UniMcp
                 { "project_path", new JsonData(ProjectPath) },
                 { "process_id", new JsonData(ProcessId) },
                 { "updated_at", new JsonData(UpdatedAt) },
-                { "script_language", new JsonData(ScriptLanguage) },
                 { "groups_url", new JsonData(BaseUrl + "/groups") },
                 { "prompts_url", new JsonData(BaseUrl + "/prompts") },
                 { "resources_url", new JsonData(BaseUrl + "/resources") },
@@ -720,7 +717,6 @@ namespace UniMcp
                 + "project_path=" + projectPath + "\n"
                 + "process_id=" + ProcessId.ToString(CultureInfo.InvariantCulture) + "\n"
                 + "updated_at=" + UpdatedAt + "\n"
-                + "script_language=" + ScriptLanguage + "\n"
                 + "max_details=" + MaxDetails.ToString(CultureInfo.InvariantCulture) + "\n";
         }
 

@@ -7,6 +7,7 @@ using UnityEditor.Build;
 using UnityEditor.Build.Reporting;
 using UnityEditor.Compilation;
 using UnityEditor.SceneManagement;
+using UnityEditorInternal;
 using UnityEngine;
 using UniMcp.Models;
 
@@ -237,7 +238,7 @@ namespace UniMcp.Tools
                     is_paused = EditorApplication.isPaused,
                     is_compiling = EditorApplication.isCompiling,
                     is_updating = EditorApplication.isUpdating,
-                    is_focused = EditorApplication.isFocused,
+                    is_focused = InternalEditorUtility.isApplicationActive,
                     script_compilation_failed = EditorUtility.scriptCompilationFailed,
                     active_build_target = EditorUserBuildSettings.activeBuildTarget.ToString(),
                     active_tool = UnityEditor.Tools.current.ToString(),

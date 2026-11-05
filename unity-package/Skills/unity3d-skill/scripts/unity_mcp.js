@@ -8,12 +8,21 @@ const path = require('node:path');
 const http = require('node:http');
 const https = require('node:https');
 const { TextDecoder } = require('node:util');
+const { AsyncLocalStorage } = require('node:async_hooks');
 
 class ClientError extends Error {
   constructor(message, code) {
     super(message);
     this.code = code;
   }
+}
+
+// CLI 按原样打印连接信息；作为库被 import 时默认静默，避免程序化循环刷屏。
+const quietStorage = new AsyncLocalStorage();
+const workflowStorage = new AsyncLocalStorage();
+
+function logInfo(message) {
+  if (!quietStorage.getStore()) console.error(message);
 }
 
 function checkedUrl(value) {
@@ -33,6 +42,48 @@ function checkedUrl(value) {
 
 function origin(value) {
   return checkedUrl(value).origin;
+}
+
+// Git Bash / MSYS 在调用 Windows 原生程序时会把以 / 开头的参数
+// 转成 <Git 安装根>/<原路由>，例如 /groups -> C:/.../PortableGit/groups。
+// EXEPATH 指向 <Git 安装根>/bin，据此可精确还原，而不误判合法的绝对 URL。
+function msysRoot() {
+  const exe = process.env.EXEPATH;
+  if (!exe) return null;
+  const root = exe.replace(/\\/g, '/').replace(/\/+$/, '')
+    .replace(/\/usr\/bin$/i, '').replace(/\/bin$/i, '');
+  return /^[A-Za-z]:/.test(root) ? root : null;
+}
+
+const BARE_ROUTE = /^[A-Za-z0-9._~%!$&'()*+,;=@-]+(?:\/[A-Za-z0-9._~%!$&'()*+,;=@-]*)*(?:\?[A-Za-z0-9._~%!$&'()*+,;=:@/?-]*)?$/u;
+const BAD_ROUTE_CHARS = /[\s\u0000-\u001f\u007f\\#]/u;
+
+function normalizeRequestTarget(target) {
+  if (typeof target !== 'string' || !target) return target;
+  // 绝对 http/https 地址原样交给 checkedUrl（含凭据、片段等非法情形由它拒绝）。
+  if (/^https?:\/\//i.test(target)) return target;
+  // 显式相对路由：禁止 // 协议相对地址与空白/控制/反斜杠/片段。
+  if (target.startsWith('/')) {
+    if (target.startsWith('//') || BAD_ROUTE_CHARS.test(target)) {
+      throw new ClientError('相对路由只能以单个 / 开头，且不含空白、反斜杠或片段。', 2);
+    }
+    return target;
+  }
+  // 被 MSYS 转换过的本地路径：按 EXEPATH 精确剥离根前缀，还原成 /ROUTE。
+  if (/^[A-Za-z]:[\\/]/.test(target)) {
+    const normalized = target.replace(/\\/g, '/');
+    const root = msysRoot();
+    if (root && normalized.toLowerCase().startsWith(root.toLowerCase() + '/')) {
+      const route = normalized.slice(root.length);
+      if (!BAD_ROUTE_CHARS.test(route)) return route;
+    }
+    throw new ClientError('请求地址看起来是 Git Bash 自动转换的本地路径（' + target
+      + '）；请改用省略前导斜杠的路由名、绝对 http/https URL，或设置 MSYS2_ARG_CONV_EXCL="*"。', 2);
+  }
+  // 省略前导斜杠的裸路由名不会触发 shell 路径转换。
+  if (BARE_ROUTE.test(target)) return '/' + target;
+  // 其它形态（file://、ftp:// 等）保持原样，由 checkedUrl 统一拒绝。
+  return target;
 }
 
 function decode(buffer) {
@@ -221,8 +272,8 @@ async function discover(ini, timeout) {
   }
   // 老服务缺字段时使用 INI；两处都缺失才采用默认值，不抬高服务显式限制。
   if (!Object.hasOwn(info, 'max_details')) info.max_details = iniLimit ?? DEFAULT_MAX_DETAILS;
-  // 原样保留 script_language 及将来扩展的字段，不据此执行任何命令。
-  console.error('连接信息：' + JSON.stringify(info));
+  // 原样保留扩展字段；旧 INI 中可能残留 script_language，客户端不据此选择解释器或执行命令。
+  logInfo('连接信息：' + JSON.stringify(info));
   return info;
 }
 
@@ -379,7 +430,8 @@ function help(command) {
     + (usage[command] || 'discover|groups|list|find|details|schema|schemas|call|prompt|resource|calls|request')
     + '\n默认 INI：~/.unity-mcp/skill.ini；超时：15 秒（正有限数）。'
     + '\n每次读取 INI 并验证 discovery；不重试、不跟随重定向，验证 TLS。'
-    + '\nJSON 文件/标准输入支持 UTF-8 BOM；call 默认传 {}，request 支持服务路由或授权的绝对 HTTP URL。'
+    + '\nJSON 文件/标准输入支持 UTF-8 BOM；call 默认传 {}；request 支持 /ROUTE、省略斜杠的路由名或授权的绝对 HTTP URL（Git Bash 路径转换自动还原）。'
+    + '\n本文件也可 require 作为库使用（callSkill / workflowContext 等），详见 SKILL.md。'
     + '\n-h / --help 显示帮助；各子命令可用 --help 查看选项。'
     + '\n退出码：0 成功；2 参数/配置；3 连接/TLS/超时；4 HTTP；5 响应格式；6 MCP 执行失败；130 中断。';
 }
@@ -446,6 +498,8 @@ function parseArgs(argv) {
 }
 
 async function execute(args) {
+  // 路由规范化在 discovery 之前完成；非法输入不产生任何网络请求。
+  if (args.command === 'request') args.target = normalizeRequestTarget(args.target);
   let payload = null;
   const headers = Object.create(null);
   if (['call', 'request'].includes(args.command)) {
@@ -488,7 +542,7 @@ async function execute(args) {
     const result = await requestHttp(base + '/groups', args.timeout);
     if (!isObject(result) || !Array.isArray(result.groups) || !responseDetailsLimit(result, info.max_details)
         || result.max_response_bytes !== MAX_RESPONSE_BYTES) throw new ClientError('groups 响应格式或限制无效。', 5);
-    console.error('组详情数量限制：' + (info.max_details === 0 ? '不限数量' : info.max_details) + '；仍受 65536 字节与禁止全集规则约束。');
+    logInfo('组详情数量限制：' + (info.max_details === 0 ? '不限数量' : info.max_details) + '；仍受 65536 字节与禁止全集规则约束。');
     return result;
   }
   if (args.command === 'list') {
@@ -581,7 +635,7 @@ async function execute(args) {
         break;
       }
     }
-    console.error('批量调用：已执行 ' + steps.length + '/' + payload.length + ' 步'
+    logInfo('批量调用：已执行 ' + steps.length + '/' + payload.length + ' 步'
       + (stoppedAt === null ? '，全部完成。' : ' 后停止；已生效的写操作不可盲目重放。'));
     return { steps, executed: steps.length, total: payload.length, stopped_at: stoppedAt, exit_code: exitCode };
   }
@@ -609,8 +663,198 @@ async function main() {
   }
 }
 
-process.once('SIGINT', () => {
-  console.error('已中断；未重试，写操作结果可能未知。');
-  process.exit(130);
-});
-main();
+// ---------------------------------------------------------------------------
+// 作为代码库使用：require('../scripts/unity_mcp.js')
+// 所有库函数复用上面的 execute()，因此与 CLI 共享同一套 INI 读取、discovery
+// 校验、数量/字节上限、目录白名单、不重试与错误码，不存在两套实现。
+// ---------------------------------------------------------------------------
+
+function resultText(result) {
+  const content = isObject(result) && Array.isArray(result.content) ? result.content : [];
+  return content.filter(isObject).filter(item => typeof item.text === 'string')
+    .map(item => item.text).join('');
+}
+
+function resultJson(result) {
+  const text = resultText(result);
+  if (!text) throw new ClientError('工具结果不含文本内容。', 5);
+  try { return JSON.parse(text); }
+  catch { throw new ClientError('工具结果文本不是 JSON：' + text.slice(0, 200), 5); }
+}
+
+function recordCall(entry) {
+  const wf = workflowStorage.getStore();
+  if (wf) wf.calls.push(entry);
+}
+
+// 库参数先序列化成文本再交给 CLI 的 inputJson，从而继承其有限数/UTF-8 校验。
+function jsonSourceValue(value) {
+  let text;
+  try {
+    text = JSON.stringify(value === undefined ? null : value, (_key, item) => {
+      if (typeof item === 'number' && !Number.isFinite(item)) {
+        throw new ClientError('参数含非有限数值（NaN/Infinity）。', 2);
+      }
+      return item;
+    });
+  } catch (error) {
+    if (error instanceof ClientError) throw error;
+    throw new ClientError('参数无法序列化为 JSON：' + error.message, 2);
+  }
+  if (typeof text !== 'string') throw new ClientError('参数无法序列化为 JSON。', 2);
+  return text;
+}
+
+class Client {
+  constructor(options = {}) {
+    this.ini = options.ini ?? path.join(os.homedir(), '.unity-mcp', 'skill.ini');
+    this.timeout = options.timeout ?? 15;
+    this.verbose = Boolean(options.verbose);
+  }
+
+  _exec(command, overrides = {}) {
+    const args = {
+      command, ini: this.ini, timeout: this.timeout,
+      method: 'GET', kind: 'tools', headers: [], targets: [], ...overrides,
+    };
+    return quietStorage.run(!this.verbose, () => execute(args));
+  }
+
+  // 所有方法统一为 async：参数校验失败也是 rejected Promise，调用方只需 await / catch。
+  async discover() { return this._exec('discover'); }
+  async groups() { return this._exec('groups'); }
+  async list(kind = 'tools') { return this._exec('list', { kind }); }
+  async find(query, kind = 'tools') { return this._exec('find', { target: query, kind }); }
+  async schema(name) { return this._exec('schema', { target: name }); }
+  async schemas(names) {
+    return this._exec('schemas', { targets: Array.isArray(names) ? names : [names] });
+  }
+  async details(options = {}) {
+    const { tag, members } = options || {};
+    if ((tag !== undefined) === (members !== undefined)) {
+      throw new ClientError('details 需要 tag 或 members，且只能选一种。', 2);
+    }
+    return tag !== undefined
+      ? this._exec('details', { tag })
+      : this._exec('details', { jsonSource: 'text', jsonValue: jsonSourceValue(members) });
+  }
+  async prompt(name) { return this._exec('prompt', { target: name }); }
+  async resource(uri) { return this._exec('resource', { target: uri }); }
+  async call(name, args = {}) {
+    return this._exec('call', { target: name, jsonSource: 'text', jsonValue: jsonSourceValue(args) });
+  }
+  async calls(steps) {
+    const list = Array.isArray(steps) ? steps : [];
+    const result = await this._exec('calls', { jsonSource: 'text', jsonValue: jsonSourceValue(steps) });
+    for (const step of result.steps) {
+      const original = list[step.index] || {};
+      recordCall({
+        name: step.name, arguments: original.arguments || {}, ok: step.ok,
+        batch: true, ...(step.ok ? { result: step.result } : { error: step.error }),
+      });
+    }
+    return result;
+  }
+  async request(target, options = {}) {
+    const overrides = { target, method: options.method || 'GET' };
+    if (Array.isArray(options.headers)) overrides.headers = options.headers.slice();
+    if (options.data !== undefined) {
+      overrides.jsonSource = 'text';
+      overrides.jsonValue = jsonSourceValue(options.data);
+    }
+    return this._exec('request', overrides);
+  }
+
+  /** 调用工具并返回 MCP result 对象（不是完整 JSON-RPC 信封）。 */
+  async callSkill(name, args = {}) {
+    const started = Date.now();
+    try {
+      const result = (await this.call(name, args)).result;
+      recordCall({ name, arguments: args, ok: true, result, elapsed_ms: Date.now() - started });
+      return result;
+    } catch (error) {
+      recordCall({
+        name, arguments: args, ok: false, elapsed_ms: Date.now() - started,
+        error: { code: error instanceof ClientError ? error.code : 5, message: error.message },
+      });
+      throw error;
+    }
+  }
+  callSkillText(name, args = {}) { return this.callSkill(name, args).then(resultText); }
+  callSkillJson(name, args = {}) { return this.callSkill(name, args).then(resultJson); }
+}
+
+let defaultClient = null;
+function getClient() {
+  if (!defaultClient) defaultClient = new Client();
+  return defaultClient;
+}
+function configure(options = {}) {
+  defaultClient = new Client(options);
+  return defaultClient;
+}
+
+/** 把一组程序化调用归入命名工作流；回调内的 callSkill/calls 自动记录。 */
+async function workflowContext(name, description, fn, options = {}) {
+  if (typeof description === 'function') {
+    options = fn && typeof fn === 'object' ? fn : {};
+    fn = description;
+    description = '';
+  }
+  if (typeof fn !== 'function') throw new ClientError('workflowContext 需要回调函数。', 2);
+  const started = Date.now();
+  const wf = {
+    name, description: description || '', calls: [], startedMs: started, duration_ms: null,
+    summary() {
+      return {
+        name: this.name, description: this.description, calls: this.calls.length,
+        succeeded: this.calls.filter(item => item.ok).length,
+        failed: this.calls.filter(item => !item.ok).length,
+        duration_ms: this.duration_ms === null ? Date.now() - this.startedMs : this.duration_ms,
+        steps: this.calls,
+      };
+    },
+  };
+  return workflowStorage.run(wf, async () => {
+    try { return await fn(wf); }
+    finally {
+      wf.duration_ms = Date.now() - started;
+      if (options.verbose) {
+        console.error('工作流 ' + wf.name + '：' + wf.calls.length + ' 次调用，耗时 ' + wf.duration_ms + ' ms');
+      }
+    }
+  });
+}
+
+const connectionInfo = () => getClient().discover();
+const getGroups = () => getClient().groups();
+const listCapabilities = (kind = 'tools') => getClient().list(kind);
+const findCapabilities = (query, kind = 'tools') => getClient().find(query, kind);
+const getDetails = options => getClient().details(options);
+const getSchema = name => getClient().schema(name);
+const getSchemas = names => getClient().schemas(names);
+const callTool = (name, args = {}) => getClient().call(name, args);
+const callSkill = (name, args = {}) => getClient().callSkill(name, args);
+const callSkillText = (name, args = {}) => getClient().callSkillText(name, args);
+const callSkillJson = (name, args = {}) => getClient().callSkillJson(name, args);
+const readPrompt = name => getClient().prompt(name);
+const readResource = uri => getClient().resource(uri);
+const callMany = steps => getClient().calls(steps);
+const requestRoute = (target, options = {}) => getClient().request(target, options);
+
+module.exports = {
+  Client, ClientError, configure, getClient,
+  connectionInfo, getGroups, listCapabilities, findCapabilities, getDetails,
+  getSchema, getSchemas, callTool, callSkill, callSkillText, callSkillJson,
+  readPrompt, readResource, callMany, requestRoute, workflowContext,
+  resultText, resultJson, normalizeRequestTarget,
+  DEFAULT_MAX_DETAILS, MAX_RESPONSE_BYTES,
+};
+
+if (require.main === module) {
+  process.once('SIGINT', () => {
+    console.error('已中断；未重试，写操作结果可能未知。');
+    process.exit(130);
+  });
+  main();
+}

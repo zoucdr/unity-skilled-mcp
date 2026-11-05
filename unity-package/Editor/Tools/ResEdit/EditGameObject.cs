@@ -74,16 +74,14 @@ namespace UniMcp.Tools
             new MethodStr("parent_path", L.T("Parent object scene path", "父对象场景路径"))
                 .AddExample("Canvas"),
             
-            // 位置坐标
-            new MethodVector("position", L.T("Position coordinates [x, y, z]", "位置坐标 [x, y, z]"))
+            // 变换参数均为相对父对象的局部值（见 HandleModify 中的 localPosition / localEulerAngles / localScale）
+            new MethodVector("position", L.T("Local position relative to the parent [x, y, z], not world coordinates", "相对父对象的局部坐标 [x, y, z]，非世界坐标"))
                 .SetDefault(new float[] {0, 0, 0}),
             
-            // 旋转角度
-            new MethodVector("rotation", L.T("Rotation angles [x, y, z]", "旋转角度 [x, y, z]"))
+            new MethodVector("rotation", L.T("Local Euler rotation relative to the parent [x, y, z] in degrees", "相对父对象的局部欧拉角 [x, y, z]，单位为度"))
                 .SetDefault(new float[] {0, 0, 0}),
             
-            // 缩放比例
-            new MethodVector("scale", L.T("Scale ratio [x, y, z]", "缩放比例 [x, y, z]"))
+            new MethodVector("scale", L.T("Local scale [x, y, z]", "局部缩放 [x, y, z]"))
                 .SetDefault(new float[] {1, 1, 1}),
             
             // 激活状态
@@ -576,7 +574,7 @@ namespace UniMcp.Tools
 
             if (args.TryGetValue("scale", out object scaleObj))
             {
-                scaleArray = scaleObj as JsonArray ?? (positionObj != null ? Json.FromObject(scaleObj) as JsonArray : null);
+                scaleArray = scaleObj as JsonArray ?? (scaleObj != null ? Json.FromObject(scaleObj) as JsonArray : null);
             }
 
             Vector3? position = GameObjectUtils.ParseVector3(positionArray);

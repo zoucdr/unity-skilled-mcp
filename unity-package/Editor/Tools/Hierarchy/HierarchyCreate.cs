@@ -47,24 +47,22 @@ namespace UniMcp.Tools
                     .AddExample("Default"),
                 
                 // Parent object path
-                new MethodStr("parent", L.T("Parent object name or path", "父对象名称或路径"))
+                new MethodStr("parent", L.T("Full hierarchy path of the parent object, e.g. Root/Group", "父对象的完整层级路径，例如 Root/Group"))
                     .AddExample("Canvas"),
                 
                 // Parent object ID
                 new MethodStr("parent_id", L.T("Parent object unique ID", "父对象唯一ID"))
                     .AddExample("-1234"),
                 
-                // Position coordinates
-                new MethodVector("position", L.T("Position coordinates [x, y, z]", "位置坐标 [x, y, z]")),
+                // Transform values are LOCAL to the parent (see GameObjectUtils.ApplyCommonGameObjectSettings)
+                new MethodVector("position", L.T("Local position relative to the parent [x, y, z], not world coordinates", "相对父对象的局部坐标 [x, y, z]，非世界坐标")),
                 
-                // Rotation angles
-                new MethodVector("rotation", L.T("Rotation angles [x, y, z]", "旋转角度 [x, y, z]")),
+                new MethodVector("rotation", L.T("Local Euler rotation relative to the parent [x, y, z] in degrees", "相对父对象的局部欧拉角 [x, y, z]，单位为度")),
                 
-                // Scale values
-                new MethodVector("scale", L.T("Scale values [x, y, z]", "缩放值 [x, y, z]")),
+                new MethodVector("scale", L.T("Local scale [x, y, z]", "局部缩放 [x, y, z]")),
                 
                 // Primitive type
-                new MethodStr("primitive_type", L.T("Primitive type", "基元类型"))
+                new MethodStr("primitive_type", L.T("Primitive type when source=primitive: Cube, Sphere, Cylinder, Capsule, Plane, Quad", "source=primitive 时的基元类型：Cube / Sphere / Cylinder / Capsule / Plane / Quad"))
                     .AddExample("Cube"),
                 
                 // Prefab path
