@@ -151,6 +151,36 @@
                     <h3>双运行时客户端</h3>
                     <p>默认 Node.js，也可切换 Python，两套脚本命令与行为一致，均不依赖第三方库</p>
                 </div>
+                <div class="feature-card">
+                    <div class="feature-icon">🏗️</div>
+                    <h3>引擎级操作</h3>
+                    <p>构建、平台切换、构建设景、工程设置、编译状态与撤销重做，统一由 engine_control 承载</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">📦</div>
+                    <h3>批量 Schema</h3>
+                    <p>一次请求多个工具定义，顺序与请求一致，同样受数量与响应字节上限约束</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">🎞️</div>
+                    <h3>动画与界面</h3>
+                    <p>edit_animator 管状态机、过渡与混合树；ui_toolkit 读写 UXML/USS 并挂接 UIDocument</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">🎥</div>
+                    <h3>相机与特效</h3>
+                    <p>场景相机离屏截图，Cinemachine 虚拟相机；线渲染、拖尾与 VFX Graph 参数控制</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">🧪</div>
+                    <h3>测试与建模</h3>
+                    <p>run_tests 跑 Edit/Play 模式测试并轮询结果；edit_probuilder 创建与挤出 ProBuilder 网格</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">🧷</div>
+                    <h3>可选包隔离</h3>
+                    <p>Cinemachine、VFX Graph、ProBuilder、Test Framework 均通过反射访问，未安装不影响其余工具</p>
+                </div>
             </div>
         </div>
     </section>
@@ -258,6 +288,7 @@
                         <div class="layer-title">2. 取参数</div>
                         <div class="layer-items">
                             <span class="layer-item">GET /tools/{name}/schema — 单个工具完整 Schema</span>
+                            <span class="layer-item">POST /capabilities/schemas — 一次多个工具 Schema</span>
                             <span class="layer-item">POST /capabilities/details — 一组详情</span>
                         </div>
                     </div>
@@ -278,6 +309,10 @@
                     <div class="arch-feature">
                         <h4>详情按需且有限</h4>
                         <p>单次去重成员数不超过 max_details（默认 32，0 表示不限），响应硬上限 65536 字节</p>
+                    </div>
+                    <div class="arch-feature">
+                        <h4>批量 Schema</h4>
+                        <p>一次 POST 取回多个工具定义，按请求顺序返回，可直接按 inputSchema 调用</p>
                     </div>
                     <div class="arch-feature">
                         <h4>禁止一次拉全量</h4>
@@ -307,12 +342,16 @@
                         <div class="config-step">
                             <h5>2. 详情</h5>
                             <div class="uri-item"><code>GET /tools/{name}/schema</code></div>
+                            <div class="uri-item"><code>POST /capabilities/schemas</code> - 一次多个工具 Schema</div>
                             <div class="uri-item"><code>POST /capabilities/details</code></div>
                             <div class="code-block">
-                                <pre><code><span class="comment">// 方式一：固定标签组</span>
+                                <pre><code><span class="comment">// 方式一：批量取工具 Schema，按请求顺序返回</span>
+{ <span class="key">"tools"</span>: [<span class="string">"hierarchy_search"</span>, <span class="string">"hierarchy_apply"</span>] }
+
+<span class="comment">// 方式二：固定标签组</span>
 { <span class="key">"tag"</span>: <span class="string">"hierarchy-management"</span> }
 
-<span class="comment">// 方式二：本次动态成员，可混合三类</span>
+<span class="comment">// 方式三：本次动态成员，可混合三类</span>
 {
   <span class="key">"members"</span>: [
     { <span class="key">"kind"</span>: <span class="string">"tool"</span>, <span class="key">"name"</span>: <span class="string">"hierarchy_search"</span> },
@@ -326,6 +365,7 @@
                             <h5>3. 命名空间别名</h5>
                             <div class="param-config">
                                 <div class="param-item"><strong>/mcp/tools</strong> - 与 /tools 等价</div>
+                                <div class="param-item"><strong>/mcp/capabilities/schemas</strong> - 与 /capabilities/schemas 等价</div>
                                 <div class="param-item"><strong>/mcp/capabilities/details</strong> - 与 /capabilities/details 等价</div>
                             </div>
                         </div>
@@ -377,7 +417,7 @@
             </div>
             <div class="skills-content">
                 <div class="skills-intro">
-                    <p>技能目录位于 <code>unity-package/Skills/unity3d-skill/</code>，只说明「服务怎么连、先取什么、再取什么、参数怎么传」，不枚举 40+ 工具的参数。SKILL.md 约 5 KB，替代过去动辄数十 KB 的技能正文。</p>
+                    <p>技能目录位于 <code>unity-package/Skills/unity3d-skill/</code>，只说明「服务怎么连、先取什么、再取什么、参数怎么传」，不枚举 40+ 工具的参数；工具参数始终按需从服务端读取，替代过去一次性灌入全部 Schema 的做法。</p>
                 </div>
 
                 <div class="skills-mechanism">
@@ -413,10 +453,26 @@ node scripts/unity_mcp.js list --kind tools
 node scripts/unity_mcp.js details --tag hierarchy-management
 node scripts/unity_mcp.js details --members-file selection.json
 
-<span class="comment"># 4. 取单个工具 Schema 后调用</span>
+<span class="comment"># 4. 取工具 Schema（单个或批量）后调用</span>
 node scripts/unity_mcp.js schema hierarchy_search
-node scripts/unity_mcp.js call hierarchy_search --args-file args.json</code></pre>
+node scripts/unity_mcp.js schemas hierarchy_search hierarchy_apply
+node scripts/unity_mcp.js call hierarchy_search --args-file args.json
+
+<span class="comment"># 5. 目录检索、正文读取与顺序批量调用</span>
+node scripts/unity_mcp.js find camera --kind tools
+node scripts/unity_mcp.js prompt NAME
+node scripts/unity_mcp.js resource URI
+node scripts/unity_mcp.js calls --calls-file steps.json</code></pre>
                     </div>
+                </div>
+
+                <div class="skills-usage">
+                    <h3>检索、正文与批量</h3>
+                    <ul>
+                        <li><code>find QUERY</code>：只取一次目录摘要，在本地按名称 / URI / 说明 / 标签做大小写不敏感过滤，工具再多也不必灌入整份目录；不取详情、不读正文。</li>
+                        <li><code>prompt NAME</code> / <code>resource URI</code>：详情接口只给注册定义，这两条命令先校验名称或 URI 在目录中，再走 <code>prompts/get</code> / <code>resources/read</code> 取正文。资源 URI 必须是已注册项，禁止借服务端对任意 <code>http://</code>、<code>file://</code> 的兼容读取绕过外发授权。</li>
+                        <li><code>calls</code>：输入为 <code>[{"name":"...","arguments":{}}, ...]</code>，顺序执行、失败即停，仍输出已执行步骤与 <code>stopped_at</code> / <code>exit_code</code>。数量上限复用 <code>max_details</code>，请求体最多 65536 字节；无事务与回滚，重放前先核实编辑器状态。</li>
+                    </ul>
                 </div>
 
                 <div class="skills-usage">
@@ -525,6 +581,46 @@ max_details=32</code></pre>
                     <div class="example-tools">
                         <span>groups</span>
                         <span>details --tag</span>
+                    </div>
+                </div>
+                <div class="example-item">
+                    <div class="example-icon">📦</div>
+                    <h4>一键构建出包</h4>
+                    <p class="example-command">"切到 Windows 平台，用开发配置构建到 Builds/Windows"</p>
+                    <p class="example-desc">先确认构建设景，再切换平台并排队构建，最后轮询构建状态与错误数</p>
+                    <div class="example-tools">
+                        <span>engine_control</span>
+                        <span>get_build_status</span>
+                    </div>
+                </div>
+                <div class="example-item">
+                    <div class="example-icon">🎞️</div>
+                    <h4>搭一套移动状态机</h4>
+                    <p class="example-command">"给角色做一个 Idle→Run 的状态机，按 Speed 切过去"</p>
+                    <p class="example-desc">建控制器、加参数与状态、连线过渡条件，播放时直接切状态验证</p>
+                    <div class="example-tools">
+                        <span>edit_animator</span>
+                        <span>edit_anim_clip</span>
+                    </div>
+                </div>
+                <div class="example-item">
+                    <div class="example-icon">🖥️</div>
+                    <h4>UI Toolkit 界面落地</h4>
+                    <p class="example-command">"做一个主菜单 UXML，标题文字改成中文并接上 PanelSettings"</p>
+                    <p class="example-desc">生成 UXML/USS，改元素属性，再给场景对象挂 UIDocument 并截图确认</p>
+                    <div class="example-tools">
+                        <span>ui_toolkit</span>
+                        <span>manage_camera</span>
+                    </div>
+                </div>
+                <div class="example-item">
+                    <div class="example-icon">🧪</div>
+                    <h4>改完就跑测试</h4>
+                    <p class="example-command">"跑一遍 EditMode 里 Fast 类别的测试，把失败项列出来"</p>
+                    <p class="example-desc">启动测试任务后轮询状态，读取通过/失败计数与失败用例清单</p>
+                    <div class="example-tools">
+                        <span>run_tests</span>
+                        <span>get_status</span>
                     </div>
                 </div>
             </div>
@@ -685,7 +781,7 @@ node scripts/unity_mcp.js list
         <div class="container">
             <div class="section-header">
                 <h2 class="section-title">Resources & Prompts 支持</h2>
-                <p class="section-subtitle">目录看摘要，详情按组取，读取仍走原协议</p>
+                <p class="section-subtitle">目录看摘要，详情按组取，正文由 prompt / resource 命令显式读取</p>
             </div>
             <div class="rp-grid">
                 <div class="rp-card">
@@ -746,7 +842,10 @@ POST /capabilities/details
 { <span class="key">"members"</span>: [{ <span class="key">"kind"</span>: <span class="string">"resource"</span>, <span class="key">"uri"</span>: <span class="string">"file://path/to/resource.yaml"</span> }] }
 
 <span class="comment">// 读取正文：沿用原协议</span>
-{ <span class="key">"method"</span>: <span class="string">"resources/read"</span>, <span class="key">"params"</span>: { <span class="key">"uri"</span>: <span class="string">"file://path/to/resource.yaml"</span> } }</code></pre>
+{ <span class="key">"method"</span>: <span class="string">"resources/read"</span>, <span class="key">"params"</span>: { <span class="key">"uri"</span>: <span class="string">"file://path/to/resource.yaml"</span> } }
+
+<span class="comment">// 技能命令：先校验目录，再读取正文</span>
+node scripts/unity_mcp.js resource file://path/to/resource.yaml</code></pre>
                             </div>
                         </div>
                     </div>
@@ -787,7 +886,10 @@ POST /capabilities/details
 GET /prompts
 
 <span class="comment">// 调用：沿用原协议</span>
-{ <span class="key">"method"</span>: <span class="string">"prompts/get"</span>, <span class="key">"params"</span>: { <span class="key">"name"</span>: <span class="string">"test_talk_step"</span> } }</code></pre>
+{ <span class="key">"method"</span>: <span class="string">"prompts/get"</span>, <span class="key">"params"</span>: { <span class="key">"name"</span>: <span class="string">"test_talk_step"</span> } }
+
+<span class="comment">// 技能命令：先校验目录，再取模板正文</span>
+node scripts/unity_mcp.js prompt test_talk_step</code></pre>
                             </div>
                         </div>
                     </div>

@@ -111,11 +111,13 @@ namespace UniMcp
             System.Net.HttpListenerRequest request, System.Net.HttpListenerResponse response,
             string path, System.Threading.CancellationToken cancellationToken)
         {
-            if (!McpDiscoverySnapshot.IsDetailsPath(path)) return false;
+            bool schemas = McpDiscoverySnapshot.IsSchemasPath(path);
+            if (!schemas && !McpDiscoverySnapshot.IsDetailsPath(path)) return false;
+            string hint = schemas ? "请指定 tools 名称数组。" : "请指定 tag 或 members。";
             int status = 400;
             string json;
             if (request.HttpMethod != "POST")
-                json = McpDiscoverySnapshot.Error("此入口仅接受 POST JSON，请指定 tag 或 members。");
+                json = McpDiscoverySnapshot.Error("此入口仅接受 POST JSON，" + hint);
             else if (request.ContentLength64 > McpDiscoverySnapshot.MaxRequestBytes)
             {
                 status = 413;
@@ -130,7 +132,7 @@ namespace UniMcp
                 {
                     string body = await ReadCapabilityBodyAsync(request.InputStream, cancellationToken);
                     var snapshot = discoverySnapshot;
-                    json = snapshot.GetDetails(body, out status);
+                    json = schemas ? snapshot.GetSchemas(body, out status) : snapshot.GetDetails(body, out status);
                 }
                 catch (InvalidDataException)
                 {
@@ -394,6 +396,12 @@ namespace UniMcp
             return path == "/capabilities/details" || path == "/mcp/capabilities/details";
         }
 
+        // 批量 Schema 与详情分离：只返回 name/description/inputSchema，可直接喂给调用方。
+        internal static bool IsSchemasPath(string path)
+        {
+            return path == "/capabilities/schemas" || path == "/mcp/capabilities/schemas";
+        }
+
         internal bool TryGetResponse(string path, out int statusCode, out string json)
         {
             statusCode = 200;
@@ -503,10 +511,64 @@ namespace UniMcp
             return prefix + string.Join(",", selected.Select(c => c.Detail)) + suffix;
         }
 
+        // 一次请求返回多个工具的完整 MCP Schema；与详情共用数量、字节和禁止全集规则。
+        internal string GetSchemas(string body, out int statusCode)
+        {
+            statusCode = 400;
+            if (Encoding.UTF8.GetByteCount(body ?? "") > MaxRequestBytes)
+            {
+                statusCode = 413;
+                return Error("请求正文超过65536字节，请减少本次请求的工具数量。");
+            }
+            JsonClass request;
+            try { request = new SelectionJsonReader(body).Read() as JsonClass; }
+            catch (FormatException) { return Error("请求必须是严格 JSON 对象，且只能包含 tools 字符串数组；不允许重复字段。"); }
+            if (request == null || request.Count != 1 || !request.ContainsKey("tools"))
+                return Error("仅接受非空 tools 数组，禁止未知字段和 all 模式。");
+            if (!(request["tools"] is JsonArray names) || names.Count == 0)
+                return Error("tools 必须是非空字符串数组，数量限制见 max_details（0 表示不限制数量）。");
+
+            var selected = new List<string>();
+            var seen = new HashSet<string>(StringComparer.Ordinal);
+            for (int i = 0; i < names.Count; i++)
+            {
+                if (!(names[i] is JsonData) || InvalidSelector(names[i].Value))
+                    return Error("tools 只能包含非空字符串名称，禁止 all/* 和未知字段。");
+                string name = names[i].Value;
+                if (!schemas.ContainsKey(name))
+                {
+                    statusCode = 404;
+                    return Error("工具不存在或已禁用，请从 /tools 目录原样传入名称。");
+                }
+                if (seen.Add(name)) selected.Add(name);
+            }
+            if (MaxDetails > 0 && selected.Count > MaxDetails)
+                return Error("超过" + MaxDetails.ToString(CultureInfo.InvariantCulture) + "个去重工具，请分批获取 Schema。");
+            if (selected.Count > 1 && selected.Count == schemas.Count)
+                return Error("本次请求覆盖全部已启用工具，已拒绝全量 Schema；请缩小范围或使用 /tools/{name}/schema。");
+
+            // 先计字节再拼接；单个 schema 原文不被改写。
+            string prefix = "{\"items\":[";
+            string suffix = "],\"count\":" + selected.Count.ToString(CultureInfo.InvariantCulture)
+                + ",\"max_details\":" + MaxDetails.ToString(CultureInfo.InvariantCulture) + "}";
+            long bytes = (long)Encoding.UTF8.GetByteCount(prefix + suffix) + selected.Count - 1;
+            foreach (string name in selected) bytes += Encoding.UTF8.GetByteCount(schemas[name]);
+            if (bytes > MaxResponseBytes)
+            {
+                statusCode = 413;
+                return Error("Schema 响应超过65536个 UTF-8 字节，请减少工具数量；单个超大工具可使用 /tools/{name}/schema。");
+            }
+            statusCode = 200;
+            return prefix + string.Join(",", selected.Select(name => schemas[name])) + suffix;
+        }
+
         private static bool InvalidSelector(string value)
         {
-            return string.IsNullOrWhiteSpace(value) || value.Trim().Equals("all", StringComparison.OrdinalIgnoreCase) || value.Contains("*");
+            return string.IsNullOrWhiteSpace(value) || value.Trim().Equals("all", StringComparison.OrdinalIgnoreCase) || value.Contains("*")
+                || value.IndexOfAny(ControlChars) >= 0;
         }
+
+        private static readonly char[] ControlChars = Enumerable.Range(0, 32).Select(i => (char)i).Concat(new[] { '\u007f' }).ToArray();
 
         // 仅解析选择器需要的对象、数组、字符串；不使用会接受非标准 JSON 的通用解析器。
         private sealed class SelectionJsonReader
@@ -640,6 +702,7 @@ namespace UniMcp
                 { "prompts_url", new JsonData(BaseUrl + "/prompts") },
                 { "resources_url", new JsonData(BaseUrl + "/resources") },
                 { "details_url", new JsonData(BaseUrl + "/capabilities/details") },
+                { "schemas_url", new JsonData(BaseUrl + "/capabilities/schemas") },
                 { "max_details", new JsonData(MaxDetails) },
                 { "max_response_bytes", new JsonData(McpDiscoverySnapshot.MaxResponseBytes) },
                 { "tools_url", new JsonData(BaseUrl + "/tools") },

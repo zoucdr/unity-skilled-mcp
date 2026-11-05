@@ -375,11 +375,23 @@ public class ProjectSelector : IObjectSelector { }
    - `gameplay`：游戏玩法控制
    - `object_delete`：对象删除
 
-8. **存储管理工具** (Tools/Storage/)
+8. **引擎控制工具** (Tools/EngineControl.cs)
+   - `engine_control`：构建流水线（构建设置、平台切换、构建执行与状态）、编辑器工具与选择集、工程设置（Player/时间/质量/物理/序列化/进入播放模式）、编译状态与重编译、撤销重做与单步
+
+9. **动画、UI、相机、特效、测试与建模工具**
+   - `edit_animator`：Animator Controller 结构（层、状态、过渡、参数、1D 混合树）与运行时 Animator 控制；片段/曲线仍用 `edit_anim_clip`
+   - `ui_toolkit`：UXML/USS 文本读写、元素增删改、UIDocument 挂接、PanelSettings 配置与可视化结构检查；UGUI 布局仍用 `ugui_layout`
+   - `manage_camera`：场景相机创建/配置/朝向/离屏截图/多视角截图，安装 Cinemachine 后提供虚拟相机与 Brain 操作
+   - `edit_effects`：LineRenderer、TrailRenderer 创建与样式，VFX Graph 参数、事件与播放控制；传统粒子仍用 `edit_particle_system`
+   - `run_tests`：Unity Test Runner 的 Edit/Play 模式执行与结果轮询（需 `com.unity.test-framework`）
+   - `edit_probuilder`：ProBuilder 形状创建、拓扑挤出/删面与平滑（需 `com.unity.probuilder`）
+   - 说明：Cinemachine、VFX Graph、ProBuilder、Test Framework 均为可选包，通过运行时反射访问，未安装时对应工具返回明确提示，不影响其余工具编译与使用
+
+10. **存储管理工具** (Tools/Storage/)
    - `prefers`：偏好设置管理（EditorPrefs/PlayerPrefs）
    - `source_location`：资源定位（文件浏览器、项目定位）
 
-9. **网络工具** (Tools/)
+11. **网络工具** (Tools/)
    - `request_http`：HTTP请求
 
 #### 工具实现模式
@@ -956,31 +968,54 @@ def batch_translate_localization(source_file, target_langs=["en", "ja", "ko"]):
 
 ## Agent 技能模块
 
-MCP 协议会向 AI 提供完整的工具列表与参数 Schema，在工具数量较多时**占用大量 Token**。为降低上下文消耗，项目增加了 **Skill 模块**（`unity-package/Skills/unity3d-skill/`），与 MCP 配合使用，实现「按需加载、用时再读」。
+MCP 协议会向 AI 提供完整的工具列表与参数 Schema，在工具数量较多时**占用大量 Token**。为降低上下文消耗，项目增加了 **Skill 模块**（`unity-package/Skills/unity3d-skill/`），与 MCP 配合使用，实现「按需发现、按需取定义、用完即弃」。
 
 ### 实现方式
 
-- **统一技能入口**：一个 `SKILL.md` 提供 32 个函数的概览摘要，按 7 大分类组织（编辑器与偏好设置、代码执行、场景与层级、GameObject与组件编辑、项目与资源管理、UI与布局、游戏与网络）。
-- **JSON Schema 引用**：每个函数在 `references/<func_name>.json` 中有独立的 JSON Schema 文件，包含完整的 `args` 参数定义、`actions` 枚举（含条件参数）和 `response` 响应格式。
-- **按需加载**：Agent 先阅读 `SKILL.md` 概览定位目标函数，再按需加载对应的 `references/<func_name>.json` 获取详细参数信息，而非一次性加载全部 32 个工具 Schema。
+- **统一技能入口**：一个 `SKILL.md` 说明连接方式、命令用法与安全边界，不内联任何工具参数。
+- **渐进式发现**：先 `GET /groups` 与 `GET /tools` 只取名称、短说明和标签；需要参数时再取定义，避免一次性灌入全部 Schema。
+- **单个或批量 Schema**：`schema NAME` 读取单个工具定义（`GET /tools/{name}/schema`）；`schemas A B C` 一次读取多个工具定义（`POST /capabilities/schemas`），返回标准 `{name, description, inputSchema}`，可直接用于调用。
+- **混合详情**：`details --tag TAG` 按标签组取详情，`details --members` 按本次任务自选工具/提示词/资源；三种类型可混合，但同样受数量与字节上限约束。
+- **目录检索**：`find QUERY [--kind tools|prompts|resources]` 只在本地对目录摘要（名称、URI、说明、标签）做大小写不敏感过滤，工具变多时不必把整份目录塞进上下文，也不取详情。
+- **内容读取**：`details` 只给注册定义；`prompt NAME` 与 `resource URI` 会先校验目录成员，再走 `prompts/get` / `resources/read` 取正文。资源 URI 只允许目录中已注册项，避免服务端对任意 `http://`、`file://` URI 的兼容读取绕过外发授权。
+- **批量调用**：`calls --calls-file steps.json`（或 `--calls` / `--calls-stdin`）按数组顺序执行多个工具，任一步失败即停，并保留已执行步骤与 `exit_code`；不提供事务回滚。
+- **引擎操作**：`engine_control` 统一承载构建、平台切换、构建设景、工程设置、编译状态、选择集与编辑器工具切换；构建默认排队执行，用 `get_build_status` 查询结果，构建期间编辑器会阻塞。
+- **专业工作流**：`edit_animator`（Animator 状态机）、`ui_toolkit`（UXML/USS/UIDocument/PanelSettings）、`manage_camera`（相机与 Cinemachine）、`edit_effects`（Line/Trail 与 VFX Graph）、`run_tests`（Test Runner）、`edit_probuilder`（ProBuilder 建模）各自覆盖专用领域；可选包未安装时只影响对应工具，并返回明确提示。
+- **连接发现**：Unity 服务启动时把地址、端口、脚本语言和详情上限写入 `~/.unity-mcp/skill.ini`，客户端每次命令重新读取并校验；INI 不发布 MCP 端点，Agent 应始终通过 Skill 脚本访问。
 
 ### 与 MCP 系统的结合
 
-- **MCP** 仍负责实际的工具发现与调用；**Skill** 负责「何时用、怎么传参」的说明。
-- 可在 Cursor Rules 或 Agent 配置中引用 `SKILL.md`，使 Agent 先查阅概览、按需加载 JSON Schema，再通过 MCP 发起调用。
-- 这样既保留 MCP 的完整能力，又避免把 32+ 工具的完整描述常驻上下文，**显著节省 Token**。
+- **MCP** 仍负责实际执行；**Skill** 负责「如何发现、取哪份定义、怎么传参」。
+- 原有 MCP 客户端可继续使用 `tools/list`、`tools/call`、`prompts/list`、`prompts/get`、`resources/list`、`resources/read`，无需安装 Skill。
+- Skill 的发现与批量 Schema 请求不会改变旧 MCP 接口行为，两者互不影响；技能只在显式执行 `call` / `calls` / `prompt` / `resource` 时才使用原协议的 `tools/call`、`prompts/get`、`resources/read`。
+
+### 技能命令示例
+
+```sh
+node scripts/unity_mcp.js find camera --kind tools
+node scripts/unity_mcp.js prompt NAME
+node scripts/unity_mcp.js resource URI
+node scripts/unity_mcp.js calls --calls '[{"name":"hierarchy_search","arguments":{}},{"name":"edit_gameobject","arguments":{"action":"get_components"}}]'
+# Python 客户端命令完全一致：python scripts/unity_mcp.py find camera --kind tools
+```
+
+`calls` 的输入是数组本身，元素仅含 `name` 与可选 `arguments`（JSON 对象，省略为 `{}`）；返回 `{steps, executed, total, stopped_at, exit_code}`。全部成功时 `stopped_at=null`；中途失败时 stdout 仍输出已成功步骤，退出码由 `exit_code` 给出，便于先核实编辑器状态再决定是否重放剩余步骤。
+
+### 约束
+
+- 单次详情/批量 Schema/批量调用的去重数量上限取 Unity 设置中的 `max_details`（默认 `32`，`0` 为不限数量），详情响应最多 65536 个 UTF-8 字节，`calls` 请求体同样最多 65536 字节；超限返回 400/413 或在发送前拒绝，不静默截断、不自动分批。
+- 拒绝 `all`、`*`、空值和未知字段；名称超过一项且覆盖全部已启用工具时按全集拒绝。未知或已禁用的工具返回 404。
+- 批量调用无事务与回滚，构建、切平台、重编译、测试运行期间不要与其他写操作并发。
 
 ### 文件结构
 
 ```
 unity-package/Skills/unity3d-skill/
-├── SKILL.md                    # 函数概览与分类摘要
-└── references/                 # 每个函数的 JSON Schema 定义
-    ├── base_editor.json
-    ├── hierarchy_create.json
-    ├── gameplay.json
-    ├── request_http.json
-    └── ... (共 32 个 Schema)
+├── SKILL.md                    # 连接、命令与安全说明
+├── scripts/
+│   ├── unity_mcp.js            # 默认 JS 客户端（无依赖）
+│   └── unity_mcp.py            # Python 客户端（无依赖）
+└── tests/                      # JS / Python 回归测试
 ```
 
 ---

@@ -108,6 +108,9 @@ def discover(ini, timeout):
         for key in ("tools_url", "schema_url_template"):
             if origin(info[key]) != origin(base):
                 raise ValueError("discovery 端点不在同一服务")
+        for key in ("details_url", "schemas_url"):
+            if key in info and origin(info[key]) != origin(base):
+                raise ValueError("discovery 端点不在同一服务")
         if "{name}" not in info["schema_url_template"]:
             raise ValueError("schema URL 缺少 {name}")
         for key in ("project_path", "updated_at"):
@@ -202,6 +205,79 @@ def details_payload(args):
     return {"members": list(unique.values())}
 
 
+def schema_names(args):
+    """多 Schema 请求的名称列表：位置参数或 --names 三选一；去重后保持顺序。"""
+    has_json = args.json_text is not None or args.json_file is not None or args.json_stdin
+    if args.names_pos:
+        if has_json:
+            raise ClientError("schemas 的名称列表与 --names 输入只能二选一。", 2)
+        values = args.names_pos
+    else:
+        values = input_json(args)
+        if not isinstance(values, list) or not values:
+            raise ClientError("names 必须是非空 JSON 字符串数组。", 2)
+    unique = []
+    seen = set()
+    for name in values:
+        if not selection_value(name):
+            raise ClientError("工具名必须是非空字符串，禁止 all/* 或控制字符。", 2)
+        if name not in seen:
+            seen.add(name)
+            unique.append(name)
+    return unique
+
+
+def find_query(value):
+    if (not isinstance(value, str) or not value.strip() or value != value.strip()
+            or len(value) > 128 or any(ord(c) < 32 or ord(c) == 127 for c in value)):
+        raise ClientError("检索关键字须为 1-128 个非控制字符，且不含首尾空白。", 2)
+    return value
+
+
+def calls_payload(args):
+    value = input_json(args)
+    if not isinstance(value, list) or not value:
+        raise ClientError("calls 必须是非空 JSON 数组。", 2)
+    steps = []
+    for index, item in enumerate(value):
+        if (not isinstance(item, dict) or not selection_value(item.get("name"))
+                or set(item) - {"name", "arguments"}
+                or ("arguments" in item and not isinstance(item["arguments"], dict))):
+            raise ClientError("第 {} 个调用只能是 {{name, arguments?}}，arguments 必须是 JSON 对象。".format(index + 1), 2)
+        steps.append({"name": item["name"], "arguments": item.get("arguments") or {}})
+    return steps
+
+
+def rpc_result(envelope, rpc_id, expected_array=None):
+    if (not isinstance(envelope, dict) or envelope.get("jsonrpc") != "2.0"
+            or envelope.get("id") != rpc_id):
+        raise ClientError("无效 JSON-RPC 响应。", 5)
+    if "error" in envelope:
+        raise ClientError("JSON-RPC error：" + json.dumps(envelope["error"], ensure_ascii=False), 6)
+    result = envelope.get("result")
+    if not isinstance(result, dict):
+        raise ClientError("JSON-RPC 响应缺少 result 对象。", 5)
+    if result.get("isError"):
+        raise ClientError("MCP isError：" + json.dumps(result, ensure_ascii=False), 6)
+    if expected_array and not isinstance(result.get(expected_array), list):
+        raise ClientError("JSON-RPC 响应缺少 {} 数组。".format(expected_array), 5)
+    return envelope
+
+
+def rpc_call(info, args, method, params, rpc_id, expected_array=None):
+    envelope = {"jsonrpc": "2.0", "id": rpc_id, "method": method, "params": params}
+    result = http(info["base_url"].rstrip("/") + "/mcp", args.timeout, "POST", envelope)
+    return rpc_result(result, rpc_id, expected_array)
+
+
+def directory(info, args, kind):
+    url = info["tools_url"] if kind == "tools" else info["base_url"].rstrip("/") + "/" + kind
+    result = http(url, args.timeout)
+    if not isinstance(result, dict) or not isinstance(result.get(kind), list):
+        raise ClientError(kind + " 响应缺少目录列表。", 5)
+    return result[kind]
+
+
 def add_json_options(parser, prefix, required=False):
     group = parser.add_mutually_exclusive_group(required=required)
     group.add_argument("--" + prefix, dest="json_text", help="内联 JSON")
@@ -227,9 +303,21 @@ def build_parser():
     selection.add_argument("--tag", action="append", help="groups 返回的一个实际标签，与 members 输入互斥")
     schema = sub.add_parser("schema", help="读取一个工具的完整 MCP schema")
     schema.add_argument("name", help="list 返回的工具名称")
+    schemas = sub.add_parser("schemas", help="一次读取多个工具的完整 MCP schema；去重上限由 discovery max_details 决定（默认32，0不限数量），最多65536字节，禁止全量选择")
+    schemas.add_argument("names_pos", nargs="*", metavar="NAME", help="工具名称，可传多个")
+    add_json_options(schemas, "names")
     call = sub.add_parser("call", help="调用一个工具；先 list，再 schema；绝不自动重试")
     call.add_argument("name", help="工具名称")
     add_json_options(call, "args")
+    finding = sub.add_parser("find", help="在目录摘要中按名称/描述/标签/URI 做本地关键字过滤，不拉取详情")
+    finding.add_argument("target", metavar="QUERY", help="检索关键字，1-128 字符")
+    finding.add_argument("--kind", choices=["tools", "prompts", "resources"], default="tools", help="目录类型，默认 tools")
+    prompt = sub.add_parser("prompt", help="名称来自 list --kind prompts；读取 prompts/get 消息正文")
+    prompt.add_argument("target", metavar="NAME", help="提示词名称")
+    res = sub.add_parser("resource", help="URI 来自 list --kind resources；读取 resources/read 内容，拒绝未注册 URI")
+    res.add_argument("target", metavar="URI", help="资源 URI")
+    calls = sub.add_parser("calls", help="顺序批量调用工具；失败即停并保留已执行步骤，上限由 max_details 决定")
+    add_json_options(calls, "calls", required=True)
     generic = sub.add_parser("request", help="请求 Unity 自定义路由，或用户明确授权的绝对 http/https URL")
     generic.add_argument("target", help="以 / 开头的服务路由，或绝对 http/https URL")
     generic.add_argument("--method", choices=["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"], default="GET", help="HTTP 方法，默认 GET")
@@ -260,10 +348,30 @@ def execute(args):
                 headers[name.strip()] = value.strip()
     if args.command == "details":
         payload = details_payload(args)
+    if args.command == "schemas":
+        payload = {"tools": schema_names(args)}
+    if args.command == "calls":
+        payload = calls_payload(args)
+    # 名称/关键字/URI 的格式校验在 discovery 之前完成，非法输入不产生任何网络请求。
+    if args.command == "find":
+        payload = {"query": find_query(args.target)}
+    if args.command == "prompt":
+        if not selection_value(args.target):
+            raise ClientError("提示词名称无效；从 list --kind prompts 选取。", 2)
+        payload = {"name": args.target}
+    if args.command == "resource":
+        uri = args.target
+        scheme, sep, rest = uri.partition(":")
+        valid_scheme = (sep and rest and scheme and scheme[0].isascii() and scheme[0].isalpha()
+                        and all(c.isascii() and (c.isalnum() or c in "+.-") for c in scheme)
+                        and not any(c.isspace() for c in uri))
+        if not selection_value(uri) or not valid_scheme:
+            raise ClientError("资源 URI 必须是带 scheme 的完整 URI。", 2)
+        payload = {"uri": uri}
     info = discover(args.ini, args.timeout)
     if args.command == "discover":
         return info
-    if args.command in ("groups", "list", "details"):
+    if args.command in ("groups", "list", "details", "schemas"):
         base = info["base_url"].rstrip("/")
     if args.command == "groups":
         result = http(base + "/groups", args.timeout)
@@ -297,18 +405,77 @@ def execute(args):
         if not isinstance(result, dict) or result.get("name") != args.name or not isinstance(result.get("inputSchema"), dict):
             raise ClientError("schema 响应缺少匹配名称或完整 inputSchema。", 5)
         return result
-    if args.command == "call":
-        envelope = {"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": args.name, "arguments": payload}}
-        result = http(info["base_url"].rstrip("/") + "/mcp", args.timeout, "POST", envelope)
-        if not isinstance(result, dict) or result.get("jsonrpc") != "2.0" or result.get("id") != 1:
-            raise ClientError("无效 JSON-RPC 响应。", 5)
-        if "error" in result:
-            raise ClientError("JSON-RPC error：" + json.dumps(result["error"], ensure_ascii=False), 6)
-        if not isinstance(result.get("result"), dict):
-            raise ClientError("JSON-RPC 响应缺少 result 对象。", 5)
-        if result["result"].get("isError"):
-            raise ClientError("MCP isError：" + json.dumps(result["result"], ensure_ascii=False), 6)
+    if args.command == "schemas":
+        limit = details_limit(info)
+        names = payload["tools"]
+        if limit > 0 and len(names) > limit:
+            raise ClientError("去重后最多一次获取 {} 个 Schema（discovery max_details）；未发送请求。".format(limit), 2)
+        result = http(info.get("schemas_url") or base + "/capabilities/schemas",
+                      args.timeout, "POST", payload, max_bytes=MAX_RESPONSE_BYTES)
+        if (not isinstance(result, dict) or not isinstance(result.get("items"), list)
+                or type(result.get("count")) is not int or result["count"] != len(result["items"])
+                or result["count"] < 1 or (limit > 0 and result["count"] > limit)
+                or not response_details_limit(result, limit)):
+            raise ClientError("schemas 响应格式或数量无效。", 5)
+        matched = len(result["items"]) == len(names) and all(
+            isinstance(item, dict) and item.get("name") == names[index] and isinstance(item.get("inputSchema"), dict)
+            for index, item in enumerate(result["items"]))
+        if not matched:
+            raise ClientError("schemas 响应的工具名顺序或 inputSchema 与请求不一致。", 5)
         return result
+    if args.command == "find":
+        query = payload["query"]
+        entries = directory(info, args, args.kind)
+        needle = query.lower()
+        matches = []
+        for item in entries:
+            if not isinstance(item, dict):
+                continue
+            values = [item.get("name"), item.get("uri"), item.get("description")]
+            values += item.get("tags") if isinstance(item.get("tags"), list) else []
+            if any(isinstance(v, str) and needle in v.lower() for v in values):
+                matches.append(item)
+        return {"kind": args.kind, "query": query, "matches": matches,
+                "count": len(matches), "total": len(entries)}
+    if args.command == "prompt":
+        name = payload["name"]
+        if not any(isinstance(item, dict) and item.get("name") == name
+                   for item in directory(info, args, "prompts")):
+            raise ClientError("提示词不在 /prompts 目录中：{}；先运行 list --kind prompts。".format(name), 2)
+        return rpc_call(info, args, "prompts/get", {"name": name}, 1, "messages")
+    if args.command == "resource":
+        uri = payload["uri"]
+        if not any(isinstance(item, dict) and item.get("uri") == uri
+                   for item in directory(info, args, "resources")):
+            raise ClientError("资源 URI 不在 /resources 目录中，禁止读取未注册 URI：" + uri, 2)
+        return rpc_call(info, args, "resources/read", {"uri": uri}, 1, "contents")
+    if args.command == "calls":
+        limit = details_limit(info)
+        if limit > 0 and len(payload) > limit:
+            raise ClientError("一次最多 {} 个调用（discovery max_details）；未发送任何调用。".format(limit), 2)
+        if len(json.dumps(payload, ensure_ascii=False).encode("utf-8")) > MAX_RESPONSE_BYTES:
+            raise ClientError("批量调用请求体超过 65536 字节；未发送任何调用。", 2)
+        steps = []
+        exit_code = 0
+        stopped_at = None
+        for index, step in enumerate(payload):
+            try:
+                envelope = rpc_call(info, args, "tools/call",
+                                    {"name": step["name"], "arguments": step["arguments"]}, index + 1)
+                steps.append({"index": index, "name": step["name"], "ok": True, "result": envelope["result"]})
+            except ClientError as exc:
+                steps.append({"index": index, "name": step["name"], "ok": False,
+                              "error": {"code": exc.code, "message": str(exc)}})
+                exit_code = exc.code
+                stopped_at = index
+                break
+        print("批量调用：已执行 {}/{} 步{}".format(
+            len(steps), len(payload), "，全部完成。" if stopped_at is None else " 后停止；已生效的写操作不可盲目重放。"),
+            file=sys.stderr)
+        return {"steps": steps, "executed": len(steps), "total": len(payload),
+                "stopped_at": stopped_at, "exit_code": exit_code}
+    if args.command == "call":
+        return rpc_call(info, args, "tools/call", {"name": args.name, "arguments": payload}, 1)
     target = args.target
     if target.startswith("/") and not target.startswith("//"):
         target = info["base_url"].rstrip("/") + target
@@ -324,6 +491,9 @@ def main(argv=None):
     try:
         result = execute(args)
         print(json.dumps(result, ensure_ascii=False, indent=2) if not isinstance(result, str) else result)
+        # calls 即使中途失败也输出已执行步骤，用退出码区分「全部成功」与「已停止」。
+        if args.command == "calls" and isinstance(result, dict):
+            return int(result.get("exit_code", 0))
         return 0
     except ClientError as exc:
         print("错误：" + str(exc), file=sys.stderr)

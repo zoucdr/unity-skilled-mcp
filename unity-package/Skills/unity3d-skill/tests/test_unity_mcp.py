@@ -27,7 +27,13 @@ class State:
     details_response = None
     discovery = {"max_details": 32}
     groups_response = None
+    schemas_status = 200
+    schemas_response = None
     bom = False
+    tools_response = None
+    prompts_response = None
+    resources_response = None
+    fail_tool_name = None
 
 
 class Handler(http.server.BaseHTTPRequestHandler):
@@ -50,18 +56,23 @@ class Handler(http.server.BaseHTTPRequestHandler):
                             "counts": {"tools": 2, "prompts": 1, "resources": 1}}],
                 "max_details": State.discovery.get("max_details", 32), "max_response_bytes": 65536})
         elif self.path == "/prompts":
-            self.send_json({"prompts": [{"name": "foo", "description": "提示词", "tags": ["hierarchy-management"]}], "count": 1})
+            self.send_json(State.prompts_response if State.prompts_response is not None else
+                           {"prompts": [{"name": "foo", "description": "提示词", "tags": ["hierarchy-management"]}], "count": 1})
         elif self.path == "/resources":
-            self.send_json({"resources": [{"uri": "res://foo", "name": "foo", "description": "资源定义",
-                                         "mimeType": "text/plain", "tags": ["hierarchy-management"]}], "count": 1})
+            self.send_json(State.resources_response if State.resources_response is not None else
+                           {"resources": [{"uri": "res://foo", "name": "foo", "description": "资源定义",
+                                          "mimeType": "text/plain", "tags": ["hierarchy-management"]}], "count": 1})
         elif self.path == "/discovery":
             base = "http://127.0.0.1:{}".format(State.port)
             self.send_json({"base_url": base, "port": State.port,
                             "project_path": "测试项目", "process_id": 123,
                             "updated_at": "now", "tools_url": base + "/tools",
+                            "details_url": base + "/capabilities/details",
+                            "schemas_url": base + "/capabilities/schemas",
                             "schema_url_template": base + "/tools/{name}/schema", **State.discovery})
         elif self.path == "/tools":
-            self.send_json({"tools": [{"name": "demo", "description": "示例工具"}], "count": 1})
+            self.send_json(State.tools_response if State.tools_response is not None else
+                           {"tools": [{"name": "demo", "description": "示例工具"}], "count": 1})
         elif self.path == "/tools/demo/schema":
             self.send_json({"name": "demo", "description": "完整说明",
                             "inputSchema": {"type": "object", "properties": {"值": {"type": "string"}}}})
@@ -95,10 +106,33 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 items.append(item)
             self.send_json({"items": items, "count": len(items), "max_details": State.discovery.get("max_details", 32)})
             return
+        if self.path == "/capabilities/schemas":
+            if State.schemas_status != 200:
+                self.send_json({"error": "批量 schema 被拒绝"}, State.schemas_status)
+                return
+            if State.schemas_response is not None:
+                self.send_json(State.schemas_response)
+                return
+            items = [{"name": name, "description": "完整说明 " + name,
+                      "inputSchema": {"type": "object", "properties": {name: {"type": "string"}}}}
+                     for name in body["tools"]]
+            self.send_json({"items": items, "count": len(items), "max_details": State.discovery.get("max_details", 32)})
+            return
         if State.response_mode == "rpc_error":
             result = {"jsonrpc": "2.0", "id": body["id"], "error": {"code": -1, "message": "测试错误"}}
         elif State.response_mode == "is_error":
             result = {"jsonrpc": "2.0", "id": body["id"], "result": {"isError": True, "content": []}}
+        elif State.fail_tool_name and (body.get("params") or {}).get("name") == State.fail_tool_name:
+            result = {"jsonrpc": "2.0", "id": body["id"],
+                      "result": {"isError": True, "content": [{"type": "text", "text": "工具失败"}]}}
+        elif body.get("method") == "prompts/get":
+            result = {"jsonrpc": "2.0", "id": body["id"],
+                      "result": {"description": "提示词", "messages": [
+                          {"role": "user", "content": [{"type": "text", "text": "提示词正文"}]}]}}
+        elif body.get("method") == "resources/read":
+            result = {"jsonrpc": "2.0", "id": body["id"],
+                      "result": {"contents": [{"uri": body["params"]["uri"],
+                                               "mimeType": "text/plain", "text": "资源内容"}]}}
         else:
             result = {"jsonrpc": "2.0", "id": body["id"], "result": {"content": [{"type": "text", "text": "完成"}]}}
         self.send_json(result)
@@ -129,7 +163,13 @@ class ClientTests(unittest.TestCase):
         State.details_response = None
         State.discovery = {"max_details": 32}
         State.groups_response = None
+        State.schemas_status = 200
+        State.schemas_response = None
         State.bom = False
+        State.tools_response = None
+        State.prompts_response = None
+        State.resources_response = None
+        State.fail_tool_name = None
 
     def tearDown(self):
         self.temp.cleanup()
@@ -428,6 +468,188 @@ class ClientTests(unittest.TestCase):
         response["items"][0]["description"] = "中" * 22000
         self.assertEqual(self.run_cli("details", "--tag", "hierarchy-management")[0], 5)
         self.assertEqual(len(State.calls), 3)
+
+
+    def test_schemas_multiple_names_single_post(self):
+        code, output, err = self.run_cli("schemas", "hierarchy_search", "hierarchy_apply", "hierarchy_search")
+        self.assertEqual(code, 0, err)
+        result = json.loads(output)
+        self.assertEqual(result["count"], 2)
+        self.assertEqual([item["name"] for item in result["items"]], ["hierarchy_search", "hierarchy_apply"])
+        self.assertEqual(result["items"][1]["inputSchema"]["type"], "object")
+        self.assertEqual(State.calls, [("/capabilities/schemas", {"tools": ["hierarchy_search", "hierarchy_apply"]})])
+        self.assertEqual([url for _, url in State.requests], ["/discovery", "/capabilities/schemas"])
+        self.assertEqual(State.requests[-1][0], "POST")
+
+    def test_schemas_names_file_and_stdin_bom(self):
+        names = ["层级搜索", "apply prefab"]
+        text = "\ufeff" + json.dumps(names, ensure_ascii=False)
+        filename = Path(self.temp.name) / "工具 名称.json"
+        filename.write_text(text, encoding="utf-8")
+        State.bom = True
+        self.assertEqual(self.run_cli("schemas", "--names", json.dumps(names, ensure_ascii=False))[0], 0)
+        self.assertEqual(self.run_cli("schemas", "--names-file", str(filename))[0], 0)
+        stream = io.TextIOWrapper(io.BytesIO(text.encode("utf-8")), encoding="utf-8")
+        with patch("sys.stdin", stream):
+            self.assertEqual(self.run_cli("schemas", "--names-stdin")[0], 0)
+        self.assertEqual(State.calls, [("/capabilities/schemas", {"tools": names})] * 3)
+
+    def test_schemas_limit_comes_from_discovery(self):
+        names = ["tool_{}".format(i) for i in range(9)]
+        with self.configured({"max_details": 8}):
+            before = len(State.requests)
+            self.assertEqual(self.run_cli("schemas", *names)[0], 2)
+            # 超量只做 discovery 校验，不发送批量请求。
+            self.assertEqual(State.requests[before:], [("GET", "/discovery")])
+        with self.configured({"max_details": 0}):
+            self.assertEqual(self.run_cli("schemas", *names)[0], 0)
+            self.assertEqual(len(State.calls[-1][1]["tools"]), 9)
+        with self.configured({"max_details": 30}):
+            self.assertEqual(self.run_cli("schemas", *names)[0], 0)
+
+    def test_schemas_invalid_names_before_network(self):
+        for args in (["--names", "[]"], ["--names", "{}"], ["--names", '["all"]'],
+                     ["--names", '["*"]'], ["--names", "[1]"], ["--names", '[""]'],
+                     ["--names", "NaN"], ["all"], ["*"], [""],
+                     ["demo", "--names", '["demo"]'],
+                     ["--names-file", str(Path(self.temp.name) / "missing.json")]):
+            with self.subTest(args=args):
+                self.assertEqual(self.run_cli("schemas", *args)[0], 2)
+        stream = io.TextIOWrapper(io.BytesIO(bytes([0xc3, 0x28])), encoding="utf-8")
+        with patch("sys.stdin", stream):
+            self.assertEqual(self.run_cli("schemas", "--names-stdin")[0], 2)
+        self.assertEqual(State.requests, [])
+
+    def test_schemas_parser_mutual_exclusion(self):
+        for args in (["schemas", "--names", '["a"]', "--names-stdin"],
+                     ["schemas", "--names-stdin=true"], ["schemas", "--args", "{}"],
+                     ["schemas", "--names"], ["schemas", "--names-file"]):
+            with self.subTest(args=args), contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit) as raised:
+                client.build_parser().parse_args(args)
+            self.assertEqual(raised.exception.code, 2)
+
+    def test_schemas_unknown_tool_and_bad_response(self):
+        State.schemas_status = 404
+        self.assertEqual(self.run_cli("schemas", "missing")[0], 4)
+        State.schemas_status = 200
+        for value in ({}, {"items": [], "count": 0, "max_details": 32},
+                      {"items": [{"name": "a", "inputSchema": {}}], "count": 2, "max_details": 32},
+                      {"items": [{"name": "a", "inputSchema": {}}], "count": 1, "max_details": 9},
+                      {"items": [{"name": "b", "inputSchema": {}}], "count": 1, "max_details": 32},
+                      {"items": [{"name": "a"}], "count": 1, "max_details": 32},
+                      {"items": [None], "count": 1, "max_details": 32}):
+            State.schemas_response = value
+            self.assertEqual(self.run_cli("schemas", "a")[0], 5)
+        self.assertEqual(len([c for c in State.calls if c[0] == "/capabilities/schemas"]), 8)
+
+    def test_schemas_falls_back_without_discovery_url(self):
+        info = {"base_url": "http://127.0.0.1:{}".format(State.port), "max_details": 32}
+        with patch.object(client, "discover", return_value=info):
+            code, _, err = self.run_cli("schemas", "a")
+        self.assertEqual(code, 0, err)
+        self.assertEqual(State.requests[-1], ("POST", "/capabilities/schemas"))
+
+
+    def test_find_filters_directory_summaries(self):
+        State.tools_response = {"tools": [
+            {"name": "hierarchy_search", "description": "搜索层级", "tags": ["层级管理"]},
+            {"name": "edit_material", "description": "修改材质", "tags": ["material"]},
+            "无效条目"], "count": 3}
+        code, output, _ = self.run_cli("find", "HIERARCHY")
+        self.assertEqual(code, 0)
+        result = json.loads(output)
+        self.assertEqual((result["count"], result["total"]), (1, 3))
+        self.assertEqual(result["matches"][0]["name"], "hierarchy_search")
+        self.assertEqual(json.loads(self.run_cli("find", "材质")[1])["matches"][0]["name"], "edit_material")
+        self.assertEqual(json.loads(self.run_cli("find", "material")[1])["matches"][0]["name"], "edit_material")
+        self.assertEqual(json.loads(self.run_cli("find", "提示", "--kind", "prompts")[1])["matches"][0]["name"], "foo")
+        self.assertEqual(json.loads(self.run_cli("find", "res://foo", "--kind", "resources")[1])["matches"][0]["uri"], "res://foo")
+        self.assertEqual(json.loads(self.run_cli("find", "不存在")[1])["count"], 0)
+        self.assertFalse(any(path in ("/mcp", "/capabilities/details") for _, path in State.requests))
+        self.assertEqual({path for _, path in State.requests},
+                         {"/discovery", "/tools", "/prompts", "/resources"})
+
+    def test_find_rejects_invalid_query_before_network(self):
+        for value in ("", " ", " 层级", "层级 ", "x" * 129, "abc\x01"):
+            self.assertEqual(self.run_cli("find", value)[0], 2)
+        with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit) as raised:
+            client.build_parser().parse_args(["find", "demo", "--kind", "all"])
+        self.assertEqual(raised.exception.code, 2)
+        self.assertEqual(State.requests, [])
+
+    def test_prompt_uses_directory_and_reads_messages(self):
+        code, output, _ = self.run_cli("prompt", "foo")
+        self.assertEqual(code, 0)
+        self.assertEqual(json.loads(output)["result"]["messages"][0]["content"][0]["text"], "提示词正文")
+        mcp = [body for path, body in State.calls if path == "/mcp"]
+        self.assertEqual(mcp, [{"jsonrpc": "2.0", "id": 1, "method": "prompts/get", "params": {"name": "foo"}}])
+        self.assertEqual(self.run_cli("prompt", "missing")[0], 2)
+        self.assertEqual(len([body for path, body in State.calls if path == "/mcp"]), 1)
+        State.response_mode = "rpc_error"
+        self.assertEqual(self.run_cli("prompt", "foo")[0], 6)
+
+    def test_resource_rejects_unregistered_uri(self):
+        code, output, _ = self.run_cli("resource", "res://foo")
+        self.assertEqual(code, 0)
+        self.assertEqual(json.loads(output)["result"]["contents"][0]["text"], "资源内容")
+        mcp = [body for path, body in State.calls if path == "/mcp"]
+        self.assertEqual(mcp[0]["method"], "resources/read")
+        self.assertEqual(mcp[0]["params"], {"uri": "res://foo"})
+        for uri in ("http://example.com/secret", "file:///etc/passwd", "res://other", "not-a-uri"):
+            self.assertEqual(self.run_cli("resource", uri)[0], 2)
+        self.assertEqual(len([body for path, body in State.calls if path == "/mcp"]), 1)
+        State.response_mode = "rpc_error"
+        self.assertEqual(self.run_cli("resource", "res://foo")[0], 6)
+
+    def test_calls_sequential_success(self):
+        code, output, err = self.run_cli("calls", "--calls", '[{"name":"a"},{"name":"b","arguments":{"value":1}}]')
+        self.assertEqual(code, 0, err)
+        result = json.loads(output)
+        self.assertEqual((result["executed"], result["total"], result["stopped_at"], result["exit_code"]), (2, 2, None, 0))
+        self.assertEqual([step["name"] for step in result["steps"]], ["a", "b"])
+        self.assertTrue(all(step["ok"] for step in result["steps"]))
+        mcp = [body for path, body in State.calls if path == "/mcp"]
+        self.assertEqual([body["id"] for body in mcp], [1, 2])
+        self.assertEqual(mcp[1]["params"]["arguments"], {"value": 1})
+        self.assertIn("已执行 2/2 步，全部完成", err)
+
+    def test_calls_stops_on_failure(self):
+        State.fail_tool_name = "b"
+        code, output, err = self.run_cli("calls", "--calls", '[{"name":"a"},{"name":"b"},{"name":"c"}]')
+        self.assertEqual(code, 6, err)
+        result = json.loads(output)
+        self.assertEqual((result["executed"], result["total"], result["stopped_at"]), (2, 3, 1))
+        self.assertTrue(result["steps"][0]["ok"])
+        self.assertFalse(result["steps"][1]["ok"])
+        self.assertIn("isError", result["steps"][1]["error"]["message"])
+        self.assertEqual(len([body for path, body in State.calls if path == "/mcp"]), 2)
+        self.assertIn("不可盲目重放", err)
+
+    def test_calls_validation_and_limits(self):
+        for value in ("[]", "{}", "[null]", '[{"name":"all"}]', '[{"name":"a","arguments":[]}]',
+                      '[{"name":"a","extra":1}]', '[{"name":"a","arguments":{"x":NaN}}]'):
+            self.assertEqual(self.run_cli("calls", "--calls", value)[0], 2)
+        self.assertEqual(State.requests, [])
+        too_many = json.dumps([{"name": "n" + str(i)} for i in range(33)])
+        self.assertEqual(self.run_cli("calls", "--calls", too_many)[0], 2)
+        big_file = Path(self.temp.name) / "big.json"
+        big_file.write_text(json.dumps([{"name": "a", "arguments": {"blob": "x" * 70000}}]), encoding="utf-8")
+        self.assertEqual(self.run_cli("calls", "--calls-file", str(big_file))[0], 2)
+        self.assertFalse(any(path == "/mcp" for _, path in State.requests))
+
+    def test_calls_files_stdin_bom_and_unlimited(self):
+        calls_file = Path(self.temp.name) / "calls.json"
+        calls_file.write_text("\ufeff" + '[{"name":"a"}]', encoding="utf-8")
+        self.assertEqual(json.loads(self.run_cli("calls", "--calls-file", str(calls_file))[1])["executed"], 1)
+        with patch.object(client.sys, "stdin", io.TextIOWrapper(io.BytesIO(('\ufeff[{"name":"a"},{"name":"b"}]').encode("utf-8")), encoding="utf-8")):
+            code, output, err = self.run_cli("calls", "--calls-stdin")
+        self.assertEqual(code, 0, err)
+        self.assertEqual(json.loads(output)["executed"], 2)
+        with self.configured({"max_details": 0}):
+            ten = json.dumps([{"name": "n" + str(i)} for i in range(40)])
+            code, output, err = self.run_cli("calls", "--calls", ten)
+        self.assertEqual(code, 0, err)
+        self.assertEqual(json.loads(output)["executed"], 40)
 
 
 if __name__ == "__main__":

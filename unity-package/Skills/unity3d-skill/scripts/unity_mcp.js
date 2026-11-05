@@ -202,6 +202,9 @@ async function discover(ini, timeout) {
     for (const key of ['tools_url', 'schema_url_template']) {
       if (origin(info[key]) !== url.origin) throw new Error('discovery 端点不在同一服务');
     }
+    for (const key of ['details_url', 'schemas_url']) {
+      if (Object.hasOwn(info, key) && origin(info[key]) !== url.origin) throw new Error('discovery 端点不在同一服务');
+    }
     if (!info.schema_url_template.includes('{name}')) throw new Error('schema URL 缺少 {name}');
     for (const key of ['project_path', 'updated_at']) {
       if (typeof info[key] !== 'string') throw new Error('discovery 字段类型错误：' + key);
@@ -279,6 +282,84 @@ function detailsPayload(args) {
   return { members: [...unique.values()] };
 }
 
+function findQuery(value) {
+  if (typeof value !== 'string' || !value.trim() || value !== value.trim()
+      || value.length > 128 || /[\u0000-\u001f\u007f]/u.test(value)) {
+    throw new ClientError('检索关键字须为 1-128 个非控制字符，且不含首尾空白。', 2);
+  }
+  return value;
+}
+
+function callsPayload(args) {
+  const value = inputJson(args);
+  if (!Array.isArray(value) || value.length === 0) {
+    throw new ClientError('calls 必须是非空 JSON 数组。', 2);
+  }
+  return value.map((item, index) => {
+    if (!isObject(item) || !selectionValue(item.name)
+        || Object.keys(item).some(key => !['name', 'arguments'].includes(key))
+        || (Object.hasOwn(item, 'arguments') && !isObject(item.arguments))) {
+      throw new ClientError('第 ' + (index + 1) + ' 个调用只能是 {name, arguments?}，arguments 必须是 JSON 对象。', 2);
+    }
+    return { name: item.name, arguments: item.arguments || {} };
+  });
+}
+
+function rpcEnvelope(method, params, id) {
+  return { jsonrpc: '2.0', id, method, params };
+}
+
+function rpcResult(envelope, id, expectedArray) {
+  if (!isObject(envelope) || envelope.jsonrpc !== '2.0' || envelope.id !== id) {
+    throw new ClientError('无效 JSON-RPC 响应。', 5);
+  }
+  if (Object.hasOwn(envelope, 'error')) {
+    throw new ClientError('JSON-RPC error：' + JSON.stringify(envelope.error), 6);
+  }
+  if (!isObject(envelope.result)) throw new ClientError('JSON-RPC 响应缺少 result 对象。', 5);
+  if (envelope.result.isError) throw new ClientError('MCP isError：' + JSON.stringify(envelope.result), 6);
+  if (expectedArray && !Array.isArray(envelope.result[expectedArray])) {
+    throw new ClientError('JSON-RPC 响应缺少 ' + expectedArray + ' 数组。', 5);
+  }
+  return envelope;
+}
+
+async function rpcCall(info, args, method, params, id, expectedArray) {
+  const result = await requestHttp(info.base_url.replace(/\/+$/, '') + '/mcp',
+    args.timeout, 'POST', rpcEnvelope(method, params, id));
+  return rpcResult(result, id, expectedArray);
+}
+
+function directoryUrl(info, kind) {
+  return kind === 'tools' ? info.tools_url : origin(info.base_url) + '/' + kind;
+}
+
+async function directory(info, args, kind) {
+  const result = await requestHttp(directoryUrl(info, kind), args.timeout);
+  if (!isObject(result) || !Array.isArray(result[kind])) {
+    throw new ClientError(kind + ' 响应缺少目录列表。', 5);
+  }
+  return result[kind];
+}
+
+function schemaNames(args) {
+  let list = args.targets;
+  if (!list.length) {
+    const value = inputJson(args);
+    if (!Array.isArray(value) || value.length === 0) {
+      throw new ClientError('names 必须是非空 JSON 字符串数组。', 2);
+    }
+    list = value;
+  }
+  const unique = [];
+  const seen = new Set();
+  for (const name of list) {
+    if (!selectionValue(name)) throw new ClientError('工具名必须是非空字符串，禁止 all/* 或控制字符。', 2);
+    if (!seen.has(name)) { seen.add(name); unique.push(name); }
+  }
+  return unique;
+}
+
 function help(command) {
   const usage = {
     discover: 'discover',
@@ -286,11 +367,16 @@ function help(command) {
     list: 'list [--kind tools|prompts|resources]',
     details: 'details (--tag TAG | --members JSON数组 | --members-file FILE | --members-stdin)\n  去重成员上限由 discovery 的 max_details 决定（默认32，0不限数量），响应最多 65536 字节；禁止全量选择；标签从 groups 获取。',
     schema: 'schema NAME',
+    schemas: 'schemas NAME [NAME ...] | schemas (--names JSON数组 | --names-file FILE | --names-stdin)\n  一次获取多个工具的完整 Schema；去重后上限由 max_details 决定（默认32，0不限数量），响应最多 65536 字节；禁止全量选择。',
     call: 'call NAME [--args JSON | --args-file FILE | --args-stdin]',
+    find: 'find QUERY [--kind tools|prompts|resources]\n  在目录摘要中按名称/描述/标签/URI 做本地关键字过滤，不拉取详情；默认 tools。',
+    prompt: 'prompt NAME\n  名称必须来自 list --kind prompts；读取 prompts/get 的消息正文，不隐式调用旧目录接口。',
+    resource: 'resource URI\n  URI 必须来自 list --kind resources；读取 resources/read 内容，拒绝未注册的 http/file URI。',
+    calls: 'calls (--calls JSON数组 | --calls-file FILE | --calls-stdin)\n  数组元素为 {name, arguments?}，顺序执行，失败即停并保留已执行步骤；上限由 max_details 决定（默认32，0不限数量），请求体最多 65536 字节。',
     request: 'request TARGET [--method GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS]\n  [--header NAME:VALUE ...] [--data JSON | --data-file FILE | --data-stdin]',
   };
   return '用法：node scripts/unity_mcp.js [--ini PATH] [--timeout SECONDS] '
-    + (usage[command] || 'discover|groups|list|details|schema|call|request')
+    + (usage[command] || 'discover|groups|list|find|details|schema|schemas|call|prompt|resource|calls|request')
     + '\n默认 INI：~/.unity-mcp/skill.ini；超时：15 秒（正有限数）。'
     + '\n每次读取 INI 并验证 discovery；不重试、不跟随重定向，验证 TLS。'
     + '\nJSON 文件/标准输入支持 UTF-8 BOM；call 默认传 {}，request 支持服务路由或授权的绝对 HTTP URL。'
@@ -299,7 +385,7 @@ function help(command) {
 }
 
 function parseArgs(argv) {
-  const args = { ini: path.join(os.homedir(), '.unity-mcp', 'skill.ini'), timeout: 15, headers: [], method: 'GET', kind: 'tools' };
+  const args = { ini: path.join(os.homedir(), '.unity-mcp', 'skill.ini'), timeout: 15, headers: [], method: 'GET', kind: 'tools', targets: [] };
   let positionalOnly = false;
   for (let i = 0; i < argv.length; i++) {
     const token = argv[i];
@@ -308,11 +394,11 @@ function parseArgs(argv) {
     if (!positionalOnly && token.startsWith('-')) {
       const split = token.indexOf('=');
       const flag = split < 0 ? token : token.slice(0, split);
-      const prefix = { call: '--args', request: '--data', details: '--members' }[args.command];
+      const prefix = { call: '--args', request: '--data', details: '--members', schemas: '--names', calls: '--calls' }[args.command];
       const source = prefix && (flag === prefix ? 'text' : flag === prefix + '-file' ? 'file' : flag === prefix + '-stdin' ? 'stdin' : null);
       const global = !args.command && ['--ini', '--timeout'].includes(flag);
       const requestOption = args.command === 'request' && ['--method', '--header'].includes(flag);
-      const selectionOption = (args.command === 'list' && flag === '--kind') || (args.command === 'details' && flag === '--tag');
+      const selectionOption = (['list', 'find'].includes(args.command) && flag === '--kind') || (args.command === 'details' && flag === '--tag');
       if (!global && !requestOption && !selectionOption && !source) throw new ClientError('未知参数：' + token, 2);
       let value;
       if (source === 'stdin') {
@@ -334,14 +420,25 @@ function parseArgs(argv) {
       else if (flag === '--method') args.method = value;
       else args.headers.push(value);
     } else if (!args.command) {
-      if (!['discover', 'groups', 'list', 'details', 'schema', 'call', 'request'].includes(token)) throw new ClientError('未知命令：' + token, 2);
+      if (!['discover', 'groups', 'list', 'find', 'details', 'schema', 'schemas', 'call', 'prompt', 'resource', 'calls', 'request'].includes(token)) throw new ClientError('未知命令：' + token, 2);
       args.command = token;
-    } else if (['schema', 'call', 'request'].includes(args.command) && args.target === undefined) {
+    } else if (['schema', 'call', 'prompt', 'resource', 'find', 'request'].includes(args.command) && args.target === undefined) {
       args.target = token;
+    } else if (args.command === 'schemas') {
+      args.targets.push(token);
     } else throw new ClientError('多余参数：' + token, 2);
   }
   if (!args.command) throw new ClientError('缺少命令；使用 --help 查看用法。', 2);
-  if (['schema', 'call', 'request'].includes(args.command) && args.target === undefined) throw new ClientError('缺少工具名称或请求地址。', 2);
+  if (['schema', 'call', 'prompt', 'resource', 'find', 'request'].includes(args.command) && args.target === undefined) {
+    throw new ClientError('缺少名称、URI、关键字或请求地址。', 2);
+  }
+  if (args.command === 'schemas') {
+    if (args.targets.length && args.jsonSource) throw new ClientError('schemas 的名称列表与 --names 输入只能二选一。', 2);
+    if (!args.targets.length && !args.jsonSource) throw new ClientError('缺少工具名称；使用 --help 查看用法。', 2);
+  }
+  if (args.command === 'calls' && !args.jsonSource) {
+    throw new ClientError('缺少调用列表；使用 --calls / --calls-file / --calls-stdin。', 2);
+  }
   if (!Number.isFinite(args.timeout) || args.timeout <= 0) throw new ClientError('--timeout 必须为正有限数。', 2);
   if (!['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'].includes(args.method)) throw new ClientError('不支持的 HTTP 方法。', 2);
   if (!['tools', 'prompts', 'resources'].includes(args.kind)) throw new ClientError('--kind 仅允许 tools、prompts、resources。', 2);
@@ -369,6 +466,21 @@ async function execute(args) {
     }
   }
   if (args.command === 'details') payload = detailsPayload(args);
+  if (args.command === 'schemas') payload = { tools: schemaNames(args) };
+  if (args.command === 'calls') payload = callsPayload(args);
+  // 名称/关键字/URI 的格式校验在 discovery 之前完成，非法输入不产生任何网络请求。
+  if (args.command === 'find') payload = { query: findQuery(args.target) };
+  if (args.command === 'prompt' || args.command === 'resource') {
+    if (args.command === 'prompt') {
+      if (!selectionValue(args.target)) throw new ClientError('提示词名称无效；从 list --kind prompts 选取。', 2);
+      payload = { name: args.target };
+    } else {
+      if (!selectionValue(args.target) || !/^[A-Za-z][A-Za-z0-9+.-]*:[^\s]+$/u.test(args.target)) {
+        throw new ClientError('资源 URI 必须是带 scheme 的完整 URI。', 2);
+      }
+      payload = { uri: args.target };
+    }
+  }
   const info = await discover(args.ini, args.timeout);
   if (args.command === 'discover') return info;
   const base = origin(info.base_url);
@@ -403,14 +515,78 @@ async function execute(args) {
     }
     return result;
   }
-  if (args.command === 'call') {
-    const envelope = { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: args.target, arguments: payload } };
-    const result = await requestHttp(info.base_url.replace(/\/+$/, '') + '/mcp', args.timeout, 'POST', envelope);
-    if (!isObject(result) || result.jsonrpc !== '2.0' || result.id !== 1) throw new ClientError('无效 JSON-RPC 响应。', 5);
-    if (Object.hasOwn(result, 'error')) throw new ClientError('JSON-RPC error：' + JSON.stringify(result.error), 6);
-    if (!isObject(result.result)) throw new ClientError('JSON-RPC 响应缺少 result 对象。', 5);
-    if (result.result.isError) throw new ClientError('MCP isError：' + JSON.stringify(result.result), 6);
+  if (args.command === 'schemas') {
+    const limit = info.max_details;
+    const names = payload.tools;
+    if (limit > 0 && names.length > limit) {
+      throw new ClientError('去重后最多一次获取 ' + limit + ' 个 Schema（discovery max_details）；未发送请求。', 2);
+    }
+    const result = await requestHttp(info.schemas_url || base + '/capabilities/schemas',
+      args.timeout, 'POST', payload, {}, MAX_RESPONSE_BYTES);
+    if (!isObject(result) || !Array.isArray(result.items) || result.count !== result.items.length
+        || result.count < 1 || (limit > 0 && result.count > limit) || !responseDetailsLimit(result, limit)) {
+      throw new ClientError('schemas 响应格式或数量无效。', 5);
+    }
+    const matched = result.items.length === names.length && result.items.every((item, index) =>
+      isObject(item) && item.name === names[index] && isObject(item.inputSchema));
+    if (!matched) throw new ClientError('schemas 响应的工具名顺序或 inputSchema 与请求不一致。', 5);
     return result;
+  }
+  if (args.command === 'find') {
+    const query = payload.query;
+    const entries = await directory(info, args, args.kind);
+    const needle = query.toLowerCase();
+    const matches = entries.filter(item => isObject(item) && [item.name, item.uri, item.description,
+      ...(Array.isArray(item.tags) ? item.tags : [])]
+      .some(value => typeof value === 'string' && value.toLowerCase().includes(needle)));
+    return { kind: args.kind, query, matches, count: matches.length, total: entries.length };
+  }
+  if (args.command === 'prompt') {
+    const name = payload.name;
+    const entries = await directory(info, args, 'prompts');
+    if (!entries.some(item => isObject(item) && item.name === name)) {
+      throw new ClientError('提示词不在 /prompts 目录中：' + name + '；先运行 list --kind prompts。', 2);
+    }
+    return rpcCall(info, args, 'prompts/get', { name }, 1, 'messages');
+  }
+  if (args.command === 'resource') {
+    const uri = payload.uri;
+    const entries = await directory(info, args, 'resources');
+    if (!entries.some(item => isObject(item) && item.uri === uri)) {
+      throw new ClientError('资源 URI 不在 /resources 目录中，禁止读取未注册 URI：' + uri, 2);
+    }
+    return rpcCall(info, args, 'resources/read', { uri }, 1, 'contents');
+  }
+  if (args.command === 'calls') {
+    const limit = info.max_details;
+    if (limit > 0 && payload.length > limit) {
+      throw new ClientError('一次最多 ' + limit + ' 个调用（discovery max_details）；未发送任何调用。', 2);
+    }
+    if (Buffer.byteLength(JSON.stringify(payload), 'utf8') > MAX_RESPONSE_BYTES) {
+      throw new ClientError('批量调用请求体超过 65536 字节；未发送任何调用。', 2);
+    }
+    const steps = [];
+    let exitCode = 0;
+    let stoppedAt = null;
+    for (let index = 0; index < payload.length; index++) {
+      try {
+        const envelope = await rpcCall(info, args, 'tools/call',
+          { name: payload[index].name, arguments: payload[index].arguments }, index + 1);
+        steps.push({ index, name: payload[index].name, ok: true, result: envelope.result });
+      } catch (error) {
+        const code = error instanceof ClientError ? error.code : 5;
+        steps.push({ index, name: payload[index].name, ok: false, error: { code, message: error.message } });
+        exitCode = code;
+        stoppedAt = index;
+        break;
+      }
+    }
+    console.error('批量调用：已执行 ' + steps.length + '/' + payload.length + ' 步'
+      + (stoppedAt === null ? '，全部完成。' : ' 后停止；已生效的写操作不可盲目重放。'));
+    return { steps, executed: steps.length, total: payload.length, stopped_at: stoppedAt, exit_code: exitCode };
+  }
+  if (args.command === 'call') {
+    return rpcCall(info, args, 'tools/call', { name: args.target, arguments: payload }, 1);
   }
   let target = args.target;
   if (target.startsWith('/') && !target.startsWith('//')) target = info.base_url.replace(/\/+$/, '') + target;
@@ -423,6 +599,10 @@ async function main() {
     if (args.help) { console.log(args.help); return; }
     const result = await execute(args);
     console.log(typeof result === 'string' ? result : JSON.stringify(result, null, 2));
+    // calls 即使中途失败也输出已执行步骤，用退出码区分「全部成功」与「已停止」。
+    if (args.command === 'calls' && isObject(result) && Number.isInteger(result.exit_code)) {
+      process.exitCode = result.exit_code;
+    }
   } catch (error) {
     console.error('错误：' + error.message);
     process.exitCode = error instanceof ClientError ? error.code : 2;

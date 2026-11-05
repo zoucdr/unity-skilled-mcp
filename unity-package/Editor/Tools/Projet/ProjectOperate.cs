@@ -29,7 +29,7 @@ namespace UniMcp.Tools
             {
                 // Action type
                 new MethodStr("action", L.T("Action type", "操作类型"), false)
-                    .SetEnumValues("import", "modify", "move", "duplicate", "rename", "get_info", "create_folder", "reload", "select", "ping", "select_depends", "select_usage", "tree"),
+                    .SetEnumValues("import", "refresh", "modify", "move", "duplicate", "rename", "get_info", "create_folder", "reload", "select", "ping", "select_depends", "select_usage", "tree", "delete"),
                 
                 // Asset path
                 new MethodStr("path", L.T("Asset path, Unity standard format", "资源路径，Unity标准格式"), false)
@@ -79,6 +79,7 @@ namespace UniMcp.Tools
                 .Key("action")
                     .Leaf("import", ReimportAsset)
                     .Leaf("refresh", RefreshProject)
+                    .Leaf("reload", RefreshProject)
                     .Leaf("modify", ModifyAsset)
                     .Leaf("duplicate", DuplicateAsset)
                     .Leaf("move", MoveOrRenameAsset)
@@ -90,7 +91,46 @@ namespace UniMcp.Tools
                     .Leaf("select_depends", SelectDependencies)
                     .Leaf("select_usage", SelectUsages)
                     .Leaf("tree", GetFolderStructure)
+                    .Leaf("delete", DeleteAsset)
                 .Build();
+        }
+
+        /// <summary>
+        /// 删除资源：默认移入回收站，force=true 时永久删除
+        /// </summary>
+        private object DeleteAsset(JsonClass args)
+        {
+            var path = (args["path"]?.Value ?? "").Trim().Replace('\\', '/');
+            if (string.IsNullOrEmpty(path))
+                return Response.Error("'path' is required for delete.");
+
+            if (!path.StartsWith("Assets/", StringComparison.OrdinalIgnoreCase))
+                return Response.Error("'path' must point inside the Assets folder: " + path);
+
+            if (string.Equals(path.TrimEnd('/'), "Assets", StringComparison.OrdinalIgnoreCase))
+                return Response.Error("Refusing to delete the whole Assets folder.");
+
+            var exists = AssetDatabase.IsValidFolder(path) || AssetDatabase.LoadAssetAtPath<UnityEngine.Object>(path) != null;
+            if (!exists)
+                return Response.Error("Asset not found: " + path);
+
+            var force = args["force"].AsBoolDefault(false);
+
+            try
+            {
+                var removed = force ? AssetDatabase.DeleteAsset(path) : AssetDatabase.MoveAssetToTrash(path);
+                if (!removed)
+                    return Response.Error("Failed to delete asset: " + path);
+
+                McpLogger.Log("[ProjectOperate] Deleted asset: " + path);
+                return Response.Success(
+                    force ? "Asset deleted permanently." : "Asset moved to trash.",
+                    new { path = path, permanent = force });
+            }
+            catch (Exception e)
+            {
+                return Response.Error("Failed to delete asset: " + e.Message);
+            }
         }
 
         private object ReimportAsset(JsonClass args)

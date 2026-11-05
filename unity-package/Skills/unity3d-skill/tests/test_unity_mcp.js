@@ -30,15 +30,20 @@ async function fixture(t) {
       const info = {
         base_url: base, port: server.address().port,
         tools_url: base + '/tools', schema_url_template: base + '/tools/{name}/schema',
+        details_url: base + '/capabilities/details', schemas_url: base + '/capabilities/schemas',
         project_path: '测试项目', process_id: 123, updated_at: 'now', ...state.discovery,
       };
       send(state.discoveryRaw === undefined ? info : state.discoveryRaw);
     } else if (req.url === '/groups') {
       send(state.groupsResponse === undefined ? { groups: [{ tag: 'hierarchy-management', label: '层级管理', counts: { tools: 2, prompts: 1, resources: 1 } }], max_details: state.discovery.max_details ?? 32, max_response_bytes: 65536 } : state.groupsResponse);
     } else if (req.url === '/prompts') {
-      send({ prompts: [{ name: 'foo', description: '提示词', tags: ['hierarchy-management'] }], count: 1 });
+      send(state.promptsResponse === undefined
+        ? { prompts: [{ name: 'foo', description: '提示词', tags: ['hierarchy-management'] }], count: 1 }
+        : state.promptsResponse);
     } else if (req.url === '/resources') {
-      send({ resources: [{ uri: 'res://foo', name: 'foo', description: '资源定义', mimeType: 'text/plain', tags: ['hierarchy-management'] }], count: 1 });
+      send(state.resourcesResponse === undefined
+        ? { resources: [{ uri: 'res://foo', name: 'foo', description: '资源定义', mimeType: 'text/plain', tags: ['hierarchy-management'] }], count: 1 }
+        : state.resourcesResponse);
     } else if (req.url === '/capabilities/details') {
       if (state.detailsStatus) { send({ error: '详情选择被拒绝' }, state.detailsStatus); return; }
       if (state.detailsDisconnect) { req.socket.destroy(); return; }
@@ -46,23 +51,45 @@ async function fixture(t) {
       const members = entry.body.members || [{ kind: 'tool', name: 'hierarchy_search' }];
       const items = members.map(member => ({ ...member, description: '注册定义', ...(member.kind === 'tool' ? { inputSchema: { type: 'object' } } : member.kind === 'prompt' ? { arguments: [] } : { mimeType: 'text/plain' }) }));
       send(state.detailsResponse === undefined ? { items, count: items.length, max_details: state.discovery.max_details ?? 32 } : state.detailsResponse);
+    } else if (req.url === '/capabilities/schemas') {
+      if (state.schemasStatus) { send({ error: '批量 schema 被拒绝' }, state.schemasStatus); return; }
+      if (state.schemasResponse !== undefined) { send(state.schemasResponse); return; }
+      const items = entry.body.tools.map(name => ({
+        name, description: '完整说明 ' + name,
+        inputSchema: { type: 'object', properties: { [name]: { type: 'string' } } },
+      }));
+      send({ items, count: items.length, max_details: state.discovery.max_details ?? 32 });
     } else if (req.url === '/tools') {
-      send(state.mode === 'bad_tools' ? {} : { tools: [{ name: 'demo', description: '示例工具' }], count: 1 });
+      send(state.toolsResponse !== undefined ? state.toolsResponse
+        : state.mode === 'bad_tools' ? {} : { tools: [{ name: 'demo', description: '示例工具' }], count: 1 });
     } else if (req.url.startsWith('/tools/') && req.url.endsWith('/schema')) {
       const name = decodeURIComponent(req.url.slice(7, -7));
       if (name === 'unknown') { send({}, 404); return; }
       send(state.mode === 'bad_schema' ? { name: 'wrong' } : { name, description: '完整说明', inputSchema: { type: 'object', properties: { '值': { type: 'string' } } } });
     } else if (req.url === '/mcp') {
+      const rpcId = entry.body.id;
       if (state.mode === 'redirect') { send({}, 307, { Location: base + '/replayed' }); return; }
       if (state.mode === 'http_error') { send({}, 503); return; }
       if (state.mode === 'disconnect') { req.socket.destroy(); return; }
       if (state.mode === 'truncated') { res.writeHead(200, { 'Content-Length': '1000' }); res.end('{}'); return; }
       if (state.mode === 'timeout') return;
-      if (state.mode === 'rpc_error') { send({ jsonrpc: '2.0', id: 1, error: { code: -1, message: '失败' } }); return; }
-      if (state.mode === 'is_error') { send({ jsonrpc: '2.0', id: 1, result: { isError: true } }); return; }
+      if (state.mode === 'rpc_error') { send({ jsonrpc: '2.0', id: rpcId, error: { code: -1, message: '失败' } }); return; }
+      if (state.mode === 'is_error') { send({ jsonrpc: '2.0', id: rpcId, result: { isError: true } }); return; }
       if (state.mode === 'bad_rpc') { send({ jsonrpc: '2.0', id: 2, result: {} }); return; }
-      if (state.mode === 'no_result') { send({ jsonrpc: '2.0', id: 1 }); return; }
-      send({ jsonrpc: '2.0', id: 1, result: { content: [{ type: 'text', text: '完成' }] } });
+      if (state.mode === 'no_result') { send({ jsonrpc: '2.0', id: rpcId }); return; }
+      if (state.failToolName && entry.body.params && entry.body.params.name === state.failToolName) {
+        send({ jsonrpc: '2.0', id: rpcId, result: { isError: true, content: [{ type: 'text', text: '工具失败' }] } });
+        return;
+      }
+      if (entry.body.method === 'prompts/get') {
+        send({ jsonrpc: '2.0', id: rpcId, result: { description: '提示词', messages: [{ role: 'user', content: [{ type: 'text', text: '提示词正文' }] }] } });
+        return;
+      }
+      if (entry.body.method === 'resources/read') {
+        send({ jsonrpc: '2.0', id: rpcId, result: { contents: [{ uri: entry.body.params.uri, mimeType: 'text/plain', text: '资源内容' }] } });
+        return;
+      }
+      send({ jsonrpc: '2.0', id: rpcId, result: { content: [{ type: 'text', text: '完成' }] } });
     } else if (req.url === '/invalid-utf8') {
       res.end(Buffer.from([0xc3, 0x28]));
     } else if (req.url === '/text') {
@@ -631,4 +658,234 @@ test('详情响应按 UTF-8 字节限制，精确 64 KiB 允许，超过拒绝',
   response.items[0].description = '中'.repeat(22000);
   failure(await f.run(['details', '--tag', 'hierarchy-management']), 5);
   assert.equal(f.requests.filter(r => r.url === '/capabilities/details').length, 3);
+});
+
+test('schemas 一次请求多个工具，去重保序且单次 POST', async t => {
+  const f = await fixture(t);
+  const result = success(await f.run(['schemas', 'hierarchy_search', 'hierarchy_apply', 'hierarchy_search']));
+  assert.equal(result.count, 2);
+  assert.deepEqual(result.items.map(item => item.name), ['hierarchy_search', 'hierarchy_apply']);
+  assert.equal(result.items[1].inputSchema.type, 'object');
+  assert.equal(result.max_details, 8);
+  assert.deepEqual(f.requests.map(r => r.url), ['/discovery', '/capabilities/schemas']);
+  assert.equal(f.requests.at(-1).method, 'POST');
+  assert.deepEqual(f.requests.at(-1).body, { tools: ['hierarchy_search', 'hierarchy_apply'] });
+});
+
+test('schemas 支持 --names 内联、文件与 stdin，包含 BOM 和中文路径', async t => {
+  const f = await fixture(t);
+  f.state.bom = true;
+  const names = ['层级搜索', 'apply prefab'];
+  success(await f.run(['schemas', '--names', JSON.stringify(names)]));
+  const file = path.join(f.dir, '工具 名称.json');
+  await fs.writeFile(file, '\ufeff' + JSON.stringify(names));
+  success(await f.run(['schemas', '--names-file', file]));
+  success(await f.run(['schemas', '--names-stdin'], '\ufeff' + JSON.stringify(names)));
+  const posts = f.requests.filter(r => r.url === '/capabilities/schemas');
+  assert.equal(posts.length, 3);
+  for (const post of posts) assert.deepEqual(post.body, { tools: names });
+});
+
+test('schemas 上限来自 discovery，超量在 POST 前拒绝，0 不限数量', async t => {
+  const f = await fixture(t);
+  const names = Array.from({ length: 9 }, (_, i) => 'tool_' + i);
+  const before = f.requests.length;
+  failure(await f.run(['schemas', ...names]), 2);
+  assert.deepEqual(f.requests.slice(before).map(r => r.url), ['/discovery']);
+  f.state.discovery.max_details = 0;
+  assert.equal(success(await f.run(['schemas', ...names])).count, 9);
+  f.state.discovery.max_details = 12;
+  assert.equal(success(await f.run(['schemas', ...names])).count, 9);
+});
+
+test('schemas 非法名称与互斥输入在网络前失败', async t => {
+  const f = await fixture(t);
+  for (const args of [
+    ['schemas'], ['schemas', '--names', '[]'], ['schemas', '--names', '{}'],
+    ['schemas', '--names', '["all"]'], ['schemas', '--names', '["*"]'],
+    ['schemas', '--names', '[1]'], ['schemas', '--names', '[""]'],
+    ['schemas', 'all'], ['schemas', '*'], ['schemas', ''],
+    ['schemas', 'demo', '--names', '["demo"]'],
+    ['schemas', '--names', '["a"]', '--names-stdin'],
+    ['schemas', '--names-file', path.join(f.dir, 'missing.json')],
+    ['schemas', '--names', 'NaN'], ['schemas', '--args', '{}'],
+    ['schemas', '--names-stdin=true'],
+  ]) {
+    failure(await f.run(args), 2);
+  }
+  failure(await f.run(['schemas', '--names-stdin'], Buffer.from([0xc3, 0x28])), 2);
+  assert.equal(f.requests.length, 0);
+});
+
+test('schemas 未知工具、格式错误与数量不一致分别按状态码失败', async t => {
+  const f = await fixture(t);
+  f.state.schemasStatus = 404;
+  failure(await f.run(['schemas', 'missing']), 4);
+  f.state.schemasStatus = 0;
+  for (const value of [
+    {}, { items: [], count: 0, max_details: 8 },
+    { items: [{ name: 'a', inputSchema: { type: 'object' } }], count: 2, max_details: 8 },
+    { items: [{ name: 'a', inputSchema: { type: 'object' } }], count: 1, max_details: 9 },
+    { items: [{ name: 'b', inputSchema: { type: 'object' } }], count: 1, max_details: 8 },
+    { items: [{ name: 'a' }], count: 1, max_details: 8 },
+    { items: [null], count: 1, max_details: 8 },
+  ]) {
+    f.state.schemasResponse = value;
+    failure(await f.run(['schemas', 'a']), 5);
+  }
+  assert.equal(f.requests.filter(r => r.url === '/capabilities/schemas').length, 8);
+});
+
+test('discovery 缺 schemas_url 时回退固定路由，跨源仍拒绝', async t => {
+  const f = await fixture(t);
+  const external = await fixture(t);
+  f.state.discovery.schemas_url = undefined;
+  success(await f.run(['schemas', 'a']));
+  assert.equal(f.requests.at(-1).url, '/capabilities/schemas');
+  f.state.discovery.schemas_url = external.base + '/capabilities/schemas';
+  failure(await f.run(['schemas', 'a']), 5);
+  assert.equal(external.requests.length, 0);
+});
+
+test('find 只在目录摘要内按名称/描述/标签/URI 过滤，不拉详情', async t => {
+  const f = await fixture(t);
+  f.state.toolsResponse = { tools: [
+    { name: 'hierarchy_search', description: '搜索层级', tags: ['层级管理'] },
+    { name: 'edit_material', description: '修改材质', tags: ['material'] },
+    '无效条目',
+  ], count: 3 };
+  const byName = success(await f.run(['find', 'HIERARCHY']));
+  assert.equal(byName.kind, 'tools');
+  assert.equal(byName.count, 1);
+  assert.equal(byName.total, 3);
+  assert.equal(byName.matches[0].name, 'hierarchy_search');
+  assert.equal(success(await f.run(['find', '材质'])).matches[0].name, 'edit_material');
+  assert.equal(success(await f.run(['find', 'material'])).matches[0].name, 'edit_material');
+  const prompts = success(await f.run(['find', '提示', '--kind', 'prompts']));
+  assert.equal(prompts.count, 1);
+  assert.equal(prompts.matches[0].name, 'foo');
+  const resources = success(await f.run(['find', 'res://foo', '--kind', 'resources']));
+  assert.equal(resources.matches[0].uri, 'res://foo');
+  assert.equal(success(await f.run(['find', '不存在'])).count, 0);
+  assert.equal(f.requests.filter(r => r.url === '/capabilities/details' || r.url === '/mcp').length, 0);
+  assert.deepEqual([...new Set(f.requests.map(r => r.url))].sort(),
+    ['/discovery', '/prompts', '/resources', '/tools']);
+});
+
+test('find 非法关键字与无效 kind 在网络前失败', async t => {
+  const f = await fixture(t);
+  for (const value of ['', ' ', ' 层级', '层级 ', 'x'.repeat(129), 'abc\u0001']) {
+    failure(await f.run(['find', value]), 2);
+  }
+  failure(await f.run(['find', 'demo', '--kind', 'all']), 2);
+  assert.equal(f.requests.length, 0);
+});
+
+test('prompt 从目录校验名称后读取 messages，未知名称不访问 MCP', async t => {
+  const f = await fixture(t);
+  const result = success(await f.run(['prompt', 'foo']));
+  assert.equal(result.result.messages[0].content[0].text, '提示词正文');
+  const rpc = f.requests.find(r => r.url === '/mcp');
+  assert.deepEqual(rpc.body, { jsonrpc: '2.0', id: 1, method: 'prompts/get', params: { name: 'foo' } });
+  assert.equal(f.requests.filter(r => r.url === '/prompts').length, 1);
+  f.requests.length = 0;
+  failure(await f.run(['prompt', 'missing']), 2);
+  assert.equal(f.requests.filter(r => r.url === '/mcp').length, 0);
+  f.state.mode = 'no_result';
+  failure(await f.run(['prompt', 'foo']), 5);
+});
+
+test('resource 拒绝未注册 URI，仅读取目录内资源内容', async t => {
+  const f = await fixture(t);
+  const result = success(await f.run(['resource', 'res://foo']));
+  assert.equal(result.result.contents[0].text, '资源内容');
+  const rpc = f.requests.find(r => r.url === '/mcp');
+  assert.deepEqual(rpc.body, { jsonrpc: '2.0', id: 1, method: 'resources/read', params: { uri: 'res://foo' } });
+  for (const uri of ['http://example.com/secret', 'file:///etc/passwd', 'res://other']) {
+    f.requests.length = 0;
+    failure(await f.run(['resource', uri]), 2);
+    assert.equal(f.requests.filter(r => r.url === '/mcp').length, 0);
+  }
+  failure(await f.run(['resource', 'not-a-uri']), 2);
+  f.state.mode = 'no_result';
+  failure(await f.run(['resource', 'res://foo']), 5);
+});
+
+test('calls 顺序执行、id 递增，全部成功时退出码 0', async t => {
+  const f = await fixture(t);
+  const raw = await f.run(['calls', '--calls', '[{"name":"a"},{"name":"b","arguments":{"value":1}}]']);
+  assert.equal(raw.code, 0, raw.stderr);
+  const result = JSON.parse(raw.stdout);
+  assert.equal(result.executed, 2);
+  assert.equal(result.total, 2);
+  assert.equal(result.stopped_at, null);
+  assert.equal(result.exit_code, 0);
+  assert.deepEqual(result.steps.map(s => s.name), ['a', 'b']);
+  assert.ok(result.steps.every(s => s.ok));
+  const rpcs = f.requests.filter(r => r.url === '/mcp');
+  assert.deepEqual(rpcs.map(r => r.body.id), [1, 2]);
+  assert.deepEqual(rpcs[1].body.params.arguments, { value: 1 });
+  assert.match(raw.stderr, /已执行 2\/2 步，全部完成/);
+});
+
+test('calls 中途失败即停，保留已执行步骤且不再发送后续调用', async t => {
+  const f = await fixture(t);
+  f.state.failToolName = 'b';
+  const raw = await f.run(['calls', '--calls', '[{"name":"a"},{"name":"b"},{"name":"c"}]']);
+  assert.equal(raw.code, 6, raw.stderr);
+  const result = JSON.parse(raw.stdout);
+  assert.equal(result.executed, 2);
+  assert.equal(result.total, 3);
+  assert.equal(result.stopped_at, 1);
+  assert.equal(result.exit_code, 6);
+  assert.equal(result.steps[0].ok, true);
+  assert.equal(result.steps[1].ok, false);
+  assert.match(result.steps[1].error.message, /isError/);
+  assert.equal(f.requests.filter(r => r.url === '/mcp').length, 2);
+  assert.match(raw.stderr, /不可盲目重放/);
+});
+
+test('calls 连接/HTTP 失败按原始退出码停止，不重试', async t => {
+  const f = await fixture(t);
+  f.state.mode = 'http_error';
+  const raw = await f.run(['calls', '--calls', '[{"name":"a"},{"name":"b"}]']);
+  assert.equal(raw.code, 4, raw.stderr);
+  const result = JSON.parse(raw.stdout);
+  assert.equal(result.executed, 1);
+  assert.equal(result.steps[0].error.code, 4);
+  assert.equal(f.requests.filter(r => r.url === '/mcp').length, 1);
+});
+
+test('calls 参数校验、上限与请求体上限在网络前失败', async t => {
+  const f = await fixture(t);
+  for (const value of [
+    '[]', '{}', '[null]', '[{"name":"all"}]', '[{"name":"a","arguments":[]}]',
+    '[{"name":"a","extra":1}]', '[{"name":"a","arguments":{"x":1e999}}]',
+  ]) {
+    failure(await f.run(['calls', '--calls', value]), 2);
+  }
+  failure(await f.run(['calls']), 2);
+  failure(await f.run(['calls', 'a']), 2);
+  assert.equal(f.requests.length, 0);
+  const nine = JSON.stringify(Array.from({ length: 9 }, (_, i) => ({ name: 'n' + i })));
+  failure(await f.run(['calls', '--calls', nine]), 2);
+  assert.equal(f.requests.filter(r => r.url === '/mcp').length, 0);
+  const big = JSON.stringify([{ name: 'a', arguments: { blob: 'x'.repeat(70000) } }]);
+  failure(await f.run(['calls', '--calls-stdin'], Buffer.from(big)), 2);
+  assert.equal(f.requests.filter(r => r.url === '/mcp').length, 0);
+});
+
+test('calls 支持文件与 stdin、BOM，且 0 上限解除数量限制', async t => {
+  const f = await fixture(t);
+  const file = path.join(f.dir, 'calls.json');
+  await fs.writeFile(file, '\ufeff[{"name":"a"}]');
+  assert.equal(success(await f.run(['calls', '--calls-file', file])).executed, 1);
+  const raw = await f.run(['calls', '--calls-stdin'], '\ufeff[{"name":"a"},{"name":"b"}]');
+  assert.equal(raw.code, 0, raw.stderr);
+  assert.equal(JSON.parse(raw.stdout).executed, 2);
+  f.state.discovery = { max_details: 0 };
+  const ten = JSON.stringify(Array.from({ length: 10 }, (_, i) => ({ name: 'n' + i })));
+  const unlimited = await f.run(['calls', '--calls', ten]);
+  assert.equal(unlimited.code, 0, unlimited.stderr);
+  assert.equal(JSON.parse(unlimited.stdout).executed, 10);
 });

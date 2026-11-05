@@ -246,6 +246,7 @@ namespace UniMcp
             Details(large, new JsonClass { { "members", members } }.ToString(), 400);
             Check(Details(large, "{\"tag\":\"system\"}", 400)["error"].Value.Contains("动态 members"), "标签超限指引动态集合");
             TestDetailByteLimits();
+            TestBatchSchemas();
             Task.Run(() => { for (int i = 0; i < 30; i++) Details(snapshot, mixed); }).GetAwaiter().GetResult();
         }
 
@@ -328,6 +329,77 @@ namespace UniMcp
                     && !plain.ToJson().Contains("mcp_url", StringComparison.Ordinal), "INI与discovery均不发布MCP端点");
             }
             finally { Directory.Delete(directory, true); }
+        }
+
+        private static JsonNode Schemas(McpDiscoverySnapshot snapshot, string body, int expected = 200)
+        {
+            string json = snapshot.GetSchemas(body, out int status);
+            Check(status == expected, "Schema 状态码 " + expected + " != " + status + ": " + json);
+            Check(Encoding.UTF8.GetByteCount(json) <= 65536, "Schema 响应 UTF-8 字节上限");
+            var result = Json.Parse(json);
+            if (expected == 200) Check(result["max_details"].AsInt == snapshot.MaxDetails, "Schema 限制元数据与快照一致");
+            else Check(!string.IsNullOrEmpty(result["error"].Value), "Schema JSON 错误文案");
+            return result;
+        }
+
+        private static void TestBatchSchemas()
+        {
+            Check(McpDiscoverySnapshot.IsSchemasPath("/capabilities/schemas")
+                && McpDiscoverySnapshot.IsSchemasPath("/mcp/capabilities/schemas"), "批量 Schema POST 别名");
+            Check(!McpDiscoverySnapshot.IsSchemasPath("/mcp/capabilities/schemas/all"), "批量 Schema 无 all 子路由");
+            Check(!McpDiscoverySnapshot.IsSchemasPath("/capabilities/details"), "详情与批量 Schema 路由分离");
+
+            var schema = new JsonClass {
+                { "type", new JsonData("object") },
+                { "properties", new JsonClass { { "path", new JsonClass { { "type", new JsonData("string") } } } } },
+                { "required", new JsonArray { new JsonData("path") } }
+            };
+            var snapshot = new McpDiscoverySnapshot(new[] {
+                new ToolInfo { name = "a_tool", description = "甲", inputSchema = schema },
+                new ToolInfo { name = "z_tool", description = "乙" },
+                new ToolInfo { name = "m_tool", description = "丙" }
+            });
+            var two = Schemas(snapshot, "{\"tools\":[\"z_tool\",\"a_tool\",\"z_tool\"]}");
+            Check(two["count"].AsInt == 2, "先去重再计数");
+            Check(two["items"][0]["name"].Value == "z_tool" && two["items"][1]["name"].Value == "a_tool", "保持请求顺序");
+            Check(two["items"][1]["inputSchema"].ToString() == schema.ToString(), "批量 Schema 保留完整 inputSchema");
+            Check(two["items"][0].ToObject().Count == 3, "批量 Schema 仅含 MCP 三字段");
+            Check(two["items"][0]["inputSchema"]["properties"] is JsonClass && two["items"][0]["inputSchema"]["properties"].Count == 0, "无参数工具空 properties");
+            Check(Json.Parse(Response(snapshot, "/tools/a_tool/schema")).ToString() == two["items"][1].ToString(), "单项与批量结果一致");
+            Check(Schemas(snapshot, "{\"tools\":[\"a_tool\"]}")["count"].AsInt == 1, "单项允许");
+            Check(Schemas(snapshot, "{\"tools\":[\"z_tool\",\"a_tool\"]}")["count"].AsInt == 2, "非全量子集允许");
+            Check(Schemas(snapshot, "{\"tools\":[\"z_tool\",\"a_tool\",\"m_tool\"]}", 400)["error"].Value.Contains("全量"), "全部工具明确拒绝");
+            Schemas(snapshot, "{\"tools\":[\"missing\"]}", 404);
+            Schemas(snapshot, "{\"tools\":[\"a_tool\",\"missing\"]}", 404);
+
+            foreach (string invalid in new[] {
+                "", "{}", "[]", "null", "{\"tools\":[]}", "{\"tools\":\"a_tool\"}", "{\"tools\":[1]}",
+                "{\"tools\":[\"\"]}", "{\"tools\":[\" \"]}", "{\"tools\":[\"all\"]}", "{\"tools\":[\"*\"]}",
+                "{\"tools\":[\"a_tool\"],\"extra\":1}", "{\"members\":[]}", "{\"tools\":[{}]}",
+                "{\"tools\":[\"a_tool\"],\"tools\":[\"z_tool\"]}", "{\"tools\":[\"a_tool\"],}", "{tools:[\"a_tool\"]}"
+            }) Schemas(snapshot, invalid, 400);
+            Schemas(snapshot, new string(' ', 65537), 413);
+
+            var limited = new McpDiscoverySnapshot(new[] {
+                new ToolInfo { name = "t0" }, new ToolInfo { name = "t1" }, new ToolInfo { name = "t2" }, new ToolInfo { name = "t3" }
+            }, maxDetails: 2);
+            Check(Schemas(limited, "{\"tools\":[\"t0\",\"t1\"]}")["count"].AsInt == 2, "自定义2允许2项");
+            Check(Schemas(limited, "{\"tools\":[\"t0\",\"t1\",\"t2\"]}", 400)["error"].Value.Contains("超过2"), "自定义2拒绝3项并提示实际值");
+            var unlimited = new McpDiscoverySnapshot(new[] {
+                new ToolInfo { name = "t0" }, new ToolInfo { name = "t1" }, new ToolInfo { name = "t2" }, new ToolInfo { name = "t3" }
+            }, maxDetails: 0);
+            Check(Schemas(unlimited, "{\"tools\":[\"t0\",\"t1\",\"t2\"]}")["count"].AsInt == 3, "0允许超过32项");
+            Check(Schemas(unlimited, "{\"tools\":[\"t0\",\"t1\",\"t2\",\"t3\"]}", 400)["error"].Value.Contains("全量"), "0仍拒绝全量");
+
+            string selection = "{\"tools\":[\"large\"]}";
+            Func<string, McpDiscoverySnapshot> create = text => new McpDiscoverySnapshot(new[] { new ToolInfo { name = "large", description = text } });
+            string baseline = create("").GetSchemas(selection, out _);
+            int remaining = 65536 - Encoding.UTF8.GetByteCount(baseline);
+            Schemas(create(new string('x', remaining)), selection);
+            Schemas(create(new string('x', remaining + 1)), selection, 413);
+            Schemas(create(new string('中', remaining / 3 + 1)), selection, 413);
+
+            Task.Run(() => { for (int i = 0; i < 30; i++) Schemas(snapshot, "{\"tools\":[\"z_tool\",\"a_tool\"]}"); }).GetAwaiter().GetResult();
         }
 
         private static void TestDetailByteLimits()
@@ -471,6 +543,7 @@ namespace UniMcp
             Check(metadata["updated_at"].Value.EndsWith("Z", StringComparison.Ordinal), "UTC ISO8601 时间");
             Check(metadata["tools_url"].Value == info.BaseUrl + "/tools", "工具列表 URL");
             Check(metadata["schema_url_template"].Value == info.BaseUrl + "/tools/{name}/schema", "schema URL 模板");
+            Check(metadata["schemas_url"].Value == info.BaseUrl + "/capabilities/schemas", "批量 Schema URL");
             Check(info.ToIni().StartsWith("[unity3d-skilled-mcp]\nbase_url=" + info.BaseUrl + "\n", StringComparison.Ordinal), "INI 契约");
             string directory = Path.Combine(Path.GetTempPath(), "unity-mcp-discovery-test-" + Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(directory);
