@@ -15,8 +15,7 @@ namespace UniMcp.Tools
     /// Handles Unity mesh asset operations including generation, modification, optimization, etc.
     /// 对应方法名: asset_mesh
     /// </summary>
-    [ToolName("edit_mesh", "Resource Management", "资源管理")]
-    [ToolModule("mesh", GroupEn = "Resource Management", GroupZh = "资源管理", LegacyName = "edit_mesh")]
+    [ToolModule("mesh", GroupEn = "Resource Management", GroupZh = "资源管理")]
     public class MeshTool : ToolModuleBase
     {
         public override string Description => L.T("Manage mesh assets including import and modify", "管理网格资源，包括导入和修改");

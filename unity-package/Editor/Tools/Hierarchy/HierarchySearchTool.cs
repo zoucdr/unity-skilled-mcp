@@ -18,8 +18,7 @@ using UnityEngine;
 
 namespace UniMcp.Tools
 {
-    [ToolModule("hierarchy", GroupEn = "Hierarchy Management", GroupZh = "层级管理", LegacyName = "hierarchy_search")]
-    [ToolName("hierarchy_search", "Hierarchy Management", "层级管理")]
+    [ToolModule("hierarchy", GroupEn = "Hierarchy Management", GroupZh = "层级管理")]
     public sealed class HierarchySearchTool : ToolModuleBase
     {
         public override string Description => L.T("Search and find GameObjects in the scene hierarchy", "在场景层级中搜索和查找游戏对象");

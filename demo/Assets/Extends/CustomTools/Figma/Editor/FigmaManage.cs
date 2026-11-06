@@ -13,8 +13,7 @@ using Object = UnityEngine.Object;
 
 namespace UniMcp.Tools
 {
-    [ToolName("figma_manage", "UI Management", "UI管理")]
-    [ToolModule("figma", GroupEn = "UI Management", GroupZh = "UI管理", LegacyName = "figma_manage")]
+    [ToolModule("figma", GroupEn = "UI Management", GroupZh = "UI管理")]
     public class FigmaManage : ToolModuleBase
     {
         private const string FIGMA_API_BASE = "https://api.figma.com/v1";

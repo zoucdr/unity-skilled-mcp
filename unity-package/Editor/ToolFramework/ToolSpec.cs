@@ -13,7 +13,6 @@ namespace UniMcp
         public string Name;
         public string Action;
         public string Prefix;
-        public string LegacyName;
         public string SourceClass;
         public string DescriptionEn;
         public string DescriptionZh;

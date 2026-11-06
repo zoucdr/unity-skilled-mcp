@@ -14,8 +14,7 @@ namespace UniMcp.Tools
     /// 专门的材质管理工具，提供材质的创建、修改、复制、删除等操作
     /// 对应方法名: manage_material
     /// </summary>
-    [ToolName("edit_material", "Resource Management", "资源管理")]
-    [ToolModule("material", GroupEn = "Resource Management", GroupZh = "资源管理", LegacyName = "edit_material")]
+    [ToolModule("material", GroupEn = "Resource Management", GroupZh = "资源管理")]
     public class MaterialTool : ToolModuleBase
     {
         public override string Description => L.T("Manage material assets including create and modify properties", "管理材质资源，包括创建和修改属性");

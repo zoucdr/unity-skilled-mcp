@@ -16,8 +16,7 @@ namespace UniMcp.Tools
     /// Handles Unity scene management operations.
     /// 对应方法名: manage_scene
     /// </summary>
-    [ToolName("edit_scene", "Resource Management", "资源管理")]
-    [ToolModule("scene", GroupEn = "Resource Management", GroupZh = "资源管理", LegacyName = "edit_scene")]
+    [ToolModule("scene", GroupEn = "Resource Management", GroupZh = "资源管理")]
     public class SceneTool : ToolModuleBase
     {
         public override string Description => L.T("Manage scene assets including create and load", "管理场景资源，包括创建和加载");

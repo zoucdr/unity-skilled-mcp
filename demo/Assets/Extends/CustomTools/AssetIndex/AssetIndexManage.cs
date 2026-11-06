@@ -24,8 +24,7 @@ namespace UniMcp.Tools
     /// 资源索引管理工具，支持添加、删除、查询、定位等操作
     /// 对应方法名: asset_index
     /// </summary>
-    [ToolName("asset_index", "System Tools", "系统工具")]
-    [ToolModule("asset_index", GroupEn = "System Tools", GroupZh = "系统工具", LegacyName = "asset_index")]
+    [ToolModule("asset_index", GroupEn = "System Tools", GroupZh = "系统工具")]
     public class AssetIndexManage : ToolModuleBase
     {
         public override string Description => L.T("Asset index management tool supporting add, remove, query, locate operations", "资源索引管理工具，支持添加、删除、查询、定位等操作");

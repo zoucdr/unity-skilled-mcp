@@ -13,8 +13,7 @@ namespace UniMcp.Tools
     /// Handles Unity Tag and Layer management.
     /// 对应方法名: tag_layer
     /// </summary>
-    [ToolName("tag_layer", "System Management", "系统管理")]
-    [ToolModule("tag_layer", GroupEn = "System Management", GroupZh = "系统管理", LegacyName = "tag_layer")]
+    [ToolModule("tag_layer", GroupEn = "System Management", GroupZh = "系统管理")]
     public class TagLayerTool : ToolModuleBase
     {
         private const int FirstUserLayerIndex = 8;

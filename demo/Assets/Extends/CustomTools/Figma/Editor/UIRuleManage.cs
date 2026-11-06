@@ -16,8 +16,7 @@ namespace UniMcp.Tools
     /// UI规则管理工具，负责管理UI制作方案和修改记录
     /// 对应方法名: ui_rule_manage
     /// </summary>
-    [ToolName("ui_rule_manage", "UI Management", "UI管理")]
-    [ToolModule("ui_rule", GroupEn = "UI Management", GroupZh = "UI管理", LegacyName = "ui_rule_manage")]
+    [ToolModule("ui_rule", GroupEn = "UI Management", GroupZh = "UI管理")]
     public class UIRuleManage : ToolModuleBase
     {
         /// <summary>

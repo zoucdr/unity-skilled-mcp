@@ -11,8 +11,7 @@ namespace UniMcp.Tools
     /// ProBuilder 建模：通过反射访问 ProBuilder 包，未安装时给出明确提示，且不影响包本身编译。
     /// 对应方法名: edit_probuilder
     /// </summary>
-    [ToolName("edit_probuilder", "Modeling", "建模")]
-    [ToolModule("probuilder", GroupEn = "Modeling", GroupZh = "建模", LegacyName = "edit_probuilder")]
+    [ToolModule("probuilder", GroupEn = "Modeling", GroupZh = "建模")]
     public class ProBuilderTool : ToolModuleBase
     {
         private const string MeshType = "UnityEngine.ProBuilder.ProBuilderMesh";

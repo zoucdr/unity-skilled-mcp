@@ -19,8 +19,7 @@ namespace UniMcp.Tools
     /// A modal dialog blocks the editor main thread, so unattended clients must pass confirm=true.
     /// 对应方法名: object_delete
     /// </summary>
-    [ToolName("object_delete", "Resource Management", "资源管理")]
-    [ToolModule("object", GroupEn = "Resource Management", GroupZh = "资源管理", LegacyName = "object_delete")]
+    [ToolModule("object", GroupEn = "Resource Management", GroupZh = "资源管理")]
     public class ObjectTool : ToolModuleBase, ITargetedTool
     {
         public override string Description => L.T("Delete GameObjects or assets", "删除游戏对象或资源");

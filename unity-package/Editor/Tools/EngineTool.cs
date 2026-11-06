@@ -20,8 +20,7 @@ namespace UniMcp.Tools
     /// and gameplay (play mode/input/screenshots) instead of duplicating them.
     /// 对应方法名: engine_control
     /// </summary>
-    [ToolName("engine_control", "Engine Control", "引擎控制")]
-    [ToolModule("engine", GroupEn = "Engine Control", GroupZh = "引擎控制", LegacyName = "engine_control")]
+    [ToolModule("engine", GroupEn = "Engine Control", GroupZh = "引擎控制")]
     public class EngineTool : ToolModuleBase
     {
         public override string Description => L.T(

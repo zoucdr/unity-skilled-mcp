@@ -14,7 +14,6 @@ namespace UniMcp
         public string Prefix { get; private set; }
         public string GroupEn { get; set; }
         public string GroupZh { get; set; }
-        public string LegacyName { get; set; }
 
         public ToolModuleAttribute(string prefix)
         {

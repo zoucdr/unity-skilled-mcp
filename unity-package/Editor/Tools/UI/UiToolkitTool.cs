@@ -16,8 +16,7 @@ namespace UniMcp.Tools
     /// UIDocument / PanelSettings 通过反射访问，未安装相关模块时给出明确提示。
     /// 对应方法名: ui_toolkit
     /// </summary>
-    [ToolName("ui_toolkit", "UI", "界面")]
-    [ToolModule("ui", GroupEn = "UI", GroupZh = "界面", LegacyName = "ui_toolkit")]
+    [ToolModule("ui", GroupEn = "UI", GroupZh = "界面")]
     public class UiToolkitTool : ToolModuleBase
     {
         private const string UxmlNamespace = "UnityEngine.UIElements";

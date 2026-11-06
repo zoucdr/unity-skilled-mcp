@@ -203,7 +203,6 @@ namespace UniMcp
                 Name = module.Prefix + "." + action.Action,
                 Action = action.Action,
                 Prefix = module.Prefix,
-                LegacyName = module.LegacyName ?? string.Empty,
                 SourceClass = moduleType.Name,
                 DescriptionEn = descEn,
                 DescriptionZh = descZh,

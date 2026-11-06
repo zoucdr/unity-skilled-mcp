@@ -14,8 +14,7 @@ namespace UniMcp.Tools
     /// 专门的模型管理工具，提供模型的导入、修改、复制、删除等操作
     /// 对应方法名: manage_model
     /// </summary>
-    [ToolName("edit_model", "Resource Management", "资源管理")]
-    [ToolModule("model", GroupEn = "Resource Management", GroupZh = "资源管理", LegacyName = "edit_model")]
+    [ToolModule("model", GroupEn = "Resource Management", GroupZh = "资源管理")]
     public class ModelTool : ToolModuleBase
     {
         public override string Description => L.T("Manage 3D model assets including import and settings", "管理3D模型资源，包括导入和设置");

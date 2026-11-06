@@ -23,7 +23,7 @@
 >
 > 工具注册已改为**声明式 `ToolCatalog` + Attribute 反射**：一个动作即一个工具，名称形如 `分组.动作`（如 `animator.create`、`hierarchy.create_cube`、`gameobject.modify`），参数由各自的 `inputSchema` 精确声明。
 >
-> **状态树（StateTree）已彻底移除**：`StateTree` / `StateTreeBuilder` / `StateTreeContext` / `StateMethodBase` / `DualStateMethodBase` / `Selector/` 全部删除。工具类为**无状态树的普通类**，直接以 `[ToolModule]` + `[ToolAction]` 声明。旧的「大工具 + `action` 分派」名称（`hierarchy_create`、`edit_gameobject`、`code_runner` 等）已失效，仅作为 `LegacyName` 保留兼容标识。
+> **状态树（StateTree）已彻底移除**：`StateTree` / `StateTreeBuilder` / `StateTreeContext` / `StateMethodBase` / `DualStateMethodBase` / `Selector/` 全部删除。工具类为**无状态树的普通类**，直接以 `[ToolModule]` + `[ToolAction]` 声明。旧的「大工具 + `action` 分派」名称（`hierarchy_create`、`edit_gameobject`、`code_runner` 等）已失效，不再提供兼容别名。
 >
 > 技能客户端只有 `unity_mcp.js`（Node.js 18+）；INI 与 Unity 设置中不再有脚本语言选项。批量调用接口 `batch_call` 与技能 `calls` / `callMany` 已移除，多步操作请用技能库 API 自行编排。
 
@@ -92,8 +92,8 @@ AI 客户端（Cursor / Claude / Trae）
 
 **2. Attribute 声明 + 反射发现（唯一真源）**
 
-- `[ToolModule(prefix, GroupEn, GroupZh, LegacyName)]` 标模块类（如 `[ToolModule("animator", GroupEn = "Animation", GroupZh = "动画", LegacyName = "edit_animator")]`）
-- `[ToolAction(action, Parameters, Required, Inject)]` 标 handler 方法（一个方法可声明多个动作）
+- `[ToolModule(prefix, GroupEn, GroupZh)]` 标模块类（如 `[ToolModule("animator", GroupEn = "Animation", GroupZh = "动画")]`）
+- `[ToolAction(action, "param", "required=require")]` 标 handler 方法（一个方法可声明多个动作）
 - `[ToolParam(name)]` 标参数（可标在方法上，也可标在强类型参数上）
 - `ToolCatalog.Reload()` 纯反射扫描全部 `[ToolModule]` 真实顶层类 → 绑定 handler 委托 → 从 `Keys` 解析参数元数据 → 生成精确 `inputSchema`
 - **不再需要任何生成的 `*.Tools.cs` 声明文件，也不经状态树分派**
@@ -127,7 +127,7 @@ AI 客户端（Cursor / Claude / Trae）
 ### 一个工具模块的最小形态
 
 ```csharp
-[ToolModule("animator", GroupEn = "Animation", GroupZh = "动画", LegacyName = "edit_animator")]
+[ToolModule("animator", GroupEn = "Animation", GroupZh = "动画")]
 public class AnimatorTool : ToolModuleBase
 {
     public override string Description => L.T("Manage Animator controllers", "管理动画控制器");
@@ -138,8 +138,7 @@ public class AnimatorTool : ToolModuleBase
         new MethodStr("path", L.T("Controller asset path", "控制器资源路径"), false),
     };
 
-    [ToolAction("create", Parameters = new[] { "path" },
-        Required = new[] { "path" }, Inject = new[] { "action=create" })]
+    [ToolAction("create", "path=require")]
     private object CreateController(JsonClass args) { /* ... */ }
 }
 ```
@@ -451,14 +450,14 @@ Schema 端点接受 `{ "tools": ["name", ...] }`，返回 `{ "items": [{ "name",
 新增一个工具模块只需**一个文件**：
 
 1. 在 `unity-package/Editor/Tools/` 下创建一个 `XxxTool.cs`（`namespace UniMcp.Tools`）。
-2. 用 `[ToolModule("prefix", GroupEn = "...", GroupZh = "...", LegacyName = "...")]` 标类，继承 `ToolModuleBase`。
+2. 用 `[ToolModule("prefix", GroupEn = "...", GroupZh = "...")]` 标类，继承 `ToolModuleBase`。
 3. 实现 `Description` 与 `protected override MethodKey[] CreateKeys()`。
-4. 每个动作写一个 handler，标 `[ToolAction("action", Parameters, Required, Inject)]`。参数可为 `JsonClass`（原始 JSON）或 `ToolContext`（含对象引用、`AsyncReturn`）。
+4. 每个动作写一个 handler，标 `[ToolAction("action", "param", "required=require")]`。参数可为 `JsonClass`（原始 JSON）或 `ToolContext`（含对象引用、`AsyncReturn`）。
 5. 若操作已存在对象，实现 `ITargetedTool.ResolveTarget`。
 6. 直接编译即可——`ToolCatalog` 反射发现，无需注册、无需生成文件、无需 meta 之外的额外步骤。
 
 ```csharp
-[ToolModule("mytool", GroupEn = "My Group", GroupZh = "我的分组", LegacyName = "my_tool")]
+[ToolModule("mytool", GroupEn = "My Group", GroupZh = "我的分组")]
 public class MyTool : ToolModuleBase
 {
     public override string Description => L.T("...", "...");
@@ -468,8 +467,7 @@ public class MyTool : ToolModuleBase
         new MethodStr("name", L.T("Name", "名称"), false),
     };
 
-    [ToolAction("hello", Parameters = new[] { "name" },
-        Required = new[] { "name" }, Inject = new[] { "action=hello" })]
+    [ToolAction("hello", "name=require")]
     private object HandleHello(JsonClass args)
         => Response.Success("ok", new { name = args["name"]?.Value });
 }

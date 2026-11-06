@@ -15,8 +15,7 @@ using UnityEngine;
 
 namespace UniMcp.Tools
 {
-    [ToolModule("console", GroupEn = "Development Tools", GroupZh = "开发工具", LegacyName = "console")]
-    [ToolName("console", "Development Tools", "开发工具")]
+    [ToolModule("console", GroupEn = "Development Tools", GroupZh = "开发工具")]
     public sealed class ConsoleTool : ToolModuleBase
     {
         public override string Description => L.T(

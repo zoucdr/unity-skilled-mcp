@@ -15,8 +15,7 @@ namespace UniMcp.Tools
     /// Handles Python script execution including validation and running Python code.
     /// 对应方法名: python_runner
     /// </summary>
-    [ToolName("python_runner", "Development Tools", "开发工具")]
-    [ToolModule("python", GroupEn = "Development Tools", GroupZh = "开发工具", LegacyName = "python_runner")]
+    [ToolModule("python", GroupEn = "Development Tools", GroupZh = "开发工具")]
     public class PythonTool : ToolModuleBase
     {
         public override string Description => L.T("Execute and validate Python scripts", "执行和验证Python脚本");

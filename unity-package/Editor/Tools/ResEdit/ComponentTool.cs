@@ -16,8 +16,7 @@ namespace UniMcp.Tools
     /// Second tree: Component operation execution
     /// 对应方法名: edit_component
     /// </summary>
-    [ToolName("edit_component", "Resource Management", "资源管理")]
-    [ToolModule("component", GroupEn = "Resource Management", GroupZh = "资源管理", LegacyName = "edit_component")]
+    [ToolModule("component", GroupEn = "Resource Management", GroupZh = "资源管理")]
     public class ComponentTool : ToolModuleBase, ITargetedTool
     {
         public override string Description => L.T("Manage GameObject components including get and set properties", "管理游戏对象组件，包括获取和设置属性");

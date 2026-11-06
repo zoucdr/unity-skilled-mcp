@@ -18,8 +18,7 @@ using UnityEngine;
 
 namespace UniMcp.Tools
 {
-    [ToolModule("hierarchy", GroupEn = "Hierarchy Management", GroupZh = "层级管理", LegacyName = "hierarchy_apply")]
-    [ToolName("hierarchy_apply", "Hierarchy Management", "层级管理")]
+    [ToolModule("hierarchy", GroupEn = "Hierarchy Management", GroupZh = "层级管理")]
     public sealed class HierarchyApplyTool : ToolModuleBase
     {
         public override string Description => L.T("Hierarchy apply tool, handles prefab apply and connection operations for game objects", "层级应用工具，处理游戏对象的预制体应用和连接操作");

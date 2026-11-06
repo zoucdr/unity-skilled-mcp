@@ -224,7 +224,7 @@ The framework lives in `unity-package/Editor/ToolFramework/`:
 A minimal module:
 
 ```csharp
-[ToolModule("animator", GroupEn = "Animation", GroupZh = "动画", LegacyName = "edit_animator")]
+[ToolModule("animator", GroupEn = "Animation", GroupZh = "动画")]
 public class AnimatorTool : ToolModuleBase
 {
     public override string Description => L.T("Manage Animator controllers", "管理动画控制器");
@@ -234,8 +234,7 @@ public class AnimatorTool : ToolModuleBase
         new MethodStr("path", L.T("Controller asset path", "控制器资源路径"), false),
     };
 
-    [ToolAction("create", Parameters = new[] { "path" },
-        Required = new[] { "path" }, Inject = new[] { "action=create" })]
+    [ToolAction("create", "path=require")]
     private object CreateController(JsonClass args) { /* ... */ }
 }
 ```
