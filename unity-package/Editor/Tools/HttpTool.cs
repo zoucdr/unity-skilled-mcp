@@ -17,7 +17,7 @@ namespace UniMcp.Tools
     /// Handles network operations including HTTP requests, file downloads, and API calls.
     /// 对应方法名: request_http
     /// </summary>
-    [ToolModule("http", GroupEn = "Network Tools", GroupZh = "网络工具")]
+    [ToolModule("http", GroupEn = "System", GroupZh = "系统工具")]
     public class HttpTool : ToolModuleBase
     {
         public override string Description => L.T("Send HTTP requests and download/upload files", "发送HTTP请求并下载上传文件");

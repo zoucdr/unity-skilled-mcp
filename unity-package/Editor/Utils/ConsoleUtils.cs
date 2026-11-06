@@ -227,8 +227,11 @@ namespace UniMcp
                     LogType currentType = GetLogTypeFromModeAndStackTrace(mode, message, stackTrace);
 
                     // --- 过滤 ---  
-                    // 按类型过滤
-                    if (!types.Contains(currentType.ToString().ToLowerInvariant()))
+                    // 按类型过滤。异常在 Unity 控制台中与错误同类（多由 mode 位判为 Error，
+                    // 少数经文本兜底保留 Exception），故 types=error 也应命中，避免漏报。
+                    string typeName = currentType.ToString().ToLowerInvariant();
+                    if (!types.Contains(typeName) &&
+                        !(currentType == LogType.Exception && types.Contains("error")))
                     {
                         continue;
                     }
@@ -303,8 +306,9 @@ namespace UniMcp
 
         // --- 内部辅助方法 ---
 
-        // LogEntry.mode位到LogType枚举的映射
-        // 基于反编译的UnityEditor代码或常见模式。确切的位可能在Unity版本之间改变。
+        // LogEntry.mode 位以 UnityEditor.ConsoleWindow.Mode 为准（bit0=Error、bit1=Assert、
+        // bit2=Warning、bit3=Log、bit4=Fatal/Exception）。确切位可能因 Unity 版本而异，
+        // 因此无有效位时仍保留文本启发式兜底。
         private const int ModeBitError = 1 << 0;
         private const int ModeBitAssert = 1 << 1;
         private const int ModeBitWarning = 1 << 2;
@@ -316,115 +320,56 @@ namespace UniMcp
         private const int ModeBitScriptingException = 1 << 18;
         private const int ModeBitScriptingAssertion = 1 << 22;
 
-        private static LogType GetLogTypeFromMode(int mode)
-        {
-            // 基于Unity 2021.3的实际bit模式
-            // 通过观察发现Unity内部的mode位定义与我们预期的不同
-
-            // 简化的基于位模式的映射
-            // 基于实际观察，重新定义位映射：
-
-            if ((mode & 0x8) != 0) // 位3 - 实际对应Error
-            {
-                return LogType.Error;
-            }
-            else if ((mode & 0x4) != 0) // 位2 - 实际对应Warning  
-            {
-                return LogType.Warning;
-            }
-            else if ((mode & 0x2) != 0) // 位1 - 实际对应Assert
-            {
-                return LogType.Assert;
-            }
-            else if ((mode & 0x1) != 0) // 位0 - 实际对应Exception
-            {
-                return LogType.Exception;
-            }
-            else if ((mode & 0x10) != 0) // 位4 - 可能对应其他Exception类型
-            {
-                return LogType.Exception;
-            }
-            else
-            {
-                return LogType.Log; // 默认为普通日志
-            }
-        }
-
         /// <summary>
-        /// 基于mode、消息内容和堆栈跟踪推断正确的日志类型
+        /// 基于 mode、消息内容和堆栈跟踪推断日志类型。
+        /// mode 是 Unity 的权威标记，优先采用；旧实现把堆栈文本放在最前，
+        /// 文本启发式会盖掉 mode，且「含 Debug 堆栈时跳过 mode 判定」，
+        /// 易把错误/警告误判成普通 Log，令类型过滤结果不可信。
+        /// 无有效 mode 位时才退回文本启发式（兼容位定义变化的 Unity 版本）。
         /// </summary>
         private static LogType GetLogTypeFromModeAndStackTrace(int mode, string fullMessage, string stackTrace)
         {
-            // 首先检查编译警告 - Unity将编译警告标记为Error，但我们应该将其识别为Warning
+            // 编译警告：Unity 内部按 Error 位标记，语义上却是 Warning。
             if (!string.IsNullOrEmpty(fullMessage) &&
                 (fullMessage.Contains("warning CS") || fullMessage.Contains(": warning ")))
             {
                 return LogType.Warning;
             }
 
-            // 优先使用堆栈跟踪进行类型判断，这是最可靠的方法
-            string textToSearch = stackTrace ?? fullMessage;
+            // mode 位优先：错误（含异常）> 警告 > 断言 > 普通日志。
+            if ((mode & (ModeBitError | ModeBitException | ModeBitScriptingError | ModeBitScriptingException)) != 0)
+                return LogType.Error;
+            if ((mode & (ModeBitWarning | ModeBitScriptingWarning)) != 0)
+                return LogType.Warning;
+            if ((mode & (ModeBitAssert | ModeBitScriptingAssertion)) != 0)
+                return LogType.Assert;
+            if ((mode & (ModeBitLog | ModeBitScriptingLog)) != 0)
+                return LogType.Log;
 
+            // 无有效 mode 位时用堆栈/消息文本兜底。
+            string textToSearch = stackTrace ?? fullMessage;
             if (!string.IsNullOrEmpty(textToSearch))
             {
-                // 精确匹配Debug方法调用
                 if (textToSearch.Contains("UnityEngine.Debug:LogError (object)"))
-                {
                     return LogType.Error;
-                }
                 else if (textToSearch.Contains("UnityEngine.Debug:LogWarning (object)"))
-                {
                     return LogType.Warning;
-                }
                 else if (textToSearch.Contains("UnityEngine.Debug:LogAssertion (object)"))
-                {
                     return LogType.Assert;
-                }
                 else if (textToSearch.Contains("UnityEngine.Debug:LogException"))
-                {
                     return LogType.Exception;
-                }
                 else if (textToSearch.Contains("UnityEngine.Debug:Log (object)"))
-                {
                     return LogType.Log;
-                }
-
-                // 备用模式匹配（不那么精确）
                 else if (textToSearch.Contains("UnityEngine.Debug:LogError"))
-                {
                     return LogType.Error;
-                }
                 else if (textToSearch.Contains("UnityEngine.Debug:LogWarning"))
-                {
                     return LogType.Warning;
-                }
-                else if (textToSearch.Contains("UnityEngine.Debug:Log"))
-                {
-                    return LogType.Log;
-                }
-            }
-
-            // 对于编译错误等特殊情况，使用mode位分析
-            // 编译错误通常不包含Debug调用的堆栈跟踪
-            if (string.IsNullOrEmpty(stackTrace) || !stackTrace.Contains("UnityEngine.Debug:"))
-            {
-                // 对于真正的编译错误，mode位是可靠的
-                if ((mode & ModeBitError) != 0 || (mode & ModeBitException) != 0 ||
-                    (mode & ModeBitScriptingError) != 0 || (mode & ModeBitScriptingException) != 0)
-                {
-                    return LogType.Error;
-                }
-                else if ((mode & ModeBitWarning) != 0 || (mode & ModeBitScriptingWarning) != 0)
-                {
-                    return LogType.Warning;
-                }
-                else if ((mode & ModeBitAssert) != 0 || (mode & ModeBitScriptingAssertion) != 0)
-                {
+                else if (textToSearch.Contains("UnityEngine.Debug:LogAssertion"))
                     return LogType.Assert;
-                }
+                else if (textToSearch.Contains("UnityEngine.Debug:Log"))
+                    return LogType.Log;
             }
 
-            // 默认回退
             return LogType.Log;
         }
 

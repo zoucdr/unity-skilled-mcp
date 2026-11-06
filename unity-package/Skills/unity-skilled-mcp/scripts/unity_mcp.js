@@ -9,6 +9,61 @@ const http = require('node:http');
 const https = require('node:https');
 const { TextDecoder } = require('node:util');
 const { AsyncLocalStorage } = require('node:async_hooks');
+const { randomUUID } = require('node:crypto');
+
+function expectedProject(value) {
+  if (value !== undefined) {
+    if (typeof value !== 'string' || !value.trim()) throw new ClientError('expected_project 不能为空。', 2);
+    return path.resolve(expandHome(value));
+  }
+  let current = process.cwd();
+  while (true) {
+    if (fs.existsSync(path.join(current, 'Assets')) && fs.existsSync(path.join(current, 'ProjectSettings'))) return current;
+    const parent = path.dirname(current);
+    if (parent === current) return null;
+    current = parent;
+  }
+}
+
+function projectKey(value) {
+  const normalized = path.resolve(value);
+  return process.platform === 'win32' ? normalized.toLowerCase() : normalized;
+}
+
+function requestId(value) {
+  if (typeof value !== 'string' || !value.trim() || value.length > 256) {
+    throw new ClientError('request_id 必须为 1-256 个字符。', 2);
+  }
+  return value;
+}
+
+function queryPath(id, instance) {
+  return '/requests/' + encodeURIComponent(id) + '?instance_id=' + encodeURIComponent(instance);
+}
+
+function bind(info, args, required) {
+  const client = args.client;
+  const expected = client.expected_project;
+  const connection = origin(info.base_url);
+  if (client.connection && client.connection !== connection) console.error('警告：Unity 连接地址已变更。');
+  client.connection = connection;
+  if (client.instance_id && client.instance_id !== info.instance_id
+      && !['discover', 'status'].includes(args.command)) {
+    console.error('警告：Unity 实例已变更。');
+    throw new ClientError('实例漂移；显式 discover 重新确认，禁止自动重放。', 2);
+  }
+  const matches = expected && projectKey(expected) === projectKey(info.project_path);
+  if (!matches) {
+    console.error('警告：' + (expected ? 'Unity 工程不匹配。' : '未确定预期 Unity 工程。'));
+    if (required) throw new ClientError('请明确 --expected-project 并确认目标工程；未执行。', 2);
+    return {};
+  }
+  if (client.instance_id && client.instance_id !== info.instance_id) {
+    console.error('警告：Unity 实例已变更。');
+  }
+  if (args.command !== 'status') client.instance_id = info.instance_id;
+  return { 'X-Mcp-Expected-Project': encodeURIComponent(expected), 'X-Mcp-Instance-Id': info.instance_id };
+}
 
 class ClientError extends Error {
   constructor(message, code) {
@@ -160,11 +215,6 @@ function requestHttp(value, timeout, method = 'GET', payload = null, headers = {
       req = (url.protocol === 'https:' ? https : http).request(url, {
         method, headers, agent: false,
       }, response => {
-        if (response.statusCode < 200 || response.statusCode >= 300) {
-          finish(new ClientError('HTTP ' + response.statusCode + '：请求失败或重定向被拒绝；未重试。', 4));
-          response.destroy();
-          return;
-        }
         const chunks = [];
         let bytes = 0;
         response.on('data', chunk => {
@@ -186,7 +236,12 @@ function requestHttp(value, timeout, method = 'GET', payload = null, headers = {
           }
           let result = text;
           try { result = JSON.parse(text); } catch { /* 非 JSON 响应按文本输出。 */ }
-          finish(null, result);
+          if (response.statusCode < 200 || response.statusCode >= 300) {
+            const error = new ClientError('HTTP ' + response.statusCode + '：' + text + '；未重试。', 4);
+            error.body = result;
+            error.status = response.statusCode;
+            finish(error);
+          } else finish(null, result);
         });
       });
       req.on('error', networkError);
@@ -257,6 +312,7 @@ async function discover(ini, timeout) {
       if (Object.hasOwn(info, key) && origin(info[key]) !== url.origin) throw new Error('discovery 端点不在同一服务');
     }
     if (!info.schema_url_template.includes('{name}')) throw new Error('schema URL 缺少 {name}');
+    if (typeof info.instance_id !== 'string' || !info.instance_id.trim()) throw new Error('instance_id 缺失');
     for (const key of ['project_path', 'updated_at']) {
       if (typeof info[key] !== 'string') throw new Error('discovery 字段类型错误：' + key);
     }
@@ -362,7 +418,7 @@ function rpcResult(envelope, id, expectedArray) {
 
 async function rpcCall(info, args, method, params, id, expectedArray) {
   const result = await requestHttp(info.base_url.replace(/\/+$/, '') + '/mcp',
-    args.timeout, 'POST', rpcEnvelope(method, params, id));
+    args.timeout, 'POST', rpcEnvelope(method, params, id), args.binding);
   return rpcResult(result, id, expectedArray);
 }
 
@@ -398,7 +454,8 @@ function schemaNames(args) {
 
 function help(command) {
   const usage = {
-    discover: 'discover',
+    discover: 'discover（显式重新确认工程及实例绑定；不重放操作）',
+    status: 'status REQUEST_ID --instance-id INSTANCE_ID\n  查询 accepted/running/completed/failed/unknown；unknown 不证明未执行。',
     groups: 'groups',
     list: 'list [--kind tools|prompts|resources]',
     details: 'details (--tag TAG | --members JSON数组 | --members-file FILE | --members-stdin)\n  去重成员上限由 discovery 的 max_details 决定（默认32，0不限数量），响应最多 65536 字节；禁止全量选择；标签从 groups 获取。',
@@ -412,6 +469,8 @@ function help(command) {
   };
   return '用法：node scripts/unity_mcp.js [--ini PATH] [--timeout SECONDS] '
     + (usage[command] || 'discover|groups|list|find|details|schema|schemas|call|prompt|resource|request')
+    + '\n--expected-project PATH 显式指定工程，否则从 cwd 向上寻找 Unity 根；--instance-id ID 锁定实例。'
+    + '\n--verbose 才打印完整连接；call 可用 --request-id ID，失败凭 status 查询，不重放。'
     + '\n默认 INI：~/.unity-mcp/skill.ini；超时：15 秒（正有限数）。'
     + '\n每次读取 INI 并验证 discovery；不重试、不跟随重定向，验证 TLS。'
     + '\nJSON 文件/标准输入支持 UTF-8 BOM；call 默认传 {}；request 支持 /ROUTE、省略斜杠的路由名或授权的绝对 HTTP URL（Git Bash 路径转换自动还原）。'
@@ -432,7 +491,10 @@ function parseArgs(argv) {
       const flag = split < 0 ? token : token.slice(0, split);
       const prefix = { call: '--args', request: '--data', details: '--members', schemas: '--names' }[args.command];
       const source = prefix && (flag === prefix ? 'text' : flag === prefix + '-file' ? 'file' : flag === prefix + '-stdin' ? 'stdin' : null);
-      const global = !args.command && ['--ini', '--timeout'].includes(flag);
+      if (flag === '--verbose') { args.verbose = true; continue; }
+      const global = ['--expected-project', '--instance-id'].includes(flag)
+        || (!args.command && ['--ini', '--timeout'].includes(flag))
+        || (args.command === 'call' && flag === '--request-id');
       const requestOption = args.command === 'request' && ['--method', '--header'].includes(flag);
       const selectionOption = (['list', 'find'].includes(args.command) && flag === '--kind') || (args.command === 'details' && flag === '--tag');
       if (!global && !requestOption && !selectionOption && !source) throw new ClientError('未知参数：' + token, 2);
@@ -451,21 +513,24 @@ function parseArgs(argv) {
         if (args.tag !== undefined) throw new ClientError('--tag 只能指定一次。', 2);
         args.tag = value;
       } else if (flag === '--kind') args.kind = value;
+      else if (flag === '--expected-project') args.expected_project = value;
+      else if (flag === '--instance-id') args.instance_id = value;
+      else if (flag === '--request-id') args.request_id = requestId(value);
       else if (flag === '--ini') args.ini = value;
       else if (flag === '--timeout') args.timeout = value.trim() ? Number(value) : NaN;
       else if (flag === '--method') args.method = value;
       else args.headers.push(value);
     } else if (!args.command) {
-      if (!['discover', 'groups', 'list', 'find', 'details', 'schema', 'schemas', 'call', 'prompt', 'resource', 'request'].includes(token)) throw new ClientError('未知命令：' + token, 2);
+      if (!['discover', 'groups', 'list', 'find', 'details', 'schema', 'schemas', 'call', 'prompt', 'resource', 'request', 'status'].includes(token)) throw new ClientError('未知命令：' + token, 2);
       args.command = token;
-    } else if (['schema', 'call', 'prompt', 'resource', 'find', 'request'].includes(args.command) && args.target === undefined) {
+    } else if (['schema', 'call', 'prompt', 'resource', 'find', 'request', 'status'].includes(args.command) && args.target === undefined) {
       args.target = token;
     } else if (args.command === 'schemas') {
       args.targets.push(token);
     } else throw new ClientError('多余参数：' + token, 2);
   }
   if (!args.command) throw new ClientError('缺少命令；使用 --help 查看用法。', 2);
-  if (['schema', 'call', 'prompt', 'resource', 'find', 'request'].includes(args.command) && args.target === undefined) {
+  if (['schema', 'call', 'prompt', 'resource', 'find', 'request', 'status'].includes(args.command) && args.target === undefined) {
     throw new ClientError('缺少名称、URI、关键字或请求地址。', 2);
   }
   if (args.command === 'schemas') {
@@ -496,6 +561,9 @@ async function execute(args) {
         const value = header.slice(colon + 1).trim();
         try { http.validateHeaderName(name); http.validateHeaderValue(name, value); }
         catch { throw new ClientError('请求头格式无效。', 2); }
+        if (['x-mcp-expected-project', 'x-mcp-instance-id'].includes(name.toLowerCase())) {
+          throw new ClientError('绑定头仅由客户端管理，禁止手动注入。', 2);
+        }
         headers[name] = value;
       }
     }
@@ -516,8 +584,20 @@ async function execute(args) {
     }
   }
   const info = await discover(args.ini, args.timeout);
-  if (args.command === 'discover') return info;
   const base = origin(info.base_url);
+  let sameOrigin = false;
+  if (args.command === 'request') {
+    if (args.target.startsWith('/')) args.target = base + args.target;
+    sameOrigin = origin(args.target) === base;
+  }
+  args.binding = bind(info, args, ['call', 'prompt', 'resource'].includes(args.command) || sameOrigin);
+  if (args.command === 'discover') return info;
+  if (args.command === 'status') {
+    const id = requestId(args.target);
+    const instance = args.statusInstance ?? args.client.instance_id;
+    if (!instance) throw new ClientError('status 需要 --instance-id 或已有绑定实例。', 2);
+    return requestHttp(base + queryPath(id, instance), args.timeout);
+  }
   if (args.command === 'groups') {
     const result = await requestHttp(base + '/groups', args.timeout);
     if (!isObject(result) || !Array.isArray(result.groups) || !responseDetailsLimit(result, info.max_details)
@@ -592,18 +672,24 @@ async function execute(args) {
     return rpcCall(info, args, 'resources/read', { uri }, 1, 'contents');
   }
   if (args.command === 'call') {
-    return rpcCall(info, args, 'tools/call', { name: args.target, arguments: payload }, 1);
+    return rpcCall(info, args, 'tools/call', { name: args.target, arguments: payload, request_id: args.request_id }, 1);
   }
   let target = args.target;
   if (target.startsWith('/') && !target.startsWith('//')) target = info.base_url.replace(/\/+$/, '') + target;
-  return requestHttp(target, args.timeout, args.method, payload, headers);
+  if (sameOrigin && isObject(payload) && payload.method === 'tools/call') {
+    if (!isObject(payload.params)) throw new ClientError('tools/call 需要 params。', 2);
+    payload.params.request_id = requestId(payload.params.request_id ?? randomUUID());
+    args.request_id = payload.params.request_id;
+  }
+  return requestHttp(target, args.timeout, args.method, payload, { ...headers, ...(sameOrigin ? args.binding : {}) });
 }
 
 async function main() {
   try {
     const args = parseArgs(process.argv.slice(2));
     if (args.help) { console.log(args.help); return; }
-    const result = await execute(args);
+    const client = new Client(args);
+    const result = await client._exec(args.command, args);
     console.log(typeof result === 'string' ? result : JSON.stringify(result, null, 2));
   } catch (error) {
     console.error('错误：' + error.message);
@@ -658,6 +744,11 @@ class Client {
     this.ini = options.ini ?? path.join(os.homedir(), '.unity-mcp', 'skill.ini');
     this.timeout = options.timeout ?? 15;
     this.verbose = Boolean(options.verbose);
+    this.expected_project = expectedProject(options.expected_project);
+    this.instance_id = options.instance_id;
+    if (this.instance_id !== undefined && (typeof this.instance_id !== 'string' || !this.instance_id.trim())) {
+      throw new ClientError('instance_id 不能为空。', 2);
+    }
   }
 
   _exec(command, overrides = {}) {
@@ -665,7 +756,21 @@ class Client {
       command, ini: this.ini, timeout: this.timeout,
       method: 'GET', kind: 'tools', headers: [], targets: [], ...overrides,
     };
-    return quietStorage.run(!this.verbose, () => execute(args));
+    args.client = this;
+    if (command === 'call') args.request_id = requestId(args.request_id ?? randomUUID());
+    return quietStorage.run(!this.verbose, async () => {
+      try { return await execute(args); }
+      catch (error) {
+        if (args.request_id) {
+          error.request_id = args.request_id;
+          error.instance_id = args.binding?.['X-Mcp-Instance-Id'] ?? this.instance_id ?? '';
+          error.query_path = queryPath(error.request_id, error.instance_id);
+          error.message += '；' + JSON.stringify({ request_id: error.request_id,
+            instance_id: error.instance_id, query_path: error.query_path });
+        }
+        throw error;
+      }
+    });
   }
 
   // 所有方法统一为 async：参数校验失败也是 rejected Promise，调用方只需 await / catch。
@@ -688,8 +793,12 @@ class Client {
   }
   async prompt(name) { return this._exec('prompt', { target: name }); }
   async resource(uri) { return this._exec('resource', { target: uri }); }
-  async call(name, args = {}) {
-    return this._exec('call', { target: name, jsonSource: 'text', jsonValue: jsonSourceValue(args) });
+  async requestStatus(id, instanceId) {
+    return this._exec('status', { target: requestId(id), statusInstance: instanceId });
+  }
+  async call(name, args = {}, options = {}) {
+    return this._exec('call', { target: name, request_id: options.request_id,
+      jsonSource: 'text', jsonValue: jsonSourceValue(args) });
   }
   async request(target, options = {}) {
     const overrides = { target, method: options.method || 'GET' };
@@ -702,10 +811,10 @@ class Client {
   }
 
   /** 调用工具并返回 MCP result 对象（不是完整 JSON-RPC 信封）。 */
-  async callSkill(name, args = {}) {
+  async callSkill(name, args = {}, options = {}) {
     const started = Date.now();
     try {
-      const result = (await this.call(name, args)).result;
+      const result = (await this.call(name, args, options)).result;
       recordCall({ name, arguments: args, ok: true, result, elapsed_ms: Date.now() - started });
       return result;
     } catch (error) {
@@ -769,8 +878,9 @@ const findCapabilities = (query, kind = 'tools') => getClient().find(query, kind
 const getDetails = options => getClient().details(options);
 const getSchema = name => getClient().schema(name);
 const getSchemas = names => getClient().schemas(names);
-const callTool = (name, args = {}) => getClient().call(name, args);
-const callSkill = (name, args = {}) => getClient().callSkill(name, args);
+const callTool = (name, args = {}, options = {}) => getClient().call(name, args, options);
+const callSkill = (name, args = {}, options = {}) => getClient().callSkill(name, args, options);
+const requestStatus = (id, instanceId) => getClient().requestStatus(id, instanceId);
 const callSkillText = (name, args = {}) => getClient().callSkillText(name, args);
 const callSkillJson = (name, args = {}) => getClient().callSkillJson(name, args);
 const readPrompt = name => getClient().prompt(name);
@@ -781,7 +891,7 @@ module.exports = {
   Client, ClientError, configure, getClient,
   connectionInfo, getGroups, listCapabilities, findCapabilities, getDetails,
   getSchema, getSchemas, callTool, callSkill, callSkillText, callSkillJson,
-  readPrompt, readResource, requestRoute, workflowContext,
+  readPrompt, readResource, requestRoute, requestStatus, workflowContext,
   resultText, resultJson, normalizeRequestTarget,
   DEFAULT_MAX_DETAILS, MAX_RESPONSE_BYTES,
 };

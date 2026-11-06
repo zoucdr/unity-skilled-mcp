@@ -21,7 +21,7 @@ namespace UniMcp.Tools
     /// in-memory compilation; mode=dll keeps the legacy AssemblyBuilder flow.
     /// 对应方法名: code_runner
     /// </summary>
-    [ToolModule("code", GroupEn = "Development Tools", GroupZh = "开发工具")]
+    [ToolModule("code", GroupEn = "System", GroupZh = "系统工具")]
     public class CodeTool : ToolModuleBase
     {
         public override string Description => L.T(

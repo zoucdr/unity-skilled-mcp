@@ -158,25 +158,25 @@ Unity Skilled MCP采用独特的双层调用架构：
 AI指令 → FacadeTools → MethodTools → Unity API
 ```
 
-#### FacadeTools（门面工具）
+#### FacadeTools（门面工具，内置 4 个，可在工具页单独开关）
 - **async_call**：异步调用门面；结论落盘到 `ProjectSettings/UnitySkilledMcpAsyncResults.asset`，Unity 重启后可按原 `id` 取回（`type=in` 启动 / `type=out` 取结论）
-- **batch_call**：批量调用
+- **search_tool**：按 `type=list/detail` 查询工具目录与单个工具定义
+- **get_prompt**：按名称读取一个已启用提示词的正文
+- **get_resource**：按 URI 读取一个已注册且启用资源的正文；内部复用 `resources/read` 的读取实现，只接受 `/resources` 目录中的 URI（`resource://<名称>` 亦可），返回 `contents`（text / blob）
 
 #### MethodTools（功能工具）
-40+专业工具，按功能分类：
+40+ 专业工具，按 **8 个功能分组**组织（分组由模块的 `GroupEn` / `GroupZh` 决定，即 `groups` 命令返回的标签）：
 
-| 分类 | 工具数量 | 主要功能 |
-|------|----------|----------|
-| 🏗️ 层级管理 | 3个 | GameObject创建、搜索、预制体应用 |
-| 📝 资源编辑 | 15个 | 组件、材质、纹理、模型等编辑 |
-| 📁 项目管理 | 3个 | 资源搜索、操作、创建 |
-| 🎨 UI开发 | 4个 | UGUI布局、Figma集成、UI规则 |
-| 🖥️ 控制台 | 2个 | 日志读写、调试输出 |
-| ⚡ 代码执行 | 2个 | C#代码运行、Python脚本执行 |
-| 🎮 游戏控制 | 3个 | 游戏窗口、场景视图、游戏玩法 |
-| 🌐 网络工具 | 1个 | HTTP请求处理 |
-| 💾 存储管理 | 2个 | 偏好设置、资源定位 |
-| 📦 包管理 | 1个 | Unity包管理器操作 |
+| 分组 | 标签 | 动作数 | 主要功能 |
+|------|------|--------|----------|
+| 🏗️ 场景层级 | `scene` | 38 | GameObject 创建、搜索、组件属性、删除、场景 |
+| 📦 资源资产 | `assets` | 90 | 预制体、地形、网格、模型、材质、音频、脚本、纹理等资源编辑 |
+| 🎬 动画与特效 | `animation` | 51 | Animator 状态机、动画片段、Line/Trail、粒子 |
+| 🎨 界面 | `ui` | 19 | UI Toolkit、UGUI 布局 |
+| 🖥️ 编辑器 | `editor` | 47 | 控制台、相机、场景/游戏视图、编辑器状态 |
+| ▶️ 运行与调试 | `runtime` | 38 | Play 模式驱动、构建与工程设置、Test Runner |
+| 📁 项目工程 | `project` | 49 | 项目资源创建/操作/搜索、包管理、标签层 |
+| ⚙️ 系统工具 | `system` | 32 | HTTP、能力注册表、偏好设置、资源定位、C#/Python 代码执行 |
 
 ### 消息队列系统
 

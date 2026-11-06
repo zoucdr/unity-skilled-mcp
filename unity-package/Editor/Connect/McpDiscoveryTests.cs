@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using UnityEditor;
@@ -17,6 +18,7 @@ namespace UniMcp
             TestConfiguredDetailLimits();
             TestToolTags();
             TestBuiltInSchemas();
+            TestCapabilityModule();
             TestConnectionInfo();
             TestSkillInstallPrompt();
             UnityEngine.Debug.Log("[UniMcp] 服务发现自检通过");
@@ -121,7 +123,7 @@ namespace UniMcp
             return result;
         }
 
-        [CapabilityTags("Hierarchy Management", "shared", "shared")]
+        [CapabilityTags("Scene", "shared", "shared")]
         private abstract class TaggedDefinition { }
 
         [CapabilityTags(new[] { "legacy" })]
@@ -162,15 +164,16 @@ namespace UniMcp
                 new ToolInfo { name = "hierarchy_apply", description = "层级修改" }
             };
             var groups = new System.Collections.Generic.Dictionary<string, ToolNameAttribute> {
-                { "hierarchy_search", new ToolNameAttribute("hierarchy_search", "Hierarchy Management", "层级管理") },
-                { "hierarchy_apply", new ToolNameAttribute("hierarchy_apply", "Hierarchy Management", "层级管理") }
+                { "hierarchy_search", new ToolNameAttribute("hierarchy_search", "Scene", "场景层级") },
+                { "hierarchy_apply", new ToolNameAttribute("hierarchy_apply", "Scene", "场景层级") }
             };
             var snapshot = new McpDiscoverySnapshot(tools, new[] { prompt }, new[] { resource }, groups);
             var groupListing = Json.Parse(Response(snapshot, "/groups"));
             Check(groupListing["max_details"].AsInt == 32 && groupListing["max_response_bytes"].AsInt == 65536, "组目录默认数量及独立字节限制");
-            Check(groupListing["groups"][0]["tag"].Value == "hierarchy-management", "稳定英文标签");
-            Check(groupListing["groups"][0]["counts"]["tools"].AsInt == 2, "组成员数量");
-            Check(groupListing["groups"][0].ToObject().Count == 3, "组目录不复制详情");
+            var sceneGroup = Enumerable.Range(0, groupListing["groups"].Count).Select(i => groupListing["groups"][i]).First(g => g["tag"].Value == "scene");
+            Check(sceneGroup["tag"].Value == "scene", "稳定英文标签");
+            Check(sceneGroup["counts"]["tools"].AsInt == 2, "组成员数量");
+            Check(sceneGroup.ToObject().Count == 3, "组目录不复制详情");
             foreach (string path in new[] { "/groups", "/tools", "/prompts", "/resources" })
                 Check(Response(snapshot, path) == Response(snapshot, "/mcp" + path), "摘要别名 " + path);
             var prompts = Json.Parse(Response(snapshot, "/prompts"));
@@ -185,7 +188,7 @@ namespace UniMcp
             Check(McpDiscoverySnapshot.IsDetailsPath("/capabilities/details") && McpDiscoverySnapshot.IsDetailsPath("/mcp/capabilities/details"), "POST 别名");
             Check(!McpDiscoverySnapshot.IsDetailsPath("/mcp/capabilities/details/all"), "无 all 子路由");
 
-            var tagged = Details(snapshot, "{\"tag\":\"hierarchy-management\"}");
+            var tagged = Details(snapshot, "{\"tag\":\"scene\"}");
             Check(tagged["count"].AsInt == 2, "合法标签覆盖全部工具但非全部三类时允许");
             string mixed = "{\"members\":[{\"kind\":\"tool\",\"name\":\"hierarchy_search\"},{\"kind\":\"prompt\",\"name\":\"foo\"},{\"kind\":\"resource\",\"uri\":\"res://foo\"}]}";
             var detail = Details(snapshot, mixed);
@@ -221,11 +224,11 @@ namespace UniMcp
             string all = mixed.Replace("\"members\":[", "\"members\":[{\"kind\":\"tool\",\"name\":\"hierarchy_apply\"},");
             Check(Details(snapshot, all, 400)["error"].Value.Contains("三类"), "跨类型全量明确拒绝");
             var onlyTools = new McpDiscoverySnapshot(tools, toolGroups: groups);
-            Details(onlyTools, "{\"tag\":\"hierarchy-management\"}", 400);
+            Details(onlyTools, "{\"tag\":\"scene\"}", 400);
             Details(onlyTools, allTools, 400);
             Details(onlyTools, "{\"members\":[" + one + "]}");
             var singleton = new McpDiscoverySnapshot(new[] { tools[0] }, toolGroups: groups);
-            Details(singleton, "{\"tag\":\"hierarchy-management\"}");
+            Details(singleton, "{\"tag\":\"scene\"}");
             Details(singleton, "{\"members\":[" + one + "]}");
             // 未启用成员不进入快照，与未知成员使用相同的404。
             Response(singleton, "/tools/hierarchy_apply/schema", 404);
@@ -467,12 +470,12 @@ namespace UniMcp
             // UpdateDiscoverySnapshot is exercised below.
             type.GetField("availablePrompts", flags).SetValue(service, new System.Collections.Generic.Dictionary<string, IPrompts>());
             type.GetField("availableResources", flags).SetValue(service, new System.Collections.Generic.Dictionary<string, IRes>());
-            foreach (string method in new[] { "AddAsyncMcpTool", "AddGetPromptDetailTool", "AddSearchMcpTool" })
+            foreach (string method in new[] { "AddAsyncMcpTool", "AddGetPromptDetailTool", "AddGetResourceDetailTool", "AddSearchMcpTool" })
                 type.GetMethod(method, flags).Invoke(service, null);
             var snapshot = new McpDiscoverySnapshot(infos.Values);
             type.GetField("discoverySnapshot", flags).SetValue(service, snapshot);
             var systemGroup = Json.Parse(Response(snapshot, "/groups"))["groups"][0];
-            Check(systemGroup["tag"].Value == "system" && systemGroup["counts"]["tools"].AsInt == 3, "三个系统工具归入 system");
+            Check(systemGroup["tag"].Value == "system" && systemGroup["counts"]["tools"].AsInt == 4, "四个系统工具归入 system");
             // Legacy MCP list endpoints are intentionally kept working; the Skill
             // discovery endpoints are an alternative, not a replacement.
             foreach (string method in new[] { "HandleToolsList", "HandlePromptsList", "HandleResourcesList" })
@@ -485,7 +488,7 @@ namespace UniMcp
                 "1", new JsonClass { { "name", new JsonData("disabled") } }
             }));
             Check(missingPrompt["error"]["code"].AsInt == -32602, "prompts/get 拒绝快照外提示词");
-            foreach (string name in new[] { "async_call", "get_prompt", "search_tool" })
+            foreach (string name in new[] { "async_call", "get_prompt", "get_resource", "search_tool" })
             {
                 var schema = Json.Parse(Response(snapshot, "/tools/" + name + "/schema"))["inputSchema"];
                 Check(schema["type"].Value == "object" && schema["properties"].Count > 0 && schema["required"].Count > 0, "内置工具完整 schema: " + name);
@@ -534,6 +537,53 @@ namespace UniMcp
                 }
             }
             finally { settingField.SetValue(settings, savedValue); }
+        }
+
+        /// <summary>
+        /// capability 模块把 MCP 三原语的管理面暴露给 AI，必须自身可被发现，
+        /// 且启停/增删产生的结果能用只读接口即刻验证。
+        /// </summary>
+        private static void TestCapabilityModule()
+        {
+            var spec = ToolCatalog.Find("capability.set");
+            Check(spec != null, "capability.set 已在工具目录中注册");
+            Check(ToolCatalog.Find("capability.list") != null &&
+                  ToolCatalog.Find("capability.get") != null &&
+                  ToolCatalog.Find("capability.save") != null &&
+                  ToolCatalog.Find("capability.remove") != null &&
+                  ToolCatalog.Find("capability.settings") != null, "capability 六个动作全部注册");
+
+            // kind 参数应为枚举，且 set 携带 confirm 安全阀。
+            bool kindEnum = false;
+            foreach (var key in spec.Parameters)
+                if (key.Key == "kind" && key.EnumValues.Contains("tool")) kindEnum = true;
+            Check(kindEnum, "capability.set 的 kind 枚举包含 tool");
+            Check(spec.Parameters.Any(k => k.Key == "confirm"), "capability.set 暴露 confirm 安全参数");
+
+            // 自锁保护：禁止禁用 capability.set（恢复通道）。
+            var settings = McpLocalSettings.Instance;
+            var tool = new UniMcp.Tools.CapabilityTool();
+            var listAction = typeof(UniMcp.Tools.CapabilityTool).GetMethod("ActionSet",
+                System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+            Check(listAction != null, "CapabilityTool.ActionSet 可反射调用");
+            bool wasEnabled = settings.IsToolEnabled("capability.set");
+            try
+            {
+                var result = listAction.Invoke(tool, new object[] {
+                    new JsonClass {
+                        { "action", new JsonData("set") },
+                        { "kind", new JsonData("tool") },
+                        { "name", new JsonData("capability.set") },
+                        { "enabled", new JsonData(false) }
+                    }
+                }) as JsonClass;
+                Check(result != null && !result["success"].AsBool, "禁用 capability.set 被拒绝");
+                Check(settings.IsToolEnabled("capability.set"), "capability.set 仍处于启用态");
+            }
+            finally
+            {
+                settings.SetToolEnabled("capability.set", wasEnabled);
+            }
         }
 
         private static void TestConnectionInfo()

@@ -664,6 +664,15 @@ namespace UniMcp
         /// <summary>技能源目录绝对路径（unity-package/Skills/unity-skilled-mcp）；未导入时为 null。</summary>
         internal string SkillDir { get; }
 
+        /// <summary>本编辑器进程实例标识，用于执行绑定的 X-Mcp-Instance-Id 校验；每次域重载或服务重启重新生成。</summary>
+        internal static string InstanceId { get; private set; } = Guid.NewGuid().ToString("N");
+
+        /// <summary>服务启动时更换实例标识：同域内停止再启动不会复用旧标识，客户端须重新发现确认。</summary>
+        internal static void RenewInstanceId()
+        {
+            InstanceId = Guid.NewGuid().ToString("N");
+        }
+
         internal McpConnectionInfo(IEnumerable<string> boundPrefixes, string projectPath, int processId, DateTime updatedAt,
             int maxDetails = McpDiscoverySnapshot.DefaultMaxDetails, string skillDir = null)
         {
@@ -692,6 +701,7 @@ namespace UniMcp
                 { "base_url", new JsonData(BaseUrl) },
                 { "port", new JsonData(Port) },
                 { "project_path", new JsonData(ProjectPath) },
+                { "instance_id", new JsonData(InstanceId) },
                 { "process_id", new JsonData(ProcessId) },
                 { "updated_at", new JsonData(UpdatedAt) },
                 { "groups_url", new JsonData(BaseUrl + "/groups") },

@@ -13,7 +13,7 @@ namespace UniMcp.Tools
     /// 专门的音频管理工具，提供音频的导入、修改、复制、删除等操作
     /// 对应方法名: edit_audio
     /// </summary>
-    [ToolModule("audio", GroupEn = "Resource Management", GroupZh = "资源管理")]
+    [ToolModule("audio", GroupEn = "Assets", GroupZh = "资源资产")]
     public class AudioTool : ToolModuleBase
     {
         public override string Description => L.T("Manage audio files including import, modify, copy, delete", "管理音频文件，包括导入、修改、复制和删除");

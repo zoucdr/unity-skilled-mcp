@@ -52,8 +52,8 @@ namespace UniMcp
         /// 初始化 ToolNameAttribute
         /// </summary>
         /// <param name="toolName">工具方法的名称，通常使用snake_case格式</param>
-        /// <param name="groupNameEnglish">工具方法的英文分组名称，如"Hierarchy Management"、"Asset Management"等，为空则使用默认分组</param>
-        /// <param name="groupNameChinese">工具方法的中文分组名称，如"层级管理"、"资源管理"等，为空则忽略多语言切换</param>
+        /// <param name="groupNameEnglish">工具方法的英文分组名称，如"Scene"、"Assets"等，为空则使用默认分组</param>
+        /// <param name="groupNameChinese">工具方法的中文分组名称，如"场景层级"、"资源资产"等，为空则忽略多语言切换</param>
         public ToolNameAttribute(string toolName, string groupNameEnglish = null, string groupNameChinese = null)
         {
             if (string.IsNullOrWhiteSpace(toolName))

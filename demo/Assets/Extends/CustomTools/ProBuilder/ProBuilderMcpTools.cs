@@ -20,7 +20,7 @@ namespace ProBuilder.SkilledMcp
     /// ProBuilder 网格创建与编辑工具：创建形状、挤出、删除面、倒角、桥接、连接/细分边、
     /// 翻转法线、合并对象、布尔运算、设置面材质/轴心、查询网格信息。
     /// </summary>
-    [ToolModule("probuilder", GroupEn = "ProBuilder", GroupZh = "ProBuilder 建模")]
+    [ToolModule("probuilder", GroupEn = "Assets", GroupZh = "资源资产")]
     public class ProBuilderMcpTools : ToolModuleBase
     {
         public override string Description => L.T(

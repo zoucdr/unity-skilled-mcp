@@ -16,7 +16,7 @@ using UnityEngine;
 
 namespace UniMcp.Tools
 {
-    [ToolModule("project", GroupEn = "Project Management", GroupZh = "项目管理")]
+    [ToolModule("project", GroupEn = "Project", GroupZh = "项目工程")]
     public sealed class ProjectSearchTool : ToolModuleBase
     {
         public override string Description => L.T("Search for assets and objects in the Project window", "在项目窗口中搜索资源和对象");

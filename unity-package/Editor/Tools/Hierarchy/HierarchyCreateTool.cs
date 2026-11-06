@@ -18,7 +18,7 @@ using UnityEngine;
 
 namespace UniMcp.Tools
 {
-    [ToolModule("hierarchy", GroupEn = "Hierarchy Management", GroupZh = "层级管理")]
+    [ToolModule("hierarchy", GroupEn = "Scene", GroupZh = "场景层级")]
     public sealed class HierarchyCreateTool : ToolModuleBase
     {
         public override string Description => L.T("Hierarchy creation tool, supports creating various types of game objects in scene hierarchy", "层级创建工具，支持在场景层级中创建各种类型的游戏对象");

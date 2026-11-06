@@ -206,6 +206,8 @@ The Skill's discovery requests do not change the behavior of those MCP operation
 
 ## Tool framework
 
+当前 12 个扩展实现模块采用简短前缀：`scene`、`asset`、`animation`、`ui`、`editor`、`runtime`、`project`、`system`、`physics`、`rendering`、`audio`、`optional_runtime`。其中 `scene` / `ui` / `editor` / `project` / `audio` 合并到已有前缀；旧工具名称和动作不变，不注册 `_workflow` 别名。包内仍为 55 个实现模块、446 个动作；严格参数校验按实际实现模块的 `IStrictToolModule` 标记生效，而不是按前缀生效。
+
 Tools are declared with attributes and discovered purely by reflection — there is no state tree and no generated declaration file. One action equals one tool, named as `prefix.action` (for example `animator.create`, `hierarchy.create_cube`, `gameobject.modify`), each with its own exact `inputSchema`.
 
 The framework lives in `unity-package/Editor/ToolFramework/`:
@@ -224,7 +226,7 @@ The framework lives in `unity-package/Editor/ToolFramework/`:
 A minimal module:
 
 ```csharp
-[ToolModule("animator", GroupEn = "Animation", GroupZh = "动画")]
+[ToolModule("animator", GroupEn = "Animation", GroupZh = "动画与特效")]
 public class AnimatorTool : ToolModuleBase
 {
     public override string Description => L.T("Manage Animator controllers", "管理动画控制器");

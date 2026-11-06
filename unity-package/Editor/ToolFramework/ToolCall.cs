@@ -20,6 +20,19 @@ namespace UniMcp
 
         public override void HandleCommand(JsonNode ctx, Action<JsonNode> callback)
         {
+            if (_spec.Owner is UniMcp.Tools.IStrictToolModule)
+            {
+                try
+                {
+                    if (!(ctx is JsonClass input)) throw new ArgumentException("参数必须是JSON对象");
+                    UniMcp.Tools.ExtensionSafety.ValidateArguments(_spec, input);
+                }
+                catch (ArgumentException e)
+                {
+                    callback(Response.Error(e.Message));
+                    return;
+                }
+            }
             var args = ctx as JsonClass ?? new JsonClass();
             foreach (var pair in _spec.Injections)
             {

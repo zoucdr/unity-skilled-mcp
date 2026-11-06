@@ -14,7 +14,7 @@ namespace UniMcp.Tools
     /// 专门的预制体管理工具，提供预制体的创建、修改、复制、删除等操作
     /// 对应方法名: manage_prefab
     /// </summary>
-    [ToolModule("prefab", GroupEn = "Resource Management", GroupZh = "资源管理")]
+    [ToolModule("prefab", GroupEn = "Assets", GroupZh = "资源资产")]
     public class PrefabTool : ToolModuleBase
     {
         public override string Description => L.T("Manage prefab assets including create and modify", "管理预制体资源，包括创建和修改");

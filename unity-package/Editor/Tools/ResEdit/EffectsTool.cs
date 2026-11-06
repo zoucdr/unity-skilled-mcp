@@ -12,7 +12,7 @@ namespace UniMcp.Tools
     /// 传统粒子系统请使用 edit_particle_system；本工具补的是线渲染、拖尾与 VFX Graph。
     /// 对应方法名: edit_effects
     /// </summary>
-    [ToolModule("effects", GroupEn = "Effects", GroupZh = "特效")]
+    [ToolModule("effects", GroupEn = "Animation", GroupZh = "动画与特效")]
     public class EffectsTool : ToolModuleBase
     {
         private const string VisualEffectType = "UnityEngine.VFX.VisualEffect";

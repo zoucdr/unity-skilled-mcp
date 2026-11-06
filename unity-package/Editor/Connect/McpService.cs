@@ -105,6 +105,9 @@ namespace UniMcp
             }
         }
 
+        private string boundProjectPath;
+        private McpRequestLedger requestLedger;
+
         private HttpListener listener;
         private bool isRunning = false;
         private readonly object lockObj = new();
@@ -358,6 +361,20 @@ namespace UniMcp
         }
 
         /// <summary>
+        /// 重新发现全部能力（工具 / 提示词 / 资源）并失效相关缓存。
+        /// 供 capability 工具与 GUI 在开关状态或配置项变更后调用，
+        /// 使变更立即对已连接的 MCP 客户端可见（list_changed 语义）。
+        /// </summary>
+        public static void RefreshDiscovery()
+        {
+            Instance.DiscoverTools();
+            Instance.DiscoverPrompts();
+            Instance.DiscoverResources();
+            ClearToolsListCache();
+            McpLogger.Log("[UniMcp] 已重新发现 tools / prompts / resources 并清除列表缓存");
+        }
+
+        /// <summary>
         /// 清除 tools/list 缓存
         /// 当描述开关状态改变时需要调用此方法
         /// </summary>
@@ -406,7 +423,7 @@ namespace UniMcp
         }
 
         /// <summary>
-        /// 获取内置门面工具（async_call / get_prompt / search_tool）的已发布信息。
+        /// 获取内置门面工具（async_call / get_prompt / get_resource / search_tool）的已发布信息。
         /// 这些工具不在声明式目录里，工具树需单独展示。
         /// </summary>
         public static IReadOnlyList<ToolInfo> GetBuiltinToolInfos()
@@ -427,8 +444,25 @@ namespace UniMcp
             var allToolNames = ToolCatalog.Names;
             allToolNames.Add("async_call");
             allToolNames.Add("get_prompt");
+            allToolNames.Add("get_resource");
             allToolNames.Add("search_tool");
             return McpLocalSettings.Instance.FilterEnabledTools(allToolNames);
+        }
+
+        /// <summary>
+        /// 获取已发现的全部提示词（含被禁用的），供 capability 工具查询。
+        /// </summary>
+        public static List<IPrompts> GetAllPrompts()
+        {
+            return Instance.availablePrompts.Values.ToList();
+        }
+
+        /// <summary>
+        /// 获取已发现的全部资源（含被禁用的），供 capability 工具查询。
+        /// </summary>
+        public static List<IRes> GetAllResources()
+        {
+            return Instance.availableResources.Values.ToList();
         }
 
         /// <summary>
@@ -710,6 +744,7 @@ namespace UniMcp
             toolInfos.Clear();
             AddAsyncMcpTool();
             AddGetPromptDetailTool();
+            AddGetResourceDetailTool();
             AddSearchMcpTool();
             foreach (var spec in ToolCatalog.Reload())
             {
@@ -807,6 +842,11 @@ namespace UniMcp
                         LogError($"[UniMcp] 创建Prompt实例失败 {promptType.Name}: {ex.Message}\n{ex.StackTrace}");
                     }
                 }
+
+                // 合并用户经 GUI / capability 工具配置的提示词。
+                // 这些对象是 ConfigurablePrompt 实例，反射扫描时被显式排除，
+                // 必须在此显式登记，否则"配置了却不发布"。
+                RegisterConfigurablePrompts();
 
                 Log($"[UniMcp] Prompts发现完成，共发现 {availablePrompts.Count} 个Prompts");
 
@@ -911,6 +951,11 @@ namespace UniMcp
                     }
                 }
 
+                // 合并用户经 GUI / capability 工具配置的资源。
+                // 这些对象是 ConfigurableResource 实例，反射扫描时被显式排除，
+                // 必须在此显式登记，否则"配置了却不发布"。
+                RegisterConfigurableResources();
+
                 Log($"[UniMcp] Resources发现完成，共发现 {availableResources.Count} 个Resources");
 
                 // 列出所有注册的resources
@@ -923,6 +968,67 @@ namespace UniMcp
             catch (Exception ex)
             {
                 LogError($"[UniMcp] Resources发现过程中发生错误: {ex.Message}\n{ex.StackTrace}");
+            }
+        }
+
+        /// <summary>
+        /// 把 McpSettings 中配置的提示词并入已发布列表。
+        /// ConfigurablePrompt 在反射扫描时被排除（避免无参构造出空壳），
+        /// 因此必须显式登记；同名时配置项优先（用户意图覆盖代码实现）。
+        /// </summary>
+        private void RegisterConfigurablePrompts()
+        {
+            try
+            {
+                var configured = McpSettings.Instance?.GetConfigurablePrompts();
+                if (configured == null) return;
+                foreach (var prompt in configured)
+                {
+                    if (prompt == null) continue;
+                    if (string.IsNullOrEmpty(prompt.Name)) continue;
+                    if (string.IsNullOrWhiteSpace(prompt.PromptText))
+                    {
+                        LogWarning($"[UniMcp] 配置的提示词 {prompt.Name} 缺少正文，跳过");
+                        continue;
+                    }
+                    availablePrompts[prompt.Name] = prompt;
+                    Log($"[UniMcp] 已注册配置提示词: {prompt.Name}");
+                }
+            }
+            catch (Exception ex)
+            {
+                LogWarning($"[UniMcp] 合并配置提示词失败: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// 把 McpSettings 中配置的资源并入已发布列表（键为解析后的 URL）。
+        /// ConfigurableResource 在反射扫描时被排除，必须显式登记。
+        /// </summary>
+        private void RegisterConfigurableResources()
+        {
+            try
+            {
+                var configured = McpSettings.Instance?.GetConfigurableResources();
+                if (configured == null) return;
+                foreach (var resource in configured)
+                {
+                    if (resource == null) continue;
+                    // UnityObject 类型需在主线程计算 URL；此处已在主线程。
+                    resource.EnsureUrlCalculated();
+                    string url = resource.Url;
+                    if (string.IsNullOrEmpty(url))
+                    {
+                        LogWarning($"[UniMcp] 配置的资源 {resource.Name} 无法解析 URL，跳过");
+                        continue;
+                    }
+                    availableResources[url] = resource;
+                    Log($"[UniMcp] 已注册配置资源: {url}");
+                }
+            }
+            catch (Exception ex)
+            {
+                LogWarning($"[UniMcp] 合并配置资源失败: {ex.Message}");
             }
         }
 
@@ -1046,6 +1152,86 @@ namespace UniMcp
             catch (Exception ex)
             {
                 LogError($"[UniMcp] 添加 GetPromptDetail 工具失败: {ex.Message}\n{ex.StackTrace}");
+            }
+        }
+
+        /// <summary>
+        /// 供 GetResourceTool 门面调用：按 URI 读取一个已注册且启用资源的正文。
+        /// 只接受发现快照中的资源（与 resources/read 的注册白名单一致），未注册、
+        /// 被禁用或任意 http://、file:// 直连一律拒绝，避免门面绕过外发授权。
+        /// 正文读取复用 HandleResourcesRead：file:// / http(s)://、缓存、MIME 判定与
+        /// text / blob 输出全部一致。
+        /// </summary>
+        internal async Task<JsonNode> ReadResourceContentsForTool(string uri)
+        {
+            if (IsMainThread()) UpdateDiscoverySnapshot();
+            var detail = discoverySnapshot.ResolveResource(uri, out bool registered);
+            if (!registered || detail == null)
+            {
+                throw new InvalidOperationException(L.T(
+                    "Resource not registered or disabled: ", "资源未注册或已禁用：") + uri);
+            }
+
+            var parameters = new JsonClass { { "uri", new JsonData(uri) } };
+            string rpc = await HandleResourcesRead("get_resource", parameters);
+            var parsed = Json.Parse(rpc) as JsonClass;
+            if (parsed == null)
+                throw new InvalidOperationException(L.T("Invalid resource response.", "资源响应格式无效。"));
+            if (parsed.ContainsKey("error"))
+            {
+                var errorNode = parsed["error"] as JsonClass;
+                string message = errorNode != null && errorNode.ContainsKey("message")
+                    ? errorNode["message"]?.Value : null;
+                throw new InvalidOperationException(string.IsNullOrEmpty(message)
+                    ? L.T("Failed to read resource.", "读取资源失败。") : message);
+            }
+            var resultNode = parsed.ContainsKey("result") ? parsed["result"] as JsonClass : null;
+            JsonNode contents = resultNode != null && resultNode.ContainsKey("contents")
+                ? resultNode["contents"] : null;
+            if (contents == null)
+                throw new InvalidOperationException(L.T("Resource response missing contents.", "资源响应缺少 contents。"));
+            return contents;
+        }
+
+        /// <summary>
+        /// 添加 get_resource 工具到可用工具列表（系统自带，供只会 tools/call 的 MCP 客户端读取资源正文）
+        /// </summary>
+        private void AddGetResourceDetailTool()
+        {
+            try
+            {
+                string toolName = "get_resource";
+                Log($"[UniMcp] 手动添加 GetResource 工具: {toolName}");
+
+                if (!mcpToolInstanceCache.ContainsKey(toolName)) mcpToolInstanceCache[toolName] = new GetResourceTool();
+
+                var toolInfo = new ToolInfo
+                {
+                    name = toolName,
+                    description = L.T(
+                        "Read one registered, enabled resource by URI and return its contents. Discover URIs with HTTP GET /resources; a name can be passed as resource://<name>. Only registered resources are accepted.",
+                        "按 URI 读取一个已注册且启用的资源正文。先通过 HTTP GET /resources 发现 URI；名称可写成 resource://<名称>。仅接受已注册资源。"),
+                    inputSchema = new JsonClass
+                    {
+                        { "type", new JsonData("object") },
+                        { "properties", new JsonClass
+                            {
+                                { "uri", new JsonClass {
+                                    { "type", new JsonData("string") },
+                                    { "description", new JsonData(L.T("Resource URI from HTTP GET /resources, or resource://<name>", "资源 URI（来自 HTTP GET /resources），或 resource://<名称>")) }
+                                }}
+                            }
+                        },
+                        { "required", new JsonArray { new JsonData("uri") } }
+                    }
+                };
+                toolInfos[toolName] = toolInfo;
+
+                Log($"[UniMcp] 成功添加 GetResource 工具: {toolName}");
+            }
+            catch (Exception ex)
+            {
+                LogError($"[UniMcp] 添加 GetResource 工具失败: {ex.Message}\n{ex.StackTrace}");
             }
         }
 
@@ -1294,6 +1480,9 @@ namespace UniMcp
             // 确保先停止现有服务
             Stop();
 
+            boundProjectPath = NormalizeProjectPath(Path.GetDirectoryName(Application.dataPath));
+            requestLedger = new McpRequestLedger(McpConnectionInfo.InstanceId);
+
             // 等待一小段时间确保资源释放
             System.Threading.Thread.Sleep(200);
 
@@ -1486,6 +1675,9 @@ namespace UniMcp
 
             McpLogger.Log($"[UniMcp] <color=orange>正在停止Unity MCP HTTP服务器...</color>");
 
+            // 停止后旧实例的执行记录一律视为 unknown；重启时重建台账。
+            requestLedger = null;
+
             try
             {
                 // 首先取消所有异步操作
@@ -1650,6 +1842,69 @@ namespace UniMcp
             Log($"[UniMcp] 结束状态 - IsRunning: {isRunning}, IsListening: {listener?.IsListening}, IsCancelled: {cancellationToken.IsCancellationRequested}");
         }
 
+        /// <summary>Normalizes absolute project paths using the host OS path rules.</summary>
+        internal static string NormalizeProjectPath(string path)
+        {
+            if (string.IsNullOrWhiteSpace(path) || !Path.IsPathRooted(path))
+                throw new ArgumentException("An absolute Unity project path is required");
+            string full = Path.GetFullPath(path);
+            string root = Path.GetPathRoot(full);
+            return full.Length > root.Length ? full.TrimEnd(Path.DirectorySeparatorChar,
+                Path.AltDirectorySeparatorChar) : full;
+        }
+
+        /// <summary>Rejects missing, stale or wrong-project execution bindings.</summary>
+        private string ValidateBinding(string expectedProject, string instanceId, bool required)
+        {
+            return ValidateBindingFor(boundProjectPath, expectedProject, instanceId, required);
+        }
+
+        /// <summary>Pure binding decision, separated from the running listener for verification.</summary>
+        internal static string ValidateBindingFor(string boundPath, string expectedProject, string instanceId,
+            bool required)
+        {
+            if (string.IsNullOrEmpty(expectedProject) || string.IsNullOrEmpty(instanceId))
+            {
+                if (required) return "Binding required: send X-Mcp-Expected-Project and X-Mcp-Instance-Id";
+            }
+            if (!string.IsNullOrEmpty(instanceId) && instanceId != McpConnectionInfo.InstanceId)
+                return "MCP instance changed; rediscover and confirm without replaying the operation";
+            if (!string.IsNullOrEmpty(expectedProject))
+            {
+                try
+                {
+                    var comparison = Path.DirectorySeparatorChar == '\\'
+                        ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+                    if (!string.Equals(NormalizeProjectPath(Uri.UnescapeDataString(expectedProject)),
+                        boundPath, comparison)) return "Unity project binding mismatch";
+                }
+                catch (Exception ex) when (ex is ArgumentException || ex is IOException
+                    || ex is NotSupportedException || ex is UriFormatException)
+                {
+                    return "Invalid expected Unity project path";
+                }
+            }
+            return null;
+        }
+
+        /// <summary>Allows only explicit built-in metadata operations without a binding.</summary>
+        private static bool IsUnboundMethod(string method)
+        {
+            return method == "initialize" || method == "notifications/initialized" || method == "tools/list"
+                || method == "prompts/list" || method == "resources/list";
+        }
+
+        /// <summary>Writes a protocol response without scheduling Unity work.</summary>
+        private static async Task WriteProtocolResponse(HttpListenerResponse response, int status, string json)
+        {
+            response.StatusCode = status;
+            response.ContentType = "application/json; charset=utf-8";
+            byte[] bytes = Encoding.UTF8.GetBytes(json);
+            response.ContentLength64 = bytes.Length;
+            await response.OutputStream.WriteAsync(bytes, 0, bytes.Length);
+            response.Close();
+        }
+
         /// <summary>
         /// 处理 MCP HTTP 请求
         /// </summary>
@@ -1676,7 +1931,8 @@ namespace UniMcp
                 // 设置响应头，允许跨域
                 response.Headers.Add("Access-Control-Allow-Origin", "*");
                 response.Headers.Add("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-                response.Headers.Add("Access-Control-Allow-Headers", "Content-Type");
+                response.Headers.Add("Access-Control-Allow-Headers",
+                    "Content-Type, X-Mcp-Expected-Project, X-Mcp-Instance-Id");
 
                 // 检查是否是SSE请求 - 只有GET请求才可能是SSE
                 bool isSSERequest = false;
@@ -1766,6 +2022,27 @@ namespace UniMcp
                 // 尝试匹配自定义路由（在 MCP 处理之前）
                 string requestPath = request.Url.AbsolutePath;
 
+                string expectedProject = request.Headers["X-Mcp-Expected-Project"];
+                string instanceId = request.Headers["X-Mcp-Instance-Id"];
+                var ledger = requestLedger;
+                // 路径前缀按宿主 OS 规则比较大小写，与工程路径规范化一致。
+                var pathComparison = Path.DirectorySeparatorChar == '\\'
+                    ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+                if (request.HttpMethod == "GET" && requestPath.StartsWith("/requests/", pathComparison))
+                {
+                    string requestId = Uri.UnescapeDataString(requestPath.Substring("/requests/".Length));
+                    string instance = request.QueryString["instance_id"];
+                    string state = ledger == null
+                        ? new JsonClass {
+                            { "request_id", new JsonData(requestId) },
+                            { "instance_id", new JsonData(instance ?? "") },
+                            { "status", new JsonData("unknown") }
+                        }.ToString()
+                        : ledger.Query(requestId, instance).ToString();
+                    await WriteProtocolResponse(response, 200, state);
+                    return;
+                }
+
                 // 有范围发现先于自定义路由及 JSON-RPC 的无界正文读取。
                 if (await TryHandleCapabilityDetailsAsync(request, response, requestPath, cancellationToken)) return;
                 if (request.HttpMethod == "GET"
@@ -1778,6 +2055,18 @@ namespace UniMcp
                     await response.OutputStream.WriteAsync(bytes, 0, bytes.Length);
                     response.Close();
                     return;
+                }
+
+                // 与 /files 服务自身的前缀判定保持一致，避免绕过绑定校验。
+                if (requestPath.StartsWith("/files", StringComparison.OrdinalIgnoreCase))
+                {
+                    string fileBindingError = ValidateBinding(expectedProject, instanceId, true);
+                    if (fileBindingError != null)
+                    {
+                        await WriteProtocolResponse(response, 409,
+                            CreateMcpErrorResponse(null, -32001, fileBindingError));
+                        return;
+                    }
                 }
 
                 // 内置 /files 路由：基于当前端口将 Unity 工程目录作为只读 HTTP 文件服务
@@ -1826,6 +2115,36 @@ namespace UniMcp
                     QueryParams = queryParams
                 };
 
+                bool hasCustomRoute;
+                lock (routesLock)
+                {
+                    hasCustomRoute = customRoutes.Any(route =>
+                        (route.Method == "*" || route.Method.Equals(request.HttpMethod,
+                            StringComparison.OrdinalIgnoreCase))
+                        && IsPathMatch(route.Path, requestPath, out _));
+                }
+                string rpcMethod = null;
+                string rpcId = null;
+                JsonNode rpcParams = null;
+                if (request.HttpMethod == "POST" && !hasCustomRoute)
+                {
+                    try
+                    {
+                        var rpc = Json.Parse(requestBody);
+                        rpcMethod = rpc?["method"]?.Value;
+                        rpcId = rpc?["id"]?.Value;
+                        rpcParams = rpc?["params"];
+                    }
+                    catch { /* Malformed requests still require a binding. */ }
+                }
+                string bindingError = ValidateBinding(expectedProject, instanceId,
+                    hasCustomRoute || (request.HttpMethod == "POST" && !IsUnboundMethod(rpcMethod)));
+                if (bindingError != null)
+                {
+                    await WriteProtocolResponse(response, 409, CreateMcpErrorResponse(rpcId, -32001, bindingError));
+                    return;
+                }
+
                 // 尝试匹配自定义路由
                 string customRouteResult = await TryMatchCustomRoute(routeContext);
                 if (customRouteResult != null)
@@ -1833,7 +2152,6 @@ namespace UniMcp
                     // 自定义路由已处理
                     try
                     {
-                        response.StatusCode = 200;
                         byte[] resultBytes = Encoding.UTF8.GetBytes(customRouteResult);
                         await response.OutputStream.WriteAsync(resultBytes, 0, resultBytes.Length);
                         response.Close();
@@ -1955,7 +2273,37 @@ namespace UniMcp
 
                 // 处理MCP请求
                 McpLogger.Log($"[UniMcp] 开始处理MCP请求 from {clientEndpoint}");
-                string responseJson = await ProcessMcpRequest(requestBody);
+                string executionId = null;
+                if (rpcMethod == "tools/call")
+                {
+                    executionId = rpcParams?["request_id"]?.Value;
+                    if (ledger == null)
+                    {
+                        await WriteProtocolResponse(response, 503, CreateMcpErrorResponse(rpcId, -32003,
+                            "MCP service is restarting; rediscover before retry"));
+                        return;
+                    }
+                    if (string.IsNullOrWhiteSpace(executionId) || executionId.Length > 256)
+                    {
+                        await WriteProtocolResponse(response, 400,
+                            CreateMcpErrorResponse(rpcId, -32602, "params.request_id is required (1-256 characters)"));
+                        return;
+                    }
+                    string acceptance = ledger.Accept(executionId, RequestFingerprint(rpcParams));
+                    if (acceptance != "accepted")
+                    {
+                        int status = acceptance == "conflict" ? 409 : acceptance == "full" ? 503 : 200;
+                        string reply = acceptance == "duplicate"
+                            ? CreateMcpSuccessResponse(rpcId, ledger.Query(executionId, ledger.InstanceId))
+                            : CreateMcpErrorResponse(rpcId, -32002, acceptance == "conflict"
+                                ? "request_id already belongs to a different payload"
+                                : "Request ledger is full of active work; request was not accepted");
+                        await WriteProtocolResponse(response, status, reply);
+                        return;
+                    }
+                }
+                string responseJson = await ProcessMcpRequest(requestBody, expectedProject, instanceId,
+                    executionId, ledger);
                 McpLogger.Log($"[UniMcp] MCP请求处理完成，准备发送响应 to {clientEndpoint}");
 
                 byte[] responseBytes = Encoding.UTF8.GetBytes(responseJson);
@@ -2078,7 +2426,8 @@ namespace UniMcp
         /// <summary>
         /// 处理MCP请求
         /// </summary>
-        private async Task<string> ProcessMcpRequest(string requestBody)
+        private async Task<string> ProcessMcpRequest(string requestBody, string expectedProject = null,
+            string instanceId = null, string executionId = null, McpRequestLedger ledger = null)
         {
             try
             {
@@ -2118,6 +2467,15 @@ namespace UniMcp
                 string method = request["method"]?.Value;
                 string id = request["id"]?.Value;
                 JsonNode paramsNode = request["params"];
+                string bindingError = ValidateBinding(expectedProject, instanceId, !IsUnboundMethod(method));
+                if (bindingError != null)
+                {
+                    string rejected = CreateMcpErrorResponse(id, -32001, bindingError);
+                    if (executionId != null) ledger?.Abandon(executionId, rejected);
+                    return rejected;
+                }
+                if (method == "tools/call" && (ledger == null || executionId == null))
+                    return CreateMcpErrorResponse(id, -32602, "Tool execution requires an accepted request_id");
 
                 McpLogger.Log($"[UniMcp] 解析成功 - 方法: {method}, ID: {id}");
 
@@ -2153,7 +2511,8 @@ namespace UniMcp
                             }
 
                             // 使用超时保护
-                            Task<string> callTask = HandleToolsCall(id, paramsNode);
+                            Task<string> callTask = ExecuteTrackedTool(id, paramsNode, expectedProject,
+                                instanceId, executionId, ledger);
 
                             // 等待任务完成或超时
                             if (await Task.WhenAny(callTask, Task.Delay(10000)) == callTask)
@@ -2166,7 +2525,13 @@ namespace UniMcp
                             {
                                 // 任务超时
                                 McpLogger.LogError($"[UniMcp] 工具调用超时，ID: {id}");
-                                return CreateMcpErrorResponse(id, -32000, "Tool call timed out after 10 seconds");
+                                var timeout = Json.Parse(CreateMcpErrorResponse(id, -32000,
+                                    "Tool call timed out; execution may still finish. Query before any retry."));
+                                var state = ledger.Query(executionId, instanceId);
+                                state.Add("query_path", new JsonData("/requests/" + Uri.EscapeDataString(executionId)
+                                    + "?instance_id=" + Uri.EscapeDataString(instanceId)));
+                                timeout["error"].AsObject.Add("data", state);
+                                return timeout.ToString();
                             }
                             break;
 
@@ -2219,7 +2584,9 @@ namespace UniMcp
             catch (Exception ex)
             {
                 LogError($"[UniMcp] 处理MCP请求时发生错误: {ex.Message}");
-                return CreateMcpErrorResponse(null, -32603, $"Internal error: {ex.Message}");
+                string failure = CreateMcpErrorResponse(null, -32603, $"Internal error: {ex.Message}");
+                if (executionId != null) ledger?.Abandon(executionId, failure);
+                return failure;
             }
         }
 
@@ -3716,10 +4083,56 @@ namespace UniMcp
             }
         }
 
+        /// <summary>Hashes canonical params, independent of object key order and JSON-RPC transport ID.</summary>
+        internal static string RequestFingerprint(JsonNode node)
+        {
+            using (var hash = System.Security.Cryptography.SHA256.Create())
+            {
+                return Convert.ToBase64String(hash.ComputeHash(Encoding.UTF8.GetBytes(CanonicalRequest(node))));
+            }
+        }
+
+        /// <summary>Sorts object keys recursively while preserving array order and scalar types.</summary>
+        private static string CanonicalRequest(JsonNode node)
+        {
+            if (node is JsonClass obj)
+                return "{" + string.Join(",", obj.AsEnumerable().OrderBy(pair => pair.Key, StringComparer.Ordinal)
+                    .Select(pair => new JsonData(pair.Key).ToString() + ":" + CanonicalRequest(pair.Value))) + "}";
+            if (node is JsonArray array)
+            {
+                var items = new List<string>();
+                foreach (JsonNode item in array) items.Add(CanonicalRequest(item));
+                return "[" + string.Join(",", items) + "]";
+            }
+            return node?.ToString() ?? "null";
+        }
+
+        /// <summary>Retains completion even after the HTTP waiter times out or disconnects.</summary>
+        private async Task<string> ExecuteTrackedTool(string id, JsonNode parameters, string expectedProject,
+            string instanceId, string executionId, McpRequestLedger ledger)
+        {
+            string result;
+            try
+            {
+                result = await HandleToolsCall(id, parameters, expectedProject, instanceId, executionId, ledger);
+            }
+            catch (Exception ex)
+            {
+                result = CreateMcpErrorResponse(id, -32603, "Tool execution failed: " + ex.Message);
+            }
+            var parsed = Json.Parse(result);
+            bool failed = parsed.AsObject.ContainsKey("error") || parsed["result"]?["isError"]?.Value == "true";
+            JsonNode payload = parsed.AsObject.ContainsKey("error") ? parsed["error"]
+                : parsed.AsObject.ContainsKey("result") ? parsed["result"] : parsed;
+            ledger.Complete(executionId, payload.ToString(), failed);
+            return result;
+        }
+
         /// <summary>
         /// 处理tools/call请求
         /// </summary>
-        private async Task<string> HandleToolsCall(string id, JsonNode paramsNode)
+        private async Task<string> HandleToolsCall(string id, JsonNode paramsNode, string expectedProject,
+            string instanceId, string executionId, McpRequestLedger ledger)
         {
             try
             {
@@ -3773,6 +4186,11 @@ namespace UniMcp
                 {
                     try
                     {
+                        string bindingError = ValidateBinding(expectedProject, instanceId, true);
+                        if (bindingError != null || !ReferenceEquals(ledger, requestLedger))
+                            throw new InvalidOperationException(bindingError
+                                ?? "MCP service restarted before execution");
+                        ledger.MarkRunning(executionId);
                         tool.HandleCommand(adaptedArguments, (result) =>
                         {
                             var endTime = DateTime.Now;
@@ -3945,6 +4363,9 @@ namespace UniMcp
 
                 var responseResult = new JsonClass();
                 responseResult.Add("content", responseContent);
+                if (toolResult is JsonClass outcome
+                    && (outcome["success"]?.Value == "false" || outcome["isError"]?.Value == "true"))
+                    responseResult.Add("isError", new JsonData(true));
 
                 return CreateMcpSuccessResponse(id, responseResult);
             }
@@ -4238,6 +4659,13 @@ namespace UniMcp
                     try
                     {
                         Log($"[UniMcp] 匹配到自定义路由: {route.Method} {route.Path}");
+                        string bindingError = ValidateBinding(context.Request.Headers["X-Mcp-Expected-Project"],
+                            context.Request.Headers["X-Mcp-Instance-Id"], true);
+                        if (bindingError != null)
+                        {
+                            context.Response.StatusCode = 409;
+                            return CreateMcpErrorResponse(null, -32001, bindingError);
+                        }
                         var result = await route.Handler(context);
                         return result;
                     }

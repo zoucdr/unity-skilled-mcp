@@ -789,10 +789,11 @@ namespace UniMcp
                         if (token.Length > 0 || TokenIsQuoted)
                         {
                             string tokenName = tokenNameBuilder.ToString().Trim();
+                            var value = new JsonData(token, TokenIsQuoted);
                             if (ctx is JsonArray)
-                                ctx.Add(token);
+                                ctx.Add(value);
                             else if (tokenName.Length > 0)
-                                ctx.Add(tokenName, token);
+                                ctx.Add(tokenName, value);
                         }
 
                         stack.Pop();
@@ -831,10 +832,11 @@ namespace UniMcp
                         if (token.Length > 0 || TokenIsQuoted)
                         {
                             string tokenName = tokenNameBuilder.ToString().Trim();
+                            var value = new JsonData(token, TokenIsQuoted);
                             if (ctx is JsonArray)
-                                ctx.Add(token);
+                                ctx.Add(value);
                             else if (tokenName.Length > 0)
-                                ctx.Add(tokenName, token);
+                                ctx.Add(tokenName, value);
                         }
                         tokenNameBuilder.Clear();
                         tokenBuilder.Clear();
@@ -1628,6 +1630,13 @@ return LoadFromCompressedStream(stream);
     {
         private string m_Data;
         private JsonNodeType? m_CachedType = null;
+        // 保留输入token是否带引号，供严格工具校验；旧序列化推断行为不变。
+        internal bool? ParsedAsString { get; private set; }
+
+        internal JsonData(string value, bool quoted) : this(value)
+        {
+            ParsedAsString = quoted;
+        }
 
         public override string Value
         {
@@ -1635,6 +1644,7 @@ return LoadFromCompressedStream(stream);
             set
             {
                 m_Data = value;
+                ParsedAsString = null;
                 m_CachedType = null; // 值变化时清除缓存的类型
             }
         }

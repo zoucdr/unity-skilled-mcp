@@ -29,9 +29,13 @@ namespace UniMcp.Gui
         private static Vector2 promptsScrollPosition;
         private static Dictionary<int, bool> resourceFoldouts = new Dictionary<int, bool>();
         private static Dictionary<int, bool> promptFoldouts = new Dictionary<int, bool>();
+        // 代码实现的 IPrompts / IRes 折叠状态（与可配置项区分，避免键冲突）
+        private static Dictionary<string, bool> codePromptFoldouts = new Dictionary<string, bool>();
+        private static Dictionary<string, bool> codeResourceFoldouts = new Dictionary<string, bool>();
+        // 服务未启动时 availablePrompts/availableResources 可能为空，这里保证至少自动发现一次
+        private static bool codeDiscoveryTried = false;
 
-        // MIME类型下拉框相关变量
-        private static Dictionary<int, int> resourceMimeTypeSelections = new Dictionary<int, int>(); // 资源索引 -> 选中的MIME类型索引
+        // MIME类型下拉框使用的常用资源格式
         private static readonly string[] commonMimeTypes = new string[]
         {
             "application/octet-stream", // 默认值
@@ -132,7 +136,7 @@ namespace UniMcp.Gui
                     }
                     
                     // 重新发现工具以更新描述文本
-                    McpService.RediscoverTools();
+                    McpService.RefreshDiscovery();
                 };
             }
             EditorGUILayout.EndVertical();
@@ -490,7 +494,7 @@ namespace UniMcp.Gui
                 EditorGUILayout.Space(8);
             }
 
-            // 内置门面工具（async_call / get_prompt / search_tool）单独一组
+            // 内置门面工具（async_call / get_prompt / get_resource / search_tool）单独一组
             if (builtins.Count > 0)
             {
                 DrawBuiltinGroup(builtins, localSettings);
@@ -754,7 +758,7 @@ namespace UniMcp.Gui
         }
 
         /// <summary>
-        /// 绘制内置门面工具分组（async_call / get_prompt / search_tool）。
+        /// 绘制内置门面工具分组（async_call / get_prompt / get_resource / search_tool）。
         /// </summary>
         private static void DrawBuiltinGroup(IReadOnlyList<ToolInfo> builtins, McpLocalSettings localSettings)
         {
@@ -1172,7 +1176,7 @@ namespace UniMcp.Gui
                 L.T("Close", "关闭")))
             {
                 Debug.Log($"[McpServiceGUI] {L.T("Starting tool rediscovery...", "开始重新发现工具...")}");
-                McpService.RediscoverTools();
+                McpService.RefreshDiscovery();
 
                 // 重新获取工具信息
                 var newAllToolNames = McpService.GetAllToolNames();
@@ -1242,6 +1246,8 @@ namespace UniMcp.Gui
                     "https://example.com/resource");
                 settings.AddConfigurableResource(newResource);
                 settings.SaveSettings();
+                // 让新资源立即进入发布列表
+                McpService.RefreshDiscovery();
             }
 
             GUI.backgroundColor = addButtonColor;
@@ -1299,8 +1305,8 @@ namespace UniMcp.Gui
                     if (newResourceEnabled != resourceEnabled)
                     {
                         McpService.GetLocalSettings().SetResourceEnabled(resource.Name, newResourceEnabled);
-                        // 重新发现资源
-                        McpService.RediscoverTools();
+                        // 重新发现资源（同时清 prompts/resources 列表缓存）
+                        McpService.RefreshDiscovery();
                         string statusText = newResourceEnabled ? L.T("enabled", "启用") : L.T("disabled", "禁用");
                         Debug.Log($"[McpServiceGUI] {L.T("Resource", "资源")} '{resource.Name}' {L.T("status changed to", "状态已更改为")}: {statusText}");
                     }
@@ -1346,8 +1352,8 @@ namespace UniMcp.Gui
                             settings2.RemoveConfigurableResource(resource.Name);
                             settings2.SaveSettings();
                             resourceFoldouts.Remove(i);
-                            // 重新发现资源
-                            McpService.RediscoverTools();
+                            // 重新发现资源（同时清 prompts/resources 列表缓存）
+                            McpService.RefreshDiscovery();
                             break;
                         }
                     }
@@ -1417,45 +1423,28 @@ namespace UniMcp.Gui
                             }
                         }
 
-                        // MIME类型 - 文本框 + 下拉框（同一行）
-                        EditorGUILayout.BeginHorizontal();
-                        
-                        // 确保选择索引存在
-                        if (!resourceMimeTypeSelections.ContainsKey(i))
+                        // MIME类型 - 纯下拉选择（常用资源格式）
+                        // 若当前值不在常用列表中，则临时置顶保留自定义值，避免打开面板即被覆盖。
+                        string[] mimeOptions = commonMimeTypes;
+                        int selectedIndex = Array.IndexOf(mimeOptions, resource.MimeType);
+                        if (selectedIndex < 0)
                         {
-                            // 查找当前MIME类型在列表中的索引
-                            int currentIndex = Array.IndexOf(commonMimeTypes, resource.MimeType);
-                            resourceMimeTypeSelections[i] = currentIndex >= 0 ? currentIndex : 0;
+                            mimeOptions = new string[commonMimeTypes.Length + 1];
+                            mimeOptions[0] = string.IsNullOrEmpty(resource.MimeType)
+                                ? commonMimeTypes[0]
+                                : resource.MimeType;
+                            Array.Copy(commonMimeTypes, 0, mimeOptions, 1, commonMimeTypes.Length);
+                            selectedIndex = 0;
                         }
 
-                        // 文本框（可以手动编辑）
                         EditorGUI.BeginChangeCheck();
-                        string newMimeType = EditorGUILayout.TextField(L.T("MIME Type", "MIME类型"), resource.MimeType);
-                        if (EditorGUI.EndChangeCheck())
+                        int newSelectedIndex = EditorGUILayout.Popup(
+                            L.T("MIME Type", "MIME类型"), selectedIndex, mimeOptions);
+                        if (EditorGUI.EndChangeCheck() && newSelectedIndex != selectedIndex)
                         {
-                            resource.SetMimeType(newMimeType);
-                            settings2.SaveSettings();
-                            // 更新下拉框选择（如果新值在列表中）
-                            int foundIndex = Array.IndexOf(commonMimeTypes, newMimeType);
-                            if (foundIndex >= 0)
-                            {
-                                resourceMimeTypeSelections[i] = foundIndex;
-                            }
-                        }
-
-                        // 下拉框选择（在文本框后面）
-                        int selectedIndex = resourceMimeTypeSelections[i];
-                        int newSelectedIndex = EditorGUILayout.Popup(selectedIndex, commonMimeTypes, GUILayout.Width(200));
-                        
-                        if (newSelectedIndex != selectedIndex)
-                        {
-                            resourceMimeTypeSelections[i] = newSelectedIndex;
-                            // 选择后自动填入文本框
-                            resource.SetMimeType(commonMimeTypes[newSelectedIndex]);
+                            resource.SetMimeType(mimeOptions[newSelectedIndex]);
                             settings2.SaveSettings();
                         }
-
-                        EditorGUILayout.EndHorizontal();
 
                         EditorGUI.indentLevel--;
                     }
@@ -1464,6 +1453,9 @@ namespace UniMcp.Gui
                     EditorGUILayout.Space(4);
                 }
             }
+
+            // 代码实现的 IRes 实现类列表（可查看详情并单独开关）
+            DrawCodeResourcesList();
 
             EditorGUILayout.EndScrollView();
             EditorGUILayout.EndVertical();
@@ -1509,6 +1501,8 @@ namespace UniMcp.Gui
                     L.T("Prompt Content", "提示词内容"));
                 settings.AddConfigurablePrompt(newPrompt);
                 settings.SaveSettings();
+                // 让新提示词立即进入发布列表
+                McpService.RefreshDiscovery();
             }
 
             GUI.backgroundColor = addButtonColor;
@@ -1566,8 +1560,8 @@ namespace UniMcp.Gui
                     if (newPromptEnabled != promptEnabled)
                     {
                         McpService.GetLocalSettings().SetPromptEnabled(prompt.Name, newPromptEnabled);
-                        // 重新发现提示词
-                        McpService.RediscoverTools();
+                        // 重新发现提示词（同时清 prompts/resources 列表缓存）
+                        McpService.RefreshDiscovery();
                         string statusText = newPromptEnabled ? L.T("enabled", "启用") : L.T("disabled", "禁用");
                         Debug.Log($"[McpServiceGUI] {L.T("Prompt", "提示词")} '{prompt.Name}' {L.T("status changed to", "状态已更改为")}: {statusText}");
                     }
@@ -1613,8 +1607,8 @@ namespace UniMcp.Gui
                             settings2.RemoveConfigurablePrompt(prompt.Name);
                             settings2.SaveSettings();
                             promptFoldouts.Remove(i);
-                            // 重新发现提示词
-                            McpService.RediscoverTools();
+                            // 重新发现提示词（同时清 prompts/resources 列表缓存）
+                            McpService.RefreshDiscovery();
                             break;
                         }
                     }
@@ -1698,8 +1692,305 @@ namespace UniMcp.Gui
                 }
             }
 
+            // 代码实现的 IPrompts 实现类列表（可查看详情并单独开关）
+            DrawCodePromptsList();
+
             EditorGUILayout.EndScrollView();
             EditorGUILayout.EndVertical();
+        }
+
+        /// <summary>
+        /// 绘制代码实现的 IRes 实现类列表。
+        /// 与"可配置资源"并列：此处只读展示实现类的名称/URL/描述/MIME 类型，并可单独开关其在 MCP 发布列表中的可见性。
+        /// 数据源为 McpService.GetAllResources() 中剔除 ConfigurableResource 后的实例（即经反射发现的实现类）。
+        /// </summary>
+        private static void DrawCodeResourcesList()
+        {
+            var allResources = McpService.GetAllResources();
+            // 服务未启动（或首次打开面板）时 availableResources 可能为空，尝试自动发现一次，
+            // 确保代码实现的 IRes 即便在 MCP 关闭时也能在面板中列出。
+            if (!codeDiscoveryTried && allResources.Count == 0)
+            {
+                codeDiscoveryTried = true;
+                McpService.RefreshDiscovery();
+                allResources = McpService.GetAllResources();
+            }
+            var codeResources = allResources.Where(r => !(r is ConfigurableResource)).ToList();
+
+            EditorGUILayout.Space(10);
+
+            GUIStyle sectionTitleStyle = new GUIStyle(EditorStyles.boldLabel)
+            {
+                fontSize = 12,
+                fontStyle = FontStyle.Bold,
+                normal = { textColor = new Color(0.35f, 0.6f, 0.95f) }
+            };
+            EditorGUILayout.LabelField(
+                L.T("💻 Code-implemented Resources (IRes)", "💻 代码实现的资源 (IRes)"),
+                sectionTitleStyle);
+
+            if (codeResources.Count == 0)
+            {
+                EditorGUILayout.HelpBox(
+                    L.T("No code-implemented IRes found. Implement the IRes interface in a script to add one here.",
+                        "未找到代码实现的 IRes。在脚本中实现 IRes 接口即可在此添加。"),
+                    MessageType.Info);
+                return;
+            }
+
+            var localSettings = McpService.GetLocalSettings();
+
+            for (int i = 0; i < codeResources.Count; i++)
+            {
+                var resource = codeResources[i];
+                if (resource == null) continue;
+
+                string key = "coderesource::" + i;
+                if (!codeResourceFoldouts.ContainsKey(key)) codeResourceFoldouts[key] = false;
+
+                string className = resource.GetType().Name;
+                bool enabled = localSettings.IsResourceEnabled(resource.Name);
+
+                EditorGUILayout.BeginVertical("box");
+                EditorGUILayout.BeginHorizontal();
+
+                // 开关：控制该实现类资源在 MCP 发布列表中的可见性
+                Color toggleOriginalBg = GUI.backgroundColor;
+                GUI.backgroundColor = enabled ? new Color(0.4f, 0.9f, 0.5f, 0.5f) : new Color(0.9f, 0.4f, 0.4f, 0.5f);
+                Rect toggleRect = EditorGUILayout.GetControlRect(false, EditorGUIUtility.singleLineHeight, GUILayout.Width(22));
+                bool newEnabled = EditorGUI.Toggle(toggleRect, enabled);
+                GUI.backgroundColor = toggleOriginalBg;
+
+                if (newEnabled != enabled)
+                {
+                    localSettings.SetResourceEnabled(resource.Name, newEnabled);
+                    McpService.RefreshDiscovery();
+                    string statusText = newEnabled ? L.T("enabled", "启用") : L.T("disabled", "禁用");
+                    Debug.Log($"[McpServiceGUI] {L.T("Code resource", "代码资源")} '{resource.Name}' {L.T("status changed to", "状态已更改为")}: {statusText}");
+                }
+
+                // 实现类标签：置于标题左侧，避免与折叠标题文本（长 Name）重叠
+                GUIStyle classTagStyle = new GUIStyle(EditorStyles.miniLabel)
+                {
+                    fontSize = 9,
+                    normal = { textColor = new Color(0.6f, 0.8f, 1f) }
+                };
+                EditorGUILayout.LabelField($"class: {className}", classTagStyle, GUILayout.Width(150));
+
+                // 标题（折叠）
+                GUIStyle foldoutStyle = new GUIStyle(EditorStyles.foldout)
+                {
+                    fontStyle = FontStyle.Bold,
+                    fontSize = 11
+                };
+                foldoutStyle.normal.textColor = enabled ? new Color(0.7f, 0.9f, 0.7f) : new Color(0.9f, 0.6f, 0.6f);
+                foldoutStyle.onNormal.textColor = foldoutStyle.normal.textColor;
+                foldoutStyle.focused.textColor = foldoutStyle.normal.textColor;
+                foldoutStyle.onFocused.textColor = foldoutStyle.normal.textColor;
+
+                codeResourceFoldouts[key] = EditorGUILayout.Foldout(codeResourceFoldouts[key], $"📦 {resource.Name}", true, foldoutStyle);
+
+                GUILayout.FlexibleSpace();
+
+                // 定位实现脚本按钮
+                GUIStyle helpButtonStyle = new GUIStyle(EditorStyles.miniButton)
+                {
+                    fontSize = 12,
+                    fontStyle = FontStyle.Bold,
+                    padding = new RectOffset(0, 0, 0, 0)
+                };
+                Color helpButtonOriginalBg = GUI.backgroundColor;
+                GUI.backgroundColor = new Color(0.6f, 0.8f, 1f, 0.7f);
+                if (GUILayout.Button("?", helpButtonStyle, GUILayout.Width(20), GUILayout.Height(18)))
+                {
+                    PingSourceScript(className);
+                }
+                GUI.backgroundColor = helpButtonOriginalBg;
+
+                EditorGUILayout.EndHorizontal();
+
+                if (codeResourceFoldouts[key])
+                {
+                    EditorGUI.indentLevel++;
+
+                    GUIStyle miniWrap = new GUIStyle(EditorStyles.wordWrappedMiniLabel)
+                    {
+                        fontSize = 10,
+                        normal = { textColor = new Color(0.75f, 0.75f, 0.8f) }
+                    };
+                    EditorGUILayout.LabelField(L.T("URL", "地址") + ": " + (resource.Url ?? ""), miniWrap);
+                    EditorGUILayout.LabelField(L.T("Description", "描述") + ": " + (resource.Description ?? ""), miniWrap);
+                    EditorGUILayout.LabelField(L.T("MIME Type", "MIME类型") + ": " + (resource.MimeType ?? ""), EditorStyles.miniLabel);
+                    EditorGUILayout.LabelField(L.T("Implementation Class", "实现类") + ": " + resource.GetType().FullName, EditorStyles.miniLabel);
+
+                    EditorGUI.indentLevel--;
+                }
+
+                EditorGUILayout.EndVertical();
+                EditorGUILayout.Space(4);
+            }
+        }
+
+        /// <summary>
+        /// 绘制代码实现的 IPrompts 实现类列表。
+        /// 与"可配置提示词"并列：此处只读展示实现类的名称/描述/参数/正文，并可单独开关其在 MCP 发布列表中的可见性。
+        /// 数据源为 McpService.GetAllPrompts() 中剔除 ConfigurablePrompt 后的实例（即经反射发现的实现类）。
+        /// </summary>
+        private static void DrawCodePromptsList()
+        {
+            var allPrompts = McpService.GetAllPrompts();
+            // 服务未启动（或首次打开面板）时 availablePrompts 可能为空，尝试自动发现一次，
+            // 确保代码实现的 IPrompts 即便在 MCP 关闭时也能在面板中列出。
+            if (!codeDiscoveryTried && allPrompts.Count == 0)
+            {
+                codeDiscoveryTried = true;
+                McpService.RefreshDiscovery();
+                allPrompts = McpService.GetAllPrompts();
+            }
+            var codePrompts = allPrompts.Where(p => !(p is ConfigurablePrompt)).ToList();
+
+            EditorGUILayout.Space(10);
+
+            GUIStyle sectionTitleStyle = new GUIStyle(EditorStyles.boldLabel)
+            {
+                fontSize = 12,
+                fontStyle = FontStyle.Bold,
+                normal = { textColor = new Color(0.35f, 0.6f, 0.95f) }
+            };
+            EditorGUILayout.LabelField(
+                L.T("💻 Code-implemented Prompts (IPrompts)", "💻 代码实现的提示词 (IPrompts)"),
+                sectionTitleStyle);
+
+            if (codePrompts.Count == 0)
+            {
+                EditorGUILayout.HelpBox(
+                    L.T("No code-implemented IPrompts found. Implement the IPrompts interface in a script to add one here.",
+                        "未找到代码实现的 IPrompts。在脚本中实现 IPrompts 接口即可在此添加。"),
+                    MessageType.Info);
+                return;
+            }
+
+            var localSettings = McpService.GetLocalSettings();
+
+            for (int i = 0; i < codePrompts.Count; i++)
+            {
+                var prompt = codePrompts[i];
+                if (prompt == null) continue;
+
+                string key = "codeprompt::" + i;
+                if (!codePromptFoldouts.ContainsKey(key)) codePromptFoldouts[key] = false;
+
+                string className = prompt.GetType().Name;
+                bool enabled = localSettings.IsPromptEnabled(prompt.Name);
+
+                EditorGUILayout.BeginVertical("box");
+                EditorGUILayout.BeginHorizontal();
+
+                // 开关：控制该实现类提示词在 MCP 发布列表中的可见性
+                Color toggleOriginalBg = GUI.backgroundColor;
+                GUI.backgroundColor = enabled ? new Color(0.4f, 0.9f, 0.5f, 0.5f) : new Color(0.9f, 0.4f, 0.4f, 0.5f);
+                Rect toggleRect = EditorGUILayout.GetControlRect(false, EditorGUIUtility.singleLineHeight, GUILayout.Width(22));
+                bool newEnabled = EditorGUI.Toggle(toggleRect, enabled);
+                GUI.backgroundColor = toggleOriginalBg;
+
+                if (newEnabled != enabled)
+                {
+                    localSettings.SetPromptEnabled(prompt.Name, newEnabled);
+                    McpService.RefreshDiscovery();
+                    string statusText = newEnabled ? L.T("enabled", "启用") : L.T("disabled", "禁用");
+                    Debug.Log($"[McpServiceGUI] {L.T("Code prompt", "代码提示词")} '{prompt.Name}' {L.T("status changed to", "状态已更改为")}: {statusText}");
+                }
+
+                // 实现类标签：置于标题左侧，避免与折叠标题文本（长 Name）重叠
+                GUIStyle classTagStyle = new GUIStyle(EditorStyles.miniLabel)
+                {
+                    fontSize = 9,
+                    normal = { textColor = new Color(0.6f, 0.8f, 1f) }
+                };
+                EditorGUILayout.LabelField($"class: {className}", classTagStyle, GUILayout.Width(150));
+
+                // 标题（折叠）
+                GUIStyle foldoutStyle = new GUIStyle(EditorStyles.foldout)
+                {
+                    fontStyle = FontStyle.Bold,
+                    fontSize = 11
+                };
+                foldoutStyle.normal.textColor = enabled ? new Color(0.7f, 0.9f, 0.7f) : new Color(0.9f, 0.6f, 0.6f);
+                foldoutStyle.onNormal.textColor = foldoutStyle.normal.textColor;
+                foldoutStyle.focused.textColor = foldoutStyle.normal.textColor;
+                foldoutStyle.onFocused.textColor = foldoutStyle.normal.textColor;
+
+                codePromptFoldouts[key] = EditorGUILayout.Foldout(codePromptFoldouts[key], $"💬 {prompt.Name}", true, foldoutStyle);
+
+                GUILayout.FlexibleSpace();
+
+                // 定位实现脚本按钮
+                GUIStyle helpButtonStyle = new GUIStyle(EditorStyles.miniButton)
+                {
+                    fontSize = 12,
+                    fontStyle = FontStyle.Bold,
+                    padding = new RectOffset(0, 0, 0, 0)
+                };
+                Color helpButtonOriginalBg = GUI.backgroundColor;
+                GUI.backgroundColor = new Color(0.6f, 0.8f, 1f, 0.7f);
+                if (GUILayout.Button("?", helpButtonStyle, GUILayout.Width(20), GUILayout.Height(18)))
+                {
+                    PingSourceScript(className);
+                }
+                GUI.backgroundColor = helpButtonOriginalBg;
+
+                EditorGUILayout.EndHorizontal();
+
+                if (codePromptFoldouts[key])
+                {
+                    EditorGUI.indentLevel++;
+
+                    GUIStyle descStyle = new GUIStyle(EditorStyles.wordWrappedMiniLabel)
+                    {
+                        fontSize = 10,
+                        fontStyle = FontStyle.Italic,
+                        normal = { textColor = new Color(0.75f, 0.75f, 0.8f) }
+                    };
+                    EditorGUILayout.LabelField(L.T("Description", "描述") + ": " + (prompt.Description ?? ""), descStyle);
+                    EditorGUILayout.LabelField(L.T("Implementation Class", "实现类") + ": " + prompt.GetType().FullName, EditorStyles.miniLabel);
+
+                    // 提示词正文（只读）
+                    EditorGUILayout.LabelField(L.T("Prompt Text", "提示词正文"), EditorStyles.boldLabel);
+                    EditorGUILayout.SelectableLabel(
+                        prompt.PromptText ?? "",
+                        new GUIStyle(EditorStyles.wordWrappedMiniLabel) { fontSize = 10 },
+                        GUILayout.ExpandWidth(true),
+                        GUILayout.Height(EditorGUIUtility.singleLineHeight * 4));
+
+                    // 参数（只读）
+                    var keys = prompt.Keys;
+                    if (keys != null && keys.Length > 0)
+                    {
+                        EditorGUILayout.Space(4);
+                        EditorGUILayout.LabelField(L.T("📋 Arguments (Read-only)", "📋 参数（只读）"), EditorStyles.boldLabel);
+                        foreach (var k in keys)
+                        {
+                            if (k == null) continue;
+                            EditorGUILayout.BeginVertical("box");
+                            EditorGUILayout.LabelField(
+                                $"{k.Key}  [{k.Type}]  {(k.Optional ? "(optional)" : "(required)")}",
+                                EditorStyles.miniBoldLabel);
+                            EditorGUILayout.LabelField($"{L.T("Description", "描述")}: {k.Desc}", EditorStyles.miniLabel);
+                            if (k.Examples != null && k.Examples.Count > 0)
+                                EditorGUILayout.LabelField($"{L.T("Examples", "示例")}: {string.Join(", ", k.Examples)}", EditorStyles.miniLabel);
+                            if (k.EnumValues != null && k.EnumValues.Count > 0)
+                                EditorGUILayout.LabelField($"{L.T("Enum Values", "枚举值")}: {string.Join(", ", k.EnumValues)}", EditorStyles.miniLabel);
+                            EditorGUILayout.EndVertical();
+                            EditorGUILayout.Space(2);
+                        }
+                    }
+
+                    EditorGUI.indentLevel--;
+                }
+
+                EditorGUILayout.EndVertical();
+                EditorGUILayout.Space(4);
+            }
         }
 
         /// <summary>
@@ -1714,9 +2005,12 @@ namespace UniMcp.Gui
             groupFoldouts.Clear();
             resourceFoldouts.Clear();
             promptFoldouts.Clear();
+            codePromptFoldouts.Clear();
+            codeResourceFoldouts.Clear();
+            codeDiscoveryTried = false;
             
             // 重新发现工具（这会同时刷新工具、资源和提示词）
-            McpService.RediscoverTools();
+            McpService.RefreshDiscovery();
             
             Debug.Log("[McpServiceGUI] All lists refreshed.");
         }

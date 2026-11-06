@@ -13,7 +13,7 @@ namespace UniMcp.Tools
     /// 测试框架不是本包的硬依赖，因此不使用 asmdef 引用，缺失时返回明确提示。
     /// 对应方法名: run_tests
     /// </summary>
-    [ToolModule("tests", GroupEn = "Testing", GroupZh = "测试")]
+    [ToolModule("tests", GroupEn = "Runtime", GroupZh = "运行与调试")]
     public class TestsTool : ToolModuleBase
     {
         private const string ApiTypeName = "UnityEditor.TestTools.TestRunner.Api.TestRunnerApi";

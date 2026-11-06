@@ -16,7 +16,7 @@ namespace UniMcp.Tools
     /// GamePlay游戏窗口管理工具，支持输入模拟、窗口操作、截图和图像处理
     /// 对应方法名: gameplay
     /// </summary>
-    [ToolModule("gameplay", GroupEn = "Gameplay Control", GroupZh = "游戏控制")]
+    [ToolModule("gameplay", GroupEn = "Runtime", GroupZh = "运行与调试")]
     public class GamePlayTool : ToolModuleBase
     {
         public override string Description => L.T("Control gameplay, simulate input, and process images", "控制游戏玩法，模拟输入和处理图像");

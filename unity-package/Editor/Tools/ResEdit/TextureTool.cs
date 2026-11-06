@@ -13,7 +13,7 @@ namespace UniMcp.Tools
     /// Handles texture import settings and modification operations.
     /// 对应方法名: manage_texture
     /// </summary>
-    [ToolModule("texture", GroupEn = "Resource Management", GroupZh = "资源管理")]
+    [ToolModule("texture", GroupEn = "Assets", GroupZh = "资源资产")]
     public class TextureTool : ToolModuleBase
     {
         public override string Description => L.T("Manage texture assets including import and settings", "管理纹理资源，包括导入和设置");

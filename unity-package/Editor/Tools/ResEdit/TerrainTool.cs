@@ -13,7 +13,7 @@ namespace UniMcp.Tools
     /// 处理Unity场景中Terrain地形的编辑操作
     /// 支持创建、修改、导入导出高度图等功能
     /// </summary>
-    [ToolModule("terrain", GroupEn = "Resource Management", GroupZh = "资源管理")]
+    [ToolModule("terrain", GroupEn = "Assets", GroupZh = "资源资产")]
     public class TerrainTool : ToolModuleBase
     {
         public override string Description => L.T("Manage terrain assets including create and modify heightmaps", "管理地形资源，包括创建和修改高度图");

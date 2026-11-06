@@ -15,7 +15,7 @@ namespace UniMcp.Tools
     /// Handles Unity Game window management and controls.
     /// 对应方法名: game_view
     /// </summary>
-    [ToolModule("game_view", GroupEn = "Window Management", GroupZh = "窗口管理")]
+    [ToolModule("game_view", GroupEn = "Editor", GroupZh = "编辑器")]
     public class GameViewTool : ToolModuleBase
     {
         public override string Description => L.T("Manage and control Unity Game view window", "管理和控制Unity游戏视图窗口");

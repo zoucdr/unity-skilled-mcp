@@ -13,7 +13,7 @@ namespace UniMcp.Tools
     /// 与 gameplay（Game View 截图）和 window（Scene View 截图）互补：本工具围绕场景中的 Camera 组件工作。
     /// 对应方法名: manage_camera
     /// </summary>
-    [ToolModule("camera", GroupEn = "Camera", GroupZh = "相机")]
+    [ToolModule("camera", GroupEn = "Editor", GroupZh = "编辑器")]
     public class CameraTool : ToolModuleBase
     {
         private static readonly string[] VirtualCameraTypes =

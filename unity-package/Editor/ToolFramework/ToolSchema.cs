@@ -107,6 +107,8 @@ namespace UniMcp
             var schema = new JsonClass();
             schema.Add("type", new JsonData("object"));
             schema.Add("properties", properties);
+            if (spec.Owner is UniMcp.Tools.IStrictToolModule)
+                schema.Add("additionalProperties", new JsonData(false));
             if (required.Count > 0) schema.Add("required", required);
             return schema;
         }

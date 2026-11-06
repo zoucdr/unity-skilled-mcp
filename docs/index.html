@@ -82,11 +82,11 @@
                 </div>
                 <div class="hero-stats">
                     <div class="stat-item">
-                        <div class="stat-number">405</div>
+                        <div class="stat-number">493</div>
                         <div class="stat-label">注册工具</div>
                     </div>
                     <div class="stat-item">
-                        <div class="stat-number">49</div>
+                        <div class="stat-number">62</div>
                         <div class="stat-label">工具模块</div>
                     </div>
                     <div class="stat-item">
@@ -233,7 +233,7 @@
                         <div class="layer-title">Unity 编辑器层</div>
                         <div class="layer-items">
                             <span class="layer-item">主线程消息队列</span>
-                            <span class="layer-item">405 注册工具</span>
+                            <span class="layer-item">493 注册工具</span>
                         </div>
                     </div>
                     <div class="arch-arrow">↓</div>
@@ -942,33 +942,33 @@ node scripts/unity_mcp.js prompt test_talk_step</code></pre>
             </div>
             <div class="tools-categories">
                 <div class="tool-category">
-                    <h4>层级管理</h4>
+                    <h4>场景层级 <span class="tool-tag">scene</span></h4>
                     <ul>
                         <li>hierarchy.create_cube</li>
                         <li>hierarchy.find_by_name</li>
-                        <li>hierarchy.apply_prefab_changes</li>
+                        <li>gameobject.modify</li>
+                        <li>component.get_component_propertys</li>
                     </ul>
                 </div>
                 <div class="tool-category">
-                    <h4>资源编辑</h4>
+                    <h4>资源资产 <span class="tool-tag">assets</span></h4>
                     <ul>
-                        <li>gameobject.modify</li>
-                        <li>component.get_component_propertys</li>
                         <li>material.set_properties</li>
                         <li>texture.set_type</li>
                         <li>mesh.get_info</li>
+                        <li>prefab.create_prefab</li>
                     </ul>
                 </div>
                 <div class="tool-category">
-                    <h4>项目管理</h4>
+                    <h4>动画与特效 <span class="tool-tag">animation</span></h4>
                     <ul>
-                        <li>project.find_asset</li>
-                        <li>project.modify</li>
-                        <li>package.add_registry</li>
+                        <li>animator.create</li>
+                        <li>anim_clip.create</li>
+                        <li>effects.create_line</li>
                     </ul>
                 </div>
                 <div class="tool-category">
-                    <h4>UI 工具</h4>
+                    <h4>界面 <span class="tool-tag">ui</span></h4>
                     <ul>
                         <li>ugui.do_layout</li>
                         <li>ui.add_element</li>
@@ -976,17 +976,54 @@ node scripts/unity_mcp.js prompt test_talk_step</code></pre>
                     </ul>
                 </div>
                 <div class="tool-category">
-                    <h4>代码运行</h4>
+                    <h4>编辑器 <span class="tool-tag">editor</span></h4>
                     <ul>
-                        <li>code.execute (C#，mode=none / runtime / dll)</li>
-                        <li>python.execute</li>
+                        <li>console.get / console.log</li>
+                        <li>camera.screenshot</li>
+                        <li>editor.get_state / editor.execute_menu</li>
                     </ul>
                 </div>
                 <div class="tool-category">
-                    <h4>存储管理</h4>
+                    <h4>运行与调试 <span class="tool-tag">runtime</span></h4>
                     <ul>
-                        <li>prefers.set (偏好设置)</li>
-                        <li>source_location.reveal_in_finder (资源定位)</li>
+                        <li>gameplay.play / gameplay.pause</li>
+                        <li>engine.build / engine.get_settings</li>
+                        <li>tests.run</li>
+                    </ul>
+                </div>
+                <div class="tool-category">
+                    <h4>项目工程 <span class="tool-tag">project</span></h4>
+                    <ul>
+                        <li>project.find_asset</li>
+                        <li>project.modify</li>
+                        <li>package.add_registry</li>
+                    </ul>
+                </div>
+                <div class="tool-category">
+                    <h4>系统工具 <span class="tool-tag">system</span></h4>
+                    <ul>
+                        <li>http.get / http.download</li>
+                        <li>code.execute (C#，mode=none / runtime / dll)</li>
+                        <li>python.execute</li>
+                        <li>prefers.set / source_location.reveal_in_finder</li>
+                    </ul>
+                </div>
+                <div class="tool-category">
+                    <h4>物理与导航 <span class="tool-tag">physics</span></h4>
+                    <ul>
+                        <li>physics.rigidbody_set</li>
+                        <li>physics.collider_add</li>
+                        <li>physics.raycast / overlap</li>
+                        <li>physics.navmesh_path</li>
+                    </ul>
+                </div>
+                <div class="tool-category">
+                    <h4>渲染与光照 <span class="tool-tag">rendering</span></h4>
+                    <ul>
+                        <li>rendering.light_set</li>
+                        <li>rendering.lightmaps / bake_start</li>
+                        <li>rendering.probe_inspect</li>
+                        <li>rendering.pipeline_get / volume_set</li>
                     </ul>
                 </div>
                 <div class="tool-category">
@@ -995,15 +1032,7 @@ node scripts/unity_mcp.js prompt test_talk_step</code></pre>
                         <li>async_call（结论落盘，重启可查）</li>
                         <li>search_tool</li>
                         <li>get_prompt</li>
-                    </ul>
-                </div>
-                <div class="tool-category">
-                    <h4>其他工具</h4>
-                    <ul>
-                        <li>console.get / console.log</li>
-                        <li>http.get / http.download</li>
-                        <li>gameplay.play / gameplay.pause</li>
-                        <li>editor.get_state / editor.execute_menu</li>
+                        <li>get_resource（按 URI 读取已注册资源正文）</li>
                     </ul>
                 </div>
             </div>

@@ -21,6 +21,21 @@ agent_created: true
 3. 先 `discover` 核项目、端口、进程、更新时间。每命令重读 INI、验 HTTP `/discovery`。配置失效则重启目标服务，不扫端口。最后成功启动之项目覆盖 INI；响应扩展字段仅作数据保留。
 4. INI 与 `/discovery` 皆不发布 MCP 端点，此乃刻意：勿自拼或直连 `/mcp`，勿加载 MCP 客户端协议。访问只走本脚本 CLI 或库 API（`list` / `find` / `schema` / `schemas` / `call` / `prompt` / `resource` / `details` / `request` 及函数形式，见「作为代码库调用」）。
 
+## 工程绑定与执行台账
+
+- `--expected-project PATH`（库 `expected_project`）优先；省略时，从进程 cwd 向上寻找同时含 `Assets`、`ProjectSettings` 的 Unity 根。INI 路径、INI 内容及 discovery 自报路径均不能作为预期工程的来源。从技能目录运行而不在 Unity 根内时，须显式指定工程。
+- 目录查询允许错连，但 stderr 只给简短警告。`call`、`prompt`、`resource` 与所有同源 `request`（包括未知 GET）必须先匹配预期工程，再发送 `X-Mcp-Expected-Project: encodeURIComponent(path)` 与 `X-Mcp-Instance-Id`。跨源 `request` 不发送这些头，任何大小写的手工注入均拒绝。
+- `Client` 在匹配后锁定 discovery 的 `instance_id`；后续发现实例漂移即拒绝，不自动重放。显式 `discover()` / CLI `discover` 表示重新确认匹配工程的新实例，不执行旧操作。CLI 跨进程须传 `--instance-id ID` 保持绑定；库可在构造或 `configure` 时传 `instance_id`。
+- 每次 `call` 自动生成 `params.request_id`；可用 `call NAME --request-id ID`，或 `client.call(name, args, { request_id: ID })` / `callTool` / `callSkill` 第三参数显式指定。失败异常与 CLI 错误包含 `request_id`、`instance_id`、`query_path`；HTTP 非 2xx 保留服务正文，库异常另含 `body`、`status`。
+- `status REQUEST_ID --instance-id INSTANCE_ID`、`client.requestStatus(id, instanceId)` 或顶层 `requestStatus` 查询 `GET /requests/{id}?instance_id=...`。库省略实例参数时用已有绑定；可查询旧实例而不更新绑定。状态为 `accepted/running/completed/failed/unknown`；`unknown` 不证明未执行，`failed` 不证明无副作用。台账限于实例且有容量、结果预算与过期限制。
+- 同实例同 ID 同参数不重复执行，异参数冲突；重复响应可能是台账状态而非原工具内容。超时或断连先查询，不自动换 ID 重放，更不重跑整个序列。
+
+```sh
+node scripts/unity_mcp.js --expected-project /path/to/UnityProject discover
+node scripts/unity_mcp.js --expected-project /path/to/UnityProject --instance-id INSTANCE_ID call NAME --request-id REQUEST_ID --args-file args.json
+node scripts/unity_mcp.js status REQUEST_ID --instance-id INSTANCE_ID
+```
+
 ## 按需发现与详情
 
 ```sh
@@ -75,7 +90,7 @@ node scripts/unity_mcp.js details --help
 - 自目录择 `NAME`，先取 schema / schemas / 详情，再依定义调用。`call` 之 `--args` / `--args-file` / `--args-stdin` 三择一，省略传 `{}`；参数须 JSON 对象。文件与标准输入容 UTF-8 BOM；Windows 宜用文件参数，`<` 示例用于 POSIX shell / CMD。
 - 全局 `--ini` / `--timeout` 置于子命令前；自定义 INI 亦须先读取以校验连接。保留 `request` 通用 HTTP：`--data` / `--data-file` / `--data-stdin`，可重复 `--header 'NAME:VALUE'`，方法 GET（默认）、POST、PUT、PATCH、DELETE、HEAD、OPTIONS。唯明确授权后访问绝对 http/https URL 或外发数据，仍先验本地连接；不得借此绕过详情选择限制。
 - Windows Git Bash / MSYS 会把以 `/` 开头之参数转为本地路径（`/groups` → `C:/…/PortableGit/groups`）。客户端已依 `EXEPATH` **自动还原**，`request /ROUTE` 可直用；亦可用无前导斜杠之裸路由 `request groups`（不触发 shell 转换），或 `discover` 所得完整地址 `request http://localhost:PORT/ROUTE`。不能还原之本地路径明确报错并提示，绝不当 URL 访问。CMD、PowerShell、POSIX shell 不受影响。库 API 直传 `'groups'` 或 `'/groups'` 即可。
-- stdout 出结果，stderr 出连接信息。HTTP 默认超时 15 秒，验 TLS，不重定向、不重试。写操作失败可能已执行，核实后再定是否重放。退出码：0 成功；2 参数/配置；3 连接/TLS/超时；4 HTTP；5 响应格式/详情超大；6 JSON-RPC error / MCP isError；130 中断。
+- stdout 仅出结果；唯 `--verbose` 才在 stderr 出完整连接信息，错连或连接变更只出简短警告。HTTP 默认超时 15 秒，验 TLS，不重定向、不重试。写操作失败可能已执行，核实后再定是否重放。退出码：0 成功；2 参数/配置；3 连接/TLS/超时；4 HTTP；5 响应格式/详情超大；6 JSON-RPC error / MCP isError；130 中断。
 
 ## 作为代码库调用（程序化访问）
 
@@ -98,7 +113,7 @@ const summary = await unity.workflowContext('TASK_NAME', 'TASK_DESCRIPTION', asy
 - `pickFrom` 为伪代码，表「由调用方依目录与 schema 决定」，非库函数。工具名须出 `find` / `list --kind tools`，参数只依 `schema` / `schemas` 传。示例无真实工具名，勿照抄参数。
 - `callSkill` 返 MCP `result`；`callTool` 返完整 JSON-RPC 信封；`callSkillText` 拼 `content[*].text`；`callSkillJson` 再解析为 JSON，失败抛错。
 - `workflowContext` 只作**调用记录与汇总**：块内 `callSkill` 自动记入 `wf.calls`，含参数、结果或错误码与耗时。失败照常外抛，**不重试、不回滚、不自动重放**。`wf.summary()` 块内外皆可调用。
-- 每次调用仍重读 INI 并验 `/discovery`，不缓存端口，服务重启自动跟上。库模式默认静默 stderr（`verbose: true` 开之）。所有方法皆 `async`，须 `await`；异常为 `ClientError`（含 `.code`，同 CLI 退出码）。
+- 每次调用仍重读 INI 并验 `/discovery`，不缓存端口，但锁定实例；服务重启须显式 `discover` 重新确认，禁止自动跟随重放。库模式默认静默 stderr，错连或连接变更给简短警告（`verbose: true` 才出完整信息）。所有方法皆 `async`，须 `await`；异常为 `ClientError`（含 `.code`，同 CLI 退出码）。
 - 多连接或自定义配置用 `new Client({ ini, timeout, verbose })`；方法名 `discover / groups / list / find / details / schema / schemas / call / prompt / resource / request`。顶层函数清单见脚本末 `module.exports`。
 - 安全边界同 CLI：禁全集、拒未注册 URI、守 `max_details` 与 64 KiB；`request` 绝对外发地址仍须用户明确授权。库不得绕过 SKILL.md 任何规则。
 
@@ -130,6 +145,13 @@ node scripts/unity_mcp.js resource URI
 - `details` 只给注册定义。用提示词/资源须 `prompt` / `resource`：先取一次 `/prompts` 或 `/resources` 目录验成员，再发一次 `prompts/get` / `resources/read`，响应须含 `messages` / `contents` 数组。
 - 名称与 URI 须出 `list --kind prompts` / `list --kind resources`，勿猜。`resource` 只受**目录中已注册**之 URI；服务端 `resources/read` 兼容任意 `http://`、`file://` URI，本技能刻意禁此用法，以免绕过 `request` 外发授权。`prompt` 不传参数，服务端现只按名称返模板正文。
 - 目录缺失、成员未注册、响应缺 `messages` / `contents`，立即报错。不重试，不回退 `request` 自拼 JSON-RPC。
+
+## 常见坑（简）
+
+- 资源 URI 唯目录中已注册者可用；`resource://名称` 只是按名别名，服务端最终只解 `file://` / `http://` / `https://`，他 scheme 一律拒。
+- 资源无订阅推送：内容变更须重新 `resource` 读取；`file://` 按修改时间失效缓存，`http(s)://` 缓存 30 分钟，故一次读到之值不等于当下最新。
+- `tools/call` 有超时上限，大或慢之资源勿经 `call` 之门面取，宜直接 `resource`（`resources/read`）；技能客户端本就走后者。
+- 凡按条件筛选、限量或按类型读取之结果，只述本次返回集合，**不证全局无此类条目**。返回为空或不符预期，先核本次生效之筛选条件是否与返回所标一致，勿据此断言「无警告」「无错误」。
 
 ## 多步访问
 

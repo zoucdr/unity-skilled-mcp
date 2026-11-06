@@ -24,7 +24,7 @@ namespace UniMcp.Tools
     /// 网页管理工具，支持添加、删除、查询、列表等操作
     /// 对应方法名: webpage_manage
     /// </summary>
-    [ToolModule("webpage", GroupEn = "Network Tools", GroupZh = "网络工具")]
+    [ToolModule("webpage", GroupEn = "System", GroupZh = "系统工具")]
     public class WebPageManage : ToolModuleBase
     {
         public override string Description => L.T("Web page management tool, supports add, remove, query, list and other operations", "网页管理工具，支持添加、删除、查询、列表等操作");

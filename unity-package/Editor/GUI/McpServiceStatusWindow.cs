@@ -915,23 +915,15 @@ namespace UniMcp.Gui
         internal static string BuildSkillInstallPrompt()
         {
             string path = SkillFolderPath ?? "技能目录未找到（请在 Unity 中确认 unity-package/Skills/unity-skilled-mcp 已导入）";
-            string iniPath = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".unity-mcp", "skill.ini");
             return string.Join("\n", new[] {
-                "请帮我安装 Unity MCP 轻量技能 unity-skilled-mcp。",
+                "请安装 Unity MCP 轻量技能 unity-skilled-mcp。",
                 "",
                 "技能目录（绝对路径）：",
                 path,
                 "",
-                "安装步骤：",
-                "1. 读取该目录下的 SKILL.md，严格按它的说明操作；不要凭猜测调用 Unity 接口。",
-                "2. 把整个 unity-skilled-mcp 文件夹复制到你所在 agent 的技能目录（例如 WorkBuddy 的 ~/.workbuddy/skills/，其他 agent 用各自的 skills 目录），目录名保持不变。",
-                "3. 复制后确认存在 SKILL.md 与 scripts/unity_mcp.js；脚本无第三方依赖，需要 Node.js 18+。",
-                "4. 使用前先在 Unity 中启动 MCP 服务：启动时会把连接信息写入 " + iniPath + "（即 ~/.unity-mcp/skill.ini），其中包含 max_details 等本次启动配置。",
-                "5. 按 SKILL.md 的流程执行：discover → groups / list → schema 或 details → call；不要一次拉取全部详情。",
-                "6. 连接信息不发布 MCP 端点，不要自行拼接或直连 MCP 地址；INI 缺失或端口失效时提示我在 Unity 中重启服务，不要扫描端口。",
+                "安装：把上面的 unity-skilled-mcp 文件夹整体拷贝到你所在 agent 的技能目录（例如 WorkBuddy 的 ~/.workbuddy/skills/），目录名保持 unity-skilled-mcp 不变、整体替换即可。",
                 "",
-                "技能目录只读：除复制外不要修改其中任何文件。"
+                "客户端脚本 scripts/unity_mcp.js 无第三方依赖，需 Node.js 18+。"
             });
         }
 

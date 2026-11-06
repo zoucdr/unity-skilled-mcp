@@ -1,8 +1,140 @@
-# 最近修改说明（2026-11-06）
+# 最近修改说明（2026-11-07）
 
-> 最新一轮：**新增 TexGen 程序化贴图引擎（放在 demo 自定义工具）+ 连接信息发布技能源目录**。见文首第一节。其后章节为历史记录，早期描述的 `DefineTools` / `*.Tools.cs` / 状态树架构与旧工具名（`hierarchy_create` / `edit_gameobject` / `code_runner` 等）均已失效。本文件只记录改动，不是完整项目文档；完整用法见 `SKILL.md` 与 `README.md`。
+> 最新一轮：**扩展工具去掉 `_workflow` 后缀，优先共用已有前缀；旧工具不变**。文首表格为当前注册名，其后章节为历史记录，不追溯改写。其后章节为历史记录，早期描述的 `DefineTools` / `*.Tools.cs` / 状态树架构与旧工具名（`hierarchy_create` / `edit_gameobject` / `code_runner` 等）均已失效。本文件只记录改动，不是完整项目文档；完整用法见 `SKILL.md` 与 `README.md`。
 
-## 本轮：TexGen 贴图引擎（demo 自定义工具）+ `skill.ini` 发布技能源目录（尚未提交）
+## 本轮：12 个扩展模块（尚未提交）
+
+### 一、范围与分组
+
+12 个扩展 `[ToolModule]`、82 个 `[ToolAction]` 使用下表简短前缀；`scene`、`ui`、`editor`、`project`、`audio` 合并到已有前缀，`optional_runtime` 保留。完整动作声明核查无冲突，无需改动作名，不添加旧前缀别名；既有工具和实现类名不变。`ToolCatalog` 按完整名注册，`ToolCall` / `ToolSchema` 按实际 Owner 的 `IStrictToolModule` 标记校验。核心分组仍为 10 个，包内仍为 55 模块 / 446 动作。
+
+| 模块 | 分组 | 动作数 | 主要动作 |
+| --- | --- | --- | --- |
+| `scene` | Scene | 9 | `transform_get` / `transform_set` / `batch_active` / `scenes` / `open_additive` / `set_active_scene` / `move_to_scene` / `close_scene` / `missing_references` |
+| `asset` | Assets | 7 | `dependencies` / `reverse_dependencies` / `texture_rule` / `validate` / `bundle_assign` / `bundle_build` / `addressables_entry` |
+| `animation` | Animation | 8 | `sample_clip` / `director_inspect` / `director_asset` / `director_bind` / `director_control` / `timeline_tracks` / `avatar` / `constraint_set` |
+| `ui` | UI | 4 | `control_create` / `bind_event` / `audit` / `font_apply` |
+| `editor` | Editor | 7 | `selection_get` / `selection_set` / `inspector` / `layout_snapshot` / `window_show` / `wireframe` / `preview` |
+| `runtime` | Runtime | 6 | `profiler` / `memory` / `snapshot` / `snapshot_compare` / `snapshot_remove` / `input_ui` |
+| `project` | Project | 6 | `build_scenes` / `player_settings` / `quality` / `defines` / `asmdef_validate` / `health` |
+| `system` | System | 7 | `tasks` / `cancel` / `batch_active` / `audit` / `data_validate` / `save_write` / `save_read` |
+| `physics` | Physics | 9 | `rigidbody_set` / `collider_add` / `raycast` / `overlap` / `collision_matrix` / `joint_add` / `navmesh_path` / `navmesh_sample` / `navmesh_destination` |
+| `rendering` | Rendering | 10 | `light_set` / `lightmaps` / `lightmap_assign` / `bake_start` / `bake_cancel` / `probe_inspect` / `probe_render` / `pipeline_get` / `pipeline_set` / `volume_set` |
+| `audio` | Assets | 5 | `source` / `source_control` / `listeners` / `mixer_parameter` / `snapshot_transition` |
+| `optional_runtime` | Runtime | 4 | `netcode_status` / `network_object` / `xr_loaders` / `xr_devices` |
+
+### 二、安全与兼容
+
+- `unity-package/Editor/Utils/ExtensionSafety.cs` 统一处理：必填/未知参数、类型与枚举、数字范围、`Assets/` 路径穿越与符号链接、场景对象有效性、`Undo` + `SetDirty`。
+- 严格校验仅在实现 `IStrictToolModule` 的新模块上由 `ToolCall` 执行，`ToolSchema` 同步输出 `additionalProperties:false`；旧模块 schema 与行为不变。
+- `SimpleJson` 增加“token 是否带引号”的内部标记，使新校验能区分 `1` 与 `"1"`；默认序列化与既有解析行为不变。
+- 可选包（Addressables、Timeline、Netcode、XR Management、SRP Core）一律通过 `OptionalType` 反射访问，缺包返回明确错误，**不自动安装、不修改 `manifest.json`**。
+- 破坏性与不可逆操作需显式参数：`bake_start` / `pipeline_set` 需 `confirm=true`；`close_scene` 默认拒绝丢弃脏场景；`save_write` 覆盖需 `overwrite=true`；批处理仅支持 `SetActive`，不代理任意工具。
+
+
+## 本轮：内置工具分组收敛（19 → 8）（尚未提交）
+
+> 用户：「内置工具集合的分组，重新分配一下，现在组太多了」
+
+### 一、问题
+
+46 个 `[ToolModule]` 声明了 **19 个不同分组**，碎片化严重：`Resource Management / 资源管理` 一家独吞 **17 个模块**（mesh / model / material / shader / texture / sprite_atlas / terrain / prefab / audio / script / scriptable_object / particle / anim_clip / scene / gameobject / component / object），而 `camera` / `effects` / `animation` / `texture generation` / `testing` / `ui` 等又各自单列。分组是 `groups` / `details --tag` 的标签来源（`Slug(GroupEn)`），组太多既稀释了标签语义，也让 AI 现场发现时难以按域收敛。
+
+### 二、新分组方案（8 组）
+
+按「操作对象所处的工作阶段」重排，兼顾内置与扩展模块：
+
+| 分组 | 标签 | 归入模块（前缀） |
+| --- | --- | --- |
+| 场景层级 | `scene` | hierarchy、gameobject、scene、component、object |
+| 资源资产 | `assets` | terrain、prefab、mesh、model、material、audio、script、sprite_atlas、scriptable_object、shader、texture、**texgen、probuilder**（扩展） |
+| 动画与特效 | `animation` | animator、effects、anim_clip、particle |
+| 界面 | `ui` | ui、ugui、**figma、ui_rule**（扩展） |
+| 编辑器 | `editor` | console、camera、scene_view、game_view、editor |
+| 运行与调试 | `runtime` | gameplay、engine、tests |
+| 项目工程 | `project` | project、package、tag_layer |
+| 系统工具 | `system` | http、capability、prefers、source_location、python、code、**cmd、asset_index、webpage**（扩展） |
+
+### 三、改动清单
+
+- **包内 39 个模块**的 `GroupEn` / `GroupZh` 全部改写：`ResEdit/` 下 13 个资源类拆入 场景层级 / 资源资产 / 动画与特效；`Hierarchy/`（3）、`Projet/`（3）、`Window/`（3）、`Setting/`（3）、`Storage/`（2）、`RunCode/`（2）、`UI/`（2）、`Console/`（1）及根级 `BaseEditorTool` / `EngineTool` / `GamePlayTool` / `ObjectTool` / `HttpTool` / `TestsTool` 逐一套用新组。
+- **demo 扩展 7 个模块**同套分组：`texgen` / `probuilder` → 资源资产，`figma` / `ui_rule` → 界面，`cmd` / `asset_index` / `webpage` → 系统工具。
+- **测试夹具同步**：`McpDiscoveryTests.cs` 的 `[CapabilityTags("Scene", ...)]`、`ToolNameAttribute(..., "Scene", "场景层级")` 与断言标签 `hierarchy-management` → `scene`；否则稳定标签断言会失败。
+- **注释同步**：`ToolNameAttribute.cs` 参数文档示例由旧组名改为 `Scene` / `Assets`。
+- **文档同步**：`README.zh-CN.md` 工具分类表重写为 8 分组表格 + 扩展模块归组说明；示例 `[ToolModule("animator", ...)]` 的 `GroupZh` 由「动画」→「动画与特效」（`README.md` 同步）；`docs/index.html` 工具生态卡片重排为 8 组 + 新增分组标签徽标，`docs/styles.css` 补 `.tool-tag` 样式与 `h4` flex 对齐；`unity-package/Unity3d_MCP_用户使用指南.md` 分类表由旧 10 类改为 8 分组。
+
+> **不改的**：工具名（始终 `前缀.动作`）、各模块 `Prefix`、`ToolAction` 本身。分组仅影响 `groups` 返回的标签与 `details --tag` 的筛选，属纯元数据调整。技能 `SKILL.md` 走**动态发现**（标签一律取自 `groups` 返回），无硬编码分组，无需改动。
+
+### 四、验证
+
+- 实测分组分布：8 组（另 `Uncategorized` 为属性默认值，非实际分组）。
+- 编译：`dotnet build demo/UniMcp.Editors.csproj -t:Rebuild` → **0 warning / 0 error**，DLL 重建时间与当前一致。
+- 回归：`node --test tests/test_unity_mcp.js` → **59/59 pass**。
+- HTML：`div` 290/290、`section` 10/10、`ul` 18/18 全部平衡。
+
+---
+
+## 本轮：内置能力管理（tools / prompts / resources）+ 修复配置项未发布（尚未提交）
+
+> 用户：「还缺少配置 unity 端资源和提示词的技能，mcp 关键有工具资源提示词，这个配置功能需要内置到框架中，让 ai 能发现并能修改查询」；「还需要开关工具的能力」
+
+### 一、背景：三处真实缺陷
+
+排查中发现 MCP 三原语的管理能力存在结构性缺口：
+
+1. **配置的提示词/资源从未被发布**（最严重）。`DiscoverPrompts()` / `DiscoverResources()` 靠反射扫描 `IPrompts` / `IRes` 实现类型，却**显式排除** `ConfigurablePrompt` / `ConfigurableResource`；而 `McpSettings.GetConfigurablePrompts()` / `GetConfigurableResources()`（GUI 里「添加提示词/资源」写入的对象）**没有任何代码把它们并入** `availablePrompts` / `availableResources`。结果：用户在 GUI 里配置了提示词或资源，`prompts/list` / `resources/list` 里永远看不到。
+2. **开关能力齐备但 AI 够不着**。`McpLocalSettings` 已有完整的 `SetToolEnabled` / `SetToolsEnabled` / `SetPromptEnabled` / `SetPromptsEnabled` / `SetResourceEnabled` / `SetResourcesEnabled` 与对应 `Is*Enabled` / `Filter*`，GUI 也在用；但没有任何 `[ToolModule]` 把它暴露给 MCP 客户端。
+3. **缺少注册表自省入口**。AI 无法查询"当前有哪些工具/提示词/资源、哪些被禁用"，只能靠 `tools/list` 这类协议接口间接感知，提示词与资源的启用状态更是完全不可见。
+
+### 二、修复：配置项并入发布流程
+
+- `McpService` 新增 `RegisterConfigurablePrompts()` / `RegisterConfigurableResources()`，在 `DiscoverPrompts()` / `DiscoverResources()` 末尾调用，把 `McpSettings` 中的配置项显式登记进 `availablePrompts` / `availableResources`。
+- 提示词缺正文、资源无法解析 URL 时跳过并告警；同名时配置项覆盖代码实现（尊重用户意图）。
+- 资源侧先调 `EnsureUrlCalculated()`（`UnityObject` 类型需在主线程算 `file://` URL）。
+
+### 三、新增：`capability` 内置模块（6 动作）
+
+`unity-package/Editor/Tools/Setting/CapabilityTool.cs`，`[ToolModule("capability", GroupEn="System Management", GroupZh="系统管理")]`：
+
+| 动作 | 作用 |
+| --- | --- |
+| `list` | 按 `kind`（tool/prompt/resource）列出全部能力及启用状态，支持 `filter` 子串过滤 |
+| `get` | 读取单项详情：工具返回参数表；提示词返回正文与参数；资源返回 URI 与 MIME |
+| `set` | 启停能力。工具支持**分组前缀**（如 `name="texgen"` 一次开关整组）；全量禁用需 `confirm="DISABLE_ALL"` |
+| `save` | 新增/更新可配置提示词或资源（写入 `McpSettings.asset`），支持 `argument_names/types/required` 声明参数 |
+| `remove` | 删除可配置的提示词或资源（代码定义的只能禁用，不可删） |
+| `settings` | 读写通用设置：`enable_descriptions` / `language` / `max_details`，并返回端口、工具计数快照 |
+
+### 四、安全与一致性设计
+
+- **统一重发现入口** `McpService.RefreshDiscovery()`：一次清 `tools/prompts/resources` 列表缓存并重发现，所有变更动作调用它，使改动立即对已连接客户端可见（`list_changed` 语义）。
+- **自锁保护**：`capability.set` 是经 MCP 恢复任何开关的唯一通道，因此禁止禁用它自身；`DISABLE_ALL` 分支也显式豁免它，确保恢复通道永远敞开。
+- **`save` 自动启用**：显式保存即视为想使用，自动清掉可能残留的同名禁用记录。
+- **新增公开只读访问器**：`McpService.GetAllPrompts()` / `GetAllResources()`（含被禁用项），供自省工具查询。
+- 全部状态仅落在 `ProjectSettings/McpSettings.asset`（配置项）与 `UserSettings/McpLocalSettings.asset`（开关），不越界写盘。
+
+### 五、GUI：资源 MIME 类型改为纯下拉选择
+
+> 用户：「gui 上 resource 列表中的元素，配置 mimetype 需要调整为下拉选择，常用的资源格式即可」
+
+- `McpServiceGUI` 资源详情原为「文本框 + 下拉框」双控件，改为**单一 `EditorGUILayout.Popup`**，只列出常用资源格式（`commonMimeTypes`，29 项：文本/JSON/XML 类、图片、音视频、压缩包）。
+- 若资源的当前 MIME 不在常用列表内，**临时置顶保留自定义值**，避免打开面板即被静默改写；选择后写回 `resource.SetMimeType()` 并保存。
+- 删除已无用的 `resourceMimeTypeSelections` 索引字典。
+
+### 六、GUI 刷新统一走 `RefreshDiscovery()`
+
+- 资源/提示词的启停、增删、新增等处原只调 `RediscoverTools()`，**不清 `prompts/list` / `resources/list` 缓存**，导致开关后客户端仍读到旧列表。
+- 统一改为 `McpService.RefreshDiscovery()`（重发现 tools + prompts + resources 并清三类列表缓存），与 `capability` 工具行为一致。
+
+### 七、验证与文档
+
+- **编译**：临时镜像工程（引用真实 Unity 托管 DLL）**0 error / 0 CS 警告**；首轮曾报 `CS1061 SetDefault`（`MethodBool` 链式调用括号错位）已修正；另修 `McpDiscoveryTests.cs` 缺 `using System.Linq`（`CS1061 Any`）。首轮 0 error 曾因 `CapabilityTool.cs` 未计入编译列表而失真，补入后复验通过。
+- **计数**：包 = **43 模块 / 364 动作**（+1 模块 / +6 动作），demo = 7 / 47，注册合计 **50 模块 / 411 工具**。
+- **文档**：`README.zh-CN.md`（工具层与工具域表 + `capability (6)` 行与说明）、`docs/index.html`（hero 405/49 → **411/50**）、本节重写。HTML 标签平衡校验通过。
+
+---
+
+## 本轮：TexGen 贴图引擎（demo 自定义工具）+ `skill.ini` 发布技能源目录（已提交 2ddcb17）
 
 > 用户：「不调用任何外部 AI、不发 HTTP、不依赖 SD / 云端 API；纯 C# Editor 代码，内置一套程序化绘图原语……输出 PNG。本质：做一个矢量绘图原语引擎（在 Texture2D 像素画布上）……实现一个新的纹理生成技能」；「TexGen 放到 demo\Assets\Extends\CustomTools 中」；「skill.ini 还要带上 unity-skilled-mcp 技能源目录」
 

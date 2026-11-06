@@ -15,6 +15,7 @@ async function fixture(t) {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'unity-mcp-js-'));
   const ini = path.join(dir, 'unity.ini');
   const requests = [];
+  const ledger = new Map();
   const state = { discovery: { max_details: 8 }, mode: 'ok' };
   const server = http.createServer(async (req, res) => {
     const chunks = [];
@@ -32,9 +33,13 @@ async function fixture(t) {
         base_url: base, port: server.address().port,
         tools_url: base + '/tools', schema_url_template: base + '/tools/{name}/schema',
         details_url: base + '/capabilities/details', schemas_url: base + '/capabilities/schemas',
-        project_path: '测试项目', process_id: 123, updated_at: 'now', ...state.discovery,
+        project_path: path.resolve('测试项目'), instance_id: 'instance-1', process_id: 123, updated_at: 'now', ...state.discovery,
       };
       send(state.discoveryRaw === undefined ? info : state.discoveryRaw);
+    } else if (req.url.startsWith('/requests/')) {
+      const url = new URL(req.url, base);
+      send({ request_id: decodeURIComponent(url.pathname.slice(10)),
+        instance_id: url.searchParams.get('instance_id'), status: state.requestStatus || 'unknown' });
     } else if (req.url === '/groups') {
       send(state.groupsResponse === undefined ? { groups: [{ tag: 'hierarchy-management', label: '层级管理', counts: { tools: 2, prompts: 1, resources: 1 } }], max_details: state.discovery.max_details ?? 32, max_response_bytes: 65536 } : state.groupsResponse);
     } else if (req.url === '/prompts') {
@@ -69,6 +74,25 @@ async function fixture(t) {
       send(state.mode === 'bad_schema' ? { name: 'wrong' } : { name, description: '完整说明', inputSchema: { type: 'object', properties: { '值': { type: 'string' } } } });
     } else if (req.url === '/mcp') {
       const rpcId = entry.body.id;
+      if (req.headers['x-mcp-expected-project'] !== encodeURIComponent(path.resolve('测试项目'))
+          || req.headers['x-mcp-instance-id'] !== (state.discovery.instance_id || 'instance-1')) {
+        send({ error: 'binding required' }, 409); return;
+      }
+      if (entry.body.method === 'tools/call' && !entry.body.params.request_id) {
+        send({ error: 'request_id required' }, 400); return;
+      }
+      if (state.ledger && entry.body.method === 'tools/call') {
+        const params = entry.body.params;
+        const fingerprint = JSON.stringify([params.name, params.arguments]);
+        if (ledger.has(params.request_id)) {
+          if (ledger.get(params.request_id) !== fingerprint) send({ error: 'request_id conflict' }, 409);
+          else send({ jsonrpc: '2.0', id: rpcId, result: { request_id: params.request_id,
+            instance_id: 'instance-1', status: 'completed' } });
+          return;
+        }
+        ledger.set(params.request_id, fingerprint);
+        state.executions = (state.executions || 0) + 1;
+      }
       if (state.mode === 'redirect') { send({}, 307, { Location: base + '/replayed' }); return; }
       if (state.mode === 'http_error') { send({}, 503); return; }
       if (state.mode === 'disconnect') { req.socket.destroy(); return; }
@@ -117,7 +141,7 @@ async function fixture(t) {
   await writeIni();
   function run(args, input = '', env = {}, useIni = true) {
     return new Promise((resolve, reject) => {
-      const child = spawn(process.execPath, [cli, ...(useIni ? ['--ini', ini] : []), ...args], {
+      const child = spawn(process.execPath, [cli, '--expected-project', path.resolve('测试项目'), ...(useIni ? ['--ini', ini] : []), ...args], {
         env: { ...process.env, ...env }, stdio: ['pipe', 'pipe', 'pipe'],
       });
       let stdout = '';
@@ -151,7 +175,7 @@ test('discover 保留未知扩展字段；旧 INI 的 script_language 被忽略'
   assert.equal(success(await f.run(['discover'])).port, f.port);
   await f.writeIni('[unity3d-skilled-mcp]\nbase_url=' + f.base + '\nport=' + f.port + '\nscript_language=python\nfuture_setting=保留\n');
   f.state.discovery = { extension: { version: 2 } };
-  const result = await f.run(['discover']);
+  const result = await f.run(['--verbose', 'discover']);
   assert.deepEqual(success(result).extension, { version: 2 });
   assert.equal(success(result).script_language, undefined);
   assert.match(result.stderr, /连接信息：/);
@@ -179,7 +203,7 @@ test('call 默认对象、内联 JSON 和 JSON-RPC 信封', async t => {
   success(await f.run(['call', 'demo', '--args={"文本":"你好"}']));
   const calls = f.requests.filter(r => r.url === '/mcp');
   assert.equal(calls.length, 2);
-  assert.deepEqual(calls[0].body, { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'demo', arguments: {} } });
+  assert.deepEqual(calls[0].body, { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'demo', arguments: {}, request_id: calls[0].body.params.request_id } });
   assert.deepEqual(calls[1].body.params.arguments, { '文本': '你好' });
   assert.equal(calls[1].method, 'POST');
   assert.match(calls[1].headers['content-type'], /application\/json/);
@@ -509,7 +533,7 @@ for (const [limit, count, code] of [[12, 9, 0], [2, 3, 2], [0, 40, 0]]) {
     }
     const groups = await f.run(['groups']);
     assert.equal(success(groups).max_details, limit);
-    if (limit === 0) assert.match(groups.stderr, /不限数量/);
+    assert.equal(groups.stderr, '');
   });
 }
 
@@ -862,7 +886,7 @@ test('resultText / resultJson 解析 MCP 工具结果', () => {
 
 test('库 API：Client 与顶层函数复用 CLI 校验并可直接调用工具', async t => {
   const f = await fixture(t);
-  const c = new lib.Client({ ini: f.ini, timeout: 5 });
+  const c = new lib.Client({ ini: f.ini, timeout: 5, expected_project: path.resolve('测试项目') });
   assert.equal((await c.discover()).port, f.port);
   assert.equal((await c.list('tools')).tools[0].name, 'demo');
   assert.equal((await c.groups()).groups.length, 1);
@@ -881,7 +905,7 @@ test('库 API：Client 与顶层函数复用 CLI 校验并可直接调用工具'
   await assert.rejects(c.details(), /只能选一种/);
   await assert.rejects(c.call('demo', { x: NaN }), /非有限数值/);
 
-  lib.configure({ ini: f.ini, timeout: 5 });
+  lib.configure({ ini: f.ini, timeout: 5, expected_project: path.resolve('测试项目') });
   try {
     assert.equal((await lib.connectionInfo()).port, f.port);
     assert.equal((await lib.listCapabilities()).tools[0].name, 'demo');
@@ -902,7 +926,7 @@ test('库 API：Client 与顶层函数复用 CLI 校验并可直接调用工具'
 
 test('workflowContext 记录成功与失败调用，并支持省略描述', async t => {
   const f = await fixture(t);
-  const c = new lib.Client({ ini: f.ini, timeout: 5 });
+  const c = new lib.Client({ ini: f.ini, timeout: 5, expected_project: path.resolve('测试项目') });
   const summary = await lib.workflowContext('build_scene', 'Create player and camera', async wf => {
     await c.callSkill('demo', { name: 'Player' });
     await c.callSkillText('demo', {});
@@ -923,10 +947,118 @@ test('workflowContext 记录成功与失败调用，并支持省略描述', asyn
   assert.equal(failing.summary().failed, 1);
 });
 
+test('预期工程来自 cwd Unity 根，显式值优先且不信 INI 所在路径', async t => {
+  const f = await fixture(t);
+  await fs.mkdir(path.join(f.dir, 'Assets'));
+  await fs.mkdir(path.join(f.dir, 'ProjectSettings'));
+  const nested = path.join(f.dir, 'Assets', 'Nested');
+  await fs.mkdir(nested);
+  const code = 'const {Client}=require(' + JSON.stringify(cli) + ');'
+    + 'console.log(JSON.stringify([new Client({ini:"elsewhere"}).expected_project,'
+    + 'new Client({expected_project:"explicit"}).expected_project]));';
+  const result = await new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, ['-e', code], { cwd: nested });
+    let text = '';
+    child.stdout.on('data', chunk => { text += chunk; });
+    child.on('error', reject);
+    child.on('close', code => code ? reject(new Error('child failed')) : resolve(JSON.parse(text)));
+  });
+  assert.deepEqual(result, [f.dir, path.join(nested, 'explicit')]);
+});
+
+test('绑定拒绝错工程、未知同源 GET，并保持目录可查询', async t => {
+  const f = await fixture(t);
+  const c = new lib.Client({ ini: f.ini, expected_project: f.dir });
+  await c.list();
+  for (const operation of [() => c.call('demo'), () => c.prompt('foo'),
+    () => c.resource('res://foo'), () => c.request('/custom')]) {
+    await assert.rejects(operation, /expected-project/);
+  }
+  assert.equal(f.requests.some(r => ['/custom', '/mcp'].includes(r.url)), false);
+});
+
+test('实例锁定、跨进程锁定与显式 discover 重新确认', async t => {
+  const f = await fixture(t);
+  const c = new lib.Client({ ini: f.ini, expected_project: path.resolve('测试项目') });
+  await c.call('demo');
+  f.state.discovery.instance_id = 'instance-2';
+  await assert.rejects(() => c.call('demo'), /实例漂移/);
+  assert.equal(f.requests.filter(r => r.url === '/mcp').length, 1);
+  failure(await f.run(['--instance-id', 'instance-1', 'call', 'demo']), 2);
+  await c.discover();
+  await c.call('demo');
+  assert.equal(c.instance_id, 'instance-2');
+});
+
+test('显式重复 ID 返回台账，异参数冲突且不再执行', async t => {
+  const f = await fixture(t);
+  f.state.ledger = true;
+  const c = new lib.Client({ ini: f.ini, expected_project: path.resolve('测试项目') });
+  await c.call('demo', {}, { request_id: 'same' });
+  assert.equal((await c.call('demo', {}, { request_id: 'same' })).result.status, 'completed');
+  await assert.rejects(() => c.call('demo', { changed: true }, { request_id: 'same' }), error => {
+    assert.equal(error.request_id, 'same');
+    assert.equal(error.status, 409);
+    assert.match(error.message, /request_id conflict/);
+    return true;
+  });
+  assert.equal(f.state.executions, 1);
+});
+
+test('工具 ID、错误查询信息及旧实例 status 不重放', async t => {
+  const f = await fixture(t);
+  const c = new lib.Client({ ini: f.ini, expected_project: path.resolve('测试项目') });
+  f.state.mode = 'disconnect';
+  await assert.rejects(() => c.call('demo', {}, { request_id: '中文/id' }), error => {
+    assert.equal(error.request_id, '中文/id');
+    assert.equal(error.instance_id, 'instance-1');
+    assert.equal(error.query_path, '/requests/%E4%B8%AD%E6%96%87%2Fid?instance_id=instance-1');
+    return true;
+  });
+  f.state.discovery.instance_id = 'instance-2';
+  assert.equal((await c.requestStatus('中文/id', 'instance-1')).status, 'unknown');
+  for (const status of ['accepted', 'running', 'completed', 'failed', 'unknown']) {
+    f.state.requestStatus = status;
+    assert.equal(success(await f.run(['status', 'id', '--instance-id', 'instance-1'])).status, status);
+  }
+  assert.equal(f.requests.filter(r => r.url === '/mcp').length, 1);
+});
+
+test('同源绑定头、跨源隔离与手工注入拒绝', async t => {
+  const f = await fixture(t);
+  const external = await fixture(t);
+  const c = new lib.Client({ ini: f.ini, expected_project: path.resolve('测试项目') });
+  await c.request('/custom');
+  assert.equal(f.requests.at(-1).headers['x-mcp-instance-id'], 'instance-1');
+  await c.request(external.base + '/custom');
+  assert.equal(external.requests.at(-1).headers['x-mcp-instance-id'], undefined);
+  assert.equal(external.requests.at(-1).headers['x-mcp-expected-project'], undefined);
+  for (const header of ['X-Mcp-Instance-Id: secret', 'x-MCP-expected-project: secret']) {
+    await assert.rejects(() => c.request(external.base + '/custom', { headers: [header] }), /禁止手动注入/);
+  }
+  assert.equal(external.requests.length, 1);
+});
+
+test('HTTP 错误保留正文，CLI 默认静默并允许指定 request_id', async t => {
+  const f = await fixture(t);
+  const result = await f.run(['call', 'demo', '--request-id', 'chosen-id']);
+  success(result);
+  assert.equal(result.stderr, '');
+  assert.equal(f.requests.at(-1).body.params.request_id, 'chosen-id');
+  f.state.detailsStatus = 409;
+  const c = new lib.Client({ ini: f.ini, expected_project: path.resolve('测试项目') });
+  await assert.rejects(() => c.details({ tag: 'demo' }), error => {
+    assert.equal(error.status, 409);
+    assert.deepEqual(error.body, { error: '详情选择被拒绝' });
+    assert.match(error.message, /详情选择被拒绝/);
+    return true;
+  });
+});
+
 test('库模式默认静默 stderr，不输出连接信息', async t => {
   const f = await fixture(t);
   const code = 'const u=require(' + JSON.stringify(cli) + ');'
-    + 'u.configure({ini:' + JSON.stringify(f.ini) + ',timeout:5});'
+    + 'u.configure({ini:' + JSON.stringify(f.ini) + ',expected_project:' + JSON.stringify(path.resolve('测试项目')) + ',timeout:5});'
     + 'u.connectionInfo().then(()=>console.log("done"));';
   const result = await new Promise((resolve, reject) => {
     const child = spawn(process.execPath, ['-e', code], { stdio: ['ignore', 'pipe', 'pipe'] });

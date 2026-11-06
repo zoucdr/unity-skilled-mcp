@@ -8,7 +8,7 @@ using UniMcp.Utils;
 
 namespace UniMcp.Tools
 {
-    [ToolModule("cmd", GroupEn = "System Tools", GroupZh = "系统工具")]
+    [ToolModule("cmd", GroupEn = "System", GroupZh = "系统工具")]
     public class CMCmdTool : ToolModuleBase
     {
         public override string Description => L.T("Execute system CMD commands", "执行系统CMD命令");

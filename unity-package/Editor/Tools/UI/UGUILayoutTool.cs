@@ -36,7 +36,7 @@ namespace UniMcp.Tools
     /// 
     /// 对应方法名: ugui_layout
     /// </summary>
-    [ToolModule("ugui", GroupEn = "UI Management", GroupZh = "UI管理")]
+    [ToolModule("ugui", GroupEn = "UI", GroupZh = "界面")]
     public class UGUILayoutTool : ToolModuleBase, ITargetedTool
     {
         public override string Description => L.T("Modify and query RectTransform layout properties", "修改和查询RectTransform布局属性");

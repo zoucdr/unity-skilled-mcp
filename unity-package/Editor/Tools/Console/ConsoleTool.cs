@@ -15,12 +15,16 @@ using UnityEngine;
 
 namespace UniMcp.Tools
 {
-    [ToolModule("console", GroupEn = "Development Tools", GroupZh = "开发工具")]
+    [ToolModule("console", GroupEn = "Editor", GroupZh = "编辑器")]
     public sealed class ConsoleTool : ToolModuleBase
     {
         public override string Description => L.T(
             "Console tool: read/clear Unity Editor console log entries and write log messages to the console",
             "控制台工具：读取/清除 Unity 编辑器控制台日志条目，并向控制台写入日志消息");
+
+        // 与 UnityEngine.LogType 对齐，统一小写。「全部」必须覆盖五种，
+        // 否则 assert / exception 类日志会被静默漏掉。
+        private static readonly string[] AllLogTypes = { "error", "warning", "log", "assert", "exception" };
 
         protected override MethodKey[] CreateKeys()
         {
@@ -32,8 +36,11 @@ namespace UniMcp.Tools
 
                 // --- Read keys ---
                 // Message type list
-                new MethodStr("types", L.T("Message type list, defaults to all types", "消息类型列表，默认为所有类型"))
-                    .AddExample("error,warning"),
+                new MethodStr("types", L.T(
+                    "Log types to keep: comma-separated string (e.g. 'error,warning') or array; supported: error, warning, log, assert, exception; 'all' or omitted keeps all types",
+                    "要保留的日志类型：逗号分隔字符串（如 'error,warning'）或数组；支持 error、warning、log、assert、exception；all 或省略为全部类型"))
+                    .AddExample("error,warning")
+                    .AddExample("[\"error\",\"warning\"]"),
 
                 // Maximum number of messages to return
                 new MethodInt("count", L.T("Maximum number of messages to return, returns all if not set", "返回的最大消息数量，未设置则返回全部"))
@@ -160,15 +167,21 @@ namespace UniMcp.Tools
                 // 提取参数
                 var types = ExtractTypes(args);
                 string format = ExtractFormat(args);
+                // 把本次真正生效的类型写进返回，便于核对；空结果不意味着控制台无此类日志。
+                string typeFilter = string.Join(",", types.ToArray());
 
-                McpLogger.Log($"[ReadConsole] Getting {description}");
+                McpLogger.Log($"[ReadConsole] Getting {description} (types={typeFilter})");
 
                 // 使用 ConsoleController 获取控制台条目
                 var entries = ConsoleUtils.GetConsoleEntries(types, count, filterText, format, includeStacktrace);
                 return Response.Success(
-                    $"Retrieved {entries.Count} log entries ({description}).",
+                    $"Retrieved {entries.Count} log entries (types={typeFilter}; {description}).",
                     entries
                 );
+            }
+            catch (ArgumentException e)
+            {
+                return Response.Error($"Invalid console log type filter: {e.Message}");
             }
             catch (Exception e)
             {
@@ -218,32 +231,70 @@ namespace UniMcp.Tools
         }
 
         /// <summary>
-        /// 提取消息类型参数
+        /// 提取消息类型参数。
+        /// schema 声明为字符串（示例 "error,warning"），旧实现只认数组，
+        /// 字符串会被静默丢弃并回退成「全部类型」，导致过滤看似生效实则无效。
+        /// 现两者兼容；显式传入无法识别的值时直接报错，绝不静默回退。
         /// </summary>
         private List<string> ExtractTypes(JsonClass args)
         {
-            var typesArray = args["types"] as JsonArray;
-            List<string> types;
+            if (args == null || !args.ContainsKey("types") || args["types"] == null)
+                return new List<string>(AllLogTypes);
 
-            if (typesArray != null && typesArray.Count > 0)
+            JsonNode node = args["types"];
+            var raw = new List<string>();
+            var arrayNode = node as JsonArray;
+            if (arrayNode != null)
             {
-                types = new List<string>();
-                foreach (JsonNode typeNode in typesArray.Childs)
+                foreach (JsonNode item in arrayNode.Childs)
                 {
-                    types.Add(typeNode.Value.ToLower());
+                    if (item != null) SplitTypeTokens(raw, item.Value);
                 }
             }
             else
             {
-                types = new List<string> { "error", "warning", "log" };
+                SplitTypeTokens(raw, node.Value);
             }
 
-            if (types.Contains("all"))
+            var types = new List<string>();
+            foreach (string token in raw)
             {
-                types = new List<string> { "error", "warning", "log" };
+                string normalized = NormalizeLogType(token);
+                if (normalized == "all") return new List<string>(AllLogTypes);
+                if (normalized == null)
+                {
+                    throw new ArgumentException(
+                        $"Unknown console log type '{token}'. Supported: error, warning, log, assert, exception, all.");
+                }
+                if (!types.Contains(normalized)) types.Add(normalized);
             }
 
-            return types;
+            // 显式传空值等同省略
+            return types.Count == 0 ? new List<string>(AllLogTypes) : types;
+        }
+
+        private static void SplitTypeTokens(List<string> output, string value)
+        {
+            if (string.IsNullOrWhiteSpace(value)) return;
+            foreach (string part in value.Split(new[] { ',', ';', '|', ' ' }, StringSplitOptions.RemoveEmptyEntries))
+            {
+                string token = part.Trim().ToLowerInvariant();
+                if (token.Length > 0) output.Add(token);
+            }
+        }
+
+        private static string NormalizeLogType(string token)
+        {
+            switch (token)
+            {
+                case "error": case "err": case "errors": return "error";
+                case "warning": case "warn": case "warnings": return "warning";
+                case "log": case "logs": return "log";
+                case "assert": case "assertion": return "assert";
+                case "exception": case "exceptions": return "exception";
+                case "all": return "all";
+                default: return null;
+            }
         }
 
         /// <summary>

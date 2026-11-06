@@ -70,7 +70,7 @@ AI 客户端（Cursor / Claude / Trae）
 2. **技能层**：`SKILL.md` 契约 + `unity_mcp.js` 客户端
 3. **MCP 协议层**：Unity 内置 MCP 服务器（HTTP + JSON-RPC 2.0）
 4. **执行层**：消息队列 → Editor 主线程 → Unity API
-5. **工具层**：42 个工具模块（358 个动作）+ 3 个内置入口（demo 另含 7 个自定义工具模块示例）
+5. **工具层**：43 个工具模块（364 个动作）+ 4 个内置入口（demo 另含 7 个自定义工具模块示例）
 
 #### 系统架构图
 
@@ -92,7 +92,7 @@ AI 客户端（Cursor / Claude / Trae）
 
 **2. Attribute 声明 + 反射发现（唯一真源）**
 
-- `[ToolModule(prefix, GroupEn, GroupZh)]` 标模块类（如 `[ToolModule("animator", GroupEn = "Animation", GroupZh = "动画")]`）
+- `[ToolModule(prefix, GroupEn, GroupZh)]` 标模块类（如 `[ToolModule("animator", GroupEn = "Animation", GroupZh = "动画与特效")]`）
 - `[ToolAction(action, "param", "required=require")]` 标 handler 方法（一个方法可声明多个动作）
 - `[ToolParam(name)]` 标参数（可标在方法上，也可标在强类型参数上）
 - `ToolCatalog.Reload()` 纯反射扫描全部 `[ToolModule]` 真实顶层类 → 绑定 handler 委托 → 从 `Keys` 解析参数元数据 → 生成精确 `inputSchema`
@@ -127,7 +127,7 @@ AI 客户端（Cursor / Claude / Trae）
 ### 一个工具模块的最小形态
 
 ```csharp
-[ToolModule("animator", GroupEn = "Animation", GroupZh = "动画")]
+[ToolModule("animator", GroupEn = "Animation", GroupZh = "动画与特效")]
 public class AnimatorTool : ToolModuleBase
 {
     public override string Description => L.T("Manage Animator controllers", "管理动画控制器");
@@ -179,7 +179,7 @@ private void ProcessMessageQueue()          // 出队执行 + 自动注销
 // 工具装载（声明式）
 private void DiscoverTools()
 {
-    RefreshToolInfos();      // ToolCatalog.Reload() + 3 个内置入口
+    RefreshToolInfos();      // ToolCatalog.Reload() + 4 个内置入口
 }
 ```
 
@@ -224,31 +224,32 @@ unity-runtime-package/Runtime/
 
 ### 工具模块分类
 
-当前 `unity-package/Editor/Tools/` 共 **42 个 `[ToolModule]`、358 个 `[ToolAction]`**，主要域包括：
+当前 `unity-package/Editor/Tools/` 共 **55 个 `[ToolModule]`、446 个 `[ToolAction]`**，按 **10 个功能分组**组织（分组即 `groups` 命令返回的标签来源，由模块的 `GroupEn` / `GroupZh` 决定）：
 
-| 域前缀 | 覆盖 |
-| --- | --- |
-| `hierarchy` (22) | 层级创建 / 搜索 / 应用预制体 |
-| `project` (33) | 项目资源创建 / 操作 / 搜索 |
-| `animator` (20) | Animator 结构（层、状态、过渡、参数、1D 混合树）与运行时控制 |
-| `anim_clip` (10) | 动画片段、曲线、事件、设置 |
-| `engine` (17) | 构建、平台、工程设置、编译诊断、撤销重做、选择集 |
-| `gameplay` (18) | Play 模式驱动、帧步进、时间缩放 |
-| `ui` (16) | UI Toolkit（UXML/USS、PanelSettings、UIDocument） |
-| `ugui` (3) | UGUI 布局 |
-| `camera` (11) | 相机创建 / 配置 / 截图；Cinemachine（可选） |
-| `effects` (12) | LineRenderer / TrailRenderer；VFX Graph（可选） |
-| `terrain` (14) / `tests` (3) | 地形；Test Runner（可选） |
-| `console` (14) | 控制台读 / 写 / 清空 |
-| `code` (3) / `python` (4) | C# 代码执行（`mode` 显式选择）/ Python 脚本 |
-| `http` (8) | HTTP 请求、下载、上传 |
-| `package` (10) / `tag_layer` (6) / `prefers` (6) / `source_location` (5) | 包管理 / 标签层 / 偏好设置 / 资源定位 |
-| `material` / `mesh` / `model` / `prefab` / `scene` / `script` / `shader` / `sprite_atlas` / `scriptable_object` / `particle` / `audio` / `texture` / `object` / `component` / `gameobject` | 资源编辑系列 |
-| `game_view` / `scene_view` / `editor` | 窗口 / 编辑器基础 |
+| 分组 | 标签 | 模块前缀（动作数） |
+| --- | --- | --- |
+| **场景层级** | `scene` | `hierarchy` (22)、`gameobject` (6)、`scene` (16)、`component` (2)、`object` (1) |
+| **资源资产** | `assets` | `terrain` (14)、`prefab` (13)、`mesh` (11)、`model` (10)、`material` (9)、`audio` (14)、`script` (6)、`sprite_atlas` (6)、`scriptable_object` (5)、`shader` (4)、`texture` (3)、`asset` (7) |
+| **动画与特效** | `animation` | `animator` (20)、`effects` (12)、`anim_clip` (10)、`particle` (9)、`animation` (8) |
+| **界面** | `ui` | `ui` (20)、`ugui` (3) |
+| **编辑器** | `editor` | `console` (14)、`camera` (11)、`scene_view` (9)、`game_view` (8)、`editor` (12) |
+| **运行与调试** | `runtime` | `gameplay` (18)、`engine` (17)、`tests` (3)、`runtime` (6)、`optional_runtime` (4) |
+| **项目工程** | `project` | `project` (39)、`package` (10)、`tag_layer` (6) |
+| **系统工具** | `system` | `http` (8)、`capability` (6)、`prefers` (6)、`source_location` (5)、`python` (4)、`code` (3)、`system` (7) |
+| **物理与导航** | `physics` | `physics` (9) |
+| **渲染与光照** | `rendering` | `rendering` (10) |
 
+> 12 个扩展实现模块使用简短前缀 `scene` / `asset` / `animation` / `ui` / `editor` / `runtime` / `project` / `system` / `physics` / `rendering` / `audio` / `optional_runtime`。`scene`、`ui`、`editor`、`project`、`audio` 与旧模块共用前缀，表中动作数已合并；实现模块数仍为 55。**旧工具名称与动作不变，扩展工具不再使用 `_workflow` 后缀，也不注册旧前缀别名**。它们共用 `unity-package/Editor/Utils/ExtensionSafety.cs`：必填/未知参数拒绝、类型与枚举校验、数字范围、`Assets/` 路径与符号链接校验、场景对象校验、`Undo` + `SetDirty`。严格校验只对新模块生效（`IStrictToolModule`），旧模块行为不变。
+
+> 分组用于 `groups` / `details --tag` 的现场发现，**不改变工具名**：工具名始终为 `前缀.动作`（如 `hierarchy.create_cube`、`animator.create`）。
+>
 > 可选包（Cinemachine、VFX Graph、Test Framework）均通过运行时反射访问，未安装时**不影响其余工具编译与使用**，对应工具返回明确的「未安装」提示。
+>
+> `capability` 为**内置自省模块**，把 MCP 三原语（tools / prompts / resources）的管理面暴露给 AI：`list` 发现、`get` 查详情、`set` 启停（工具支持整组前缀，如 `texgen`）、`save` / `remove` 增删可配置的提示词与资源、`settings` 读写通用设置。改动即时重发现并失效列表缓存；`capability.set` 为恢复通道，禁止自锁禁用。
 
 demo 工程另含 `demo/Assets/Extends/CustomTools/` 下的**自定义扩展工具示例**（不随包分发，演示如何扩展）：`cmd` (1)、`asset_index` (9)、`webpage` (7)、`figma` (4)、`ui_rule` (5)、`probuilder` (14，需 ProBuilder 包)，以及 `texgen` (7)——**程序化贴图引擎**：矢量图元 + SDF 光栅化 + 渐变/噪波/混合，导出 PNG（纯 C#，零外部依赖）。demo 合计 7 模块 / 47 动作。
+
+> 扩展模块与内置模块共用同一套分组：`figma` / `ui_rule` 归 **界面**，`texgen` / `probuilder` 归 **资源资产**，`cmd` / `asset_index` / `webpage` 归 **系统工具**。接入后直接出现在对应 `groups` 标签下。
 
 ---
 

@@ -15,7 +15,7 @@ namespace UniMcp.Tools
     /// 处理Unity图集(Sprite Atlas)的创建和编辑操作
     /// 对应方法名: edit_sprite_atlas
     /// </summary>
-    [ToolModule("sprite_atlas", GroupEn = "Resource Management", GroupZh = "资源管理")]
+    [ToolModule("sprite_atlas", GroupEn = "Assets", GroupZh = "资源资产")]
     public class SpriteAtlasTool : ToolModuleBase
     {
         public override string Description => L.T("Manage sprite atlas assets including create and pack", "管理精灵图集资源，包括创建和打包");

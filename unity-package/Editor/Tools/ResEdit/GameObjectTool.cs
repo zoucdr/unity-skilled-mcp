@@ -19,7 +19,7 @@ namespace UniMcp.Tools
     /// Second tree: Property modification operations
     /// 对应方法名: gameobject_modify
     /// </summary>
-    [ToolModule("gameobject", GroupEn = "Resource Management", GroupZh = "资源管理")]
+    [ToolModule("gameobject", GroupEn = "Scene", GroupZh = "场景层级")]
     public class GameObjectTool : ToolModuleBase, ITargetedTool
     {
         public override string Description => L.T("Modify GameObject properties using dual state tree", "使用双状态树修改游戏对象属性");
