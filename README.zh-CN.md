@@ -70,7 +70,7 @@ AI 客户端（Cursor / Claude / Trae）
 2. **技能层**：`SKILL.md` 契约 + `unity_mcp.js` 客户端
 3. **MCP 协议层**：Unity 内置 MCP 服务器（HTTP + JSON-RPC 2.0）
 4. **执行层**：消息队列 → Editor 主线程 → Unity API
-5. **工具层**：43 个工具模块（364 个动作）+ 3 个内置入口
+5. **工具层**：42 个工具模块（358 个动作）+ 3 个内置入口（demo 另含 7 个自定义工具模块示例）
 
 #### 系统架构图
 
@@ -224,7 +224,7 @@ unity-runtime-package/Runtime/
 
 ### 工具模块分类
 
-当前 `unity-package/Editor/Tools/` 共 **43 个 `[ToolModule]`、364 个 `[ToolAction]`**，主要域包括：
+当前 `unity-package/Editor/Tools/` 共 **42 个 `[ToolModule]`、358 个 `[ToolAction]`**，主要域包括：
 
 | 域前缀 | 覆盖 |
 | --- | --- |
@@ -238,7 +238,7 @@ unity-runtime-package/Runtime/
 | `ugui` (3) | UGUI 布局 |
 | `camera` (11) | 相机创建 / 配置 / 截图；Cinemachine（可选） |
 | `effects` (12) | LineRenderer / TrailRenderer；VFX Graph（可选） |
-| `terrain` (14) / `probuilder` (6) / `tests` (3) | 地形；ProBuilder（可选）；Test Runner（可选） |
+| `terrain` (14) / `tests` (3) | 地形；Test Runner（可选） |
 | `console` (14) | 控制台读 / 写 / 清空 |
 | `code` (3) / `python` (4) | C# 代码执行（`mode` 显式选择）/ Python 脚本 |
 | `http` (8) | HTTP 请求、下载、上传 |
@@ -246,7 +246,9 @@ unity-runtime-package/Runtime/
 | `material` / `mesh` / `model` / `prefab` / `scene` / `script` / `shader` / `sprite_atlas` / `scriptable_object` / `particle` / `audio` / `texture` / `object` / `component` / `gameobject` | 资源编辑系列 |
 | `game_view` / `scene_view` / `editor` | 窗口 / 编辑器基础 |
 
-> 可选包（Cinemachine、VFX Graph、ProBuilder、Test Framework）均通过运行时反射访问，未安装时**不影响其余工具编译与使用**，对应工具返回明确的「未安装」提示。
+> 可选包（Cinemachine、VFX Graph、Test Framework）均通过运行时反射访问，未安装时**不影响其余工具编译与使用**，对应工具返回明确的「未安装」提示。
+
+demo 工程另含 `demo/Assets/Extends/CustomTools/` 下的**自定义扩展工具示例**（不随包分发，演示如何扩展）：`cmd` (1)、`asset_index` (9)、`webpage` (7)、`figma` (4)、`ui_rule` (5)、`probuilder` (14，需 ProBuilder 包)，以及 `texgen` (7)——**程序化贴图引擎**：矢量图元 + SDF 光栅化 + 渐变/噪波/混合，导出 PNG（纯 C#，零外部依赖）。demo 合计 7 模块 / 47 动作。
 
 ---
 

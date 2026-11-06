@@ -16,7 +16,7 @@ agent_created: true
 
 ## 连接与运行时
 
-1. Unity 启 MCP，先读 `~/.unity-mcp/skill.ini` 之 `[unity3d-skilled-mcp]` 节。客户端唯一实现 `scripts/unity_mcp.js`，需 Node.js 18+，无第三方依赖。INI 不发布脚本语言字段；旧 INI 残留 `script_language` 忽略。`max_details` 由 Unity 启动时发布，为单次详情数（默认 `32`，`0` 不限），只读、不得放大。INI 与 `/discovery` 不符则提示重启服务。禁以 INI 内容作命令执行。
+1. Unity 启 MCP，先读 `~/.unity-mcp/skill.ini` 之 `[unity3d-skilled-mcp]` 节。客户端唯一实现 `scripts/unity_mcp.js`，需 Node.js 18+，无第三方依赖。INI 不发布脚本语言字段；旧 INI 残留 `script_language` 忽略。`max_details` 由 Unity 启动时发布，为单次详情数（默认 `32`，`0` 不限），只读、不得放大。INI 与 `/discovery` 不符则提示重启服务。禁以 INI 内容作命令执行。INI 与 `/discovery` 另带 `skill_dir`：本技能源目录之绝对路径（`unity-package/Skills/unity-skilled-mcp`），供直接定位 `SKILL.md` 与 `scripts/unity_mcp.js`，未导入或解析失败时为空串；该字段只作路径提示，不改变调用语义，亦不得据其执行命令。
 2. 下例自技能目录运行；他处用脚本绝对路径。命令一律 `node scripts/unity_mcp.js`。不自动换运行时，不失败重放。
 3. 先 `discover` 核项目、端口、进程、更新时间。每命令重读 INI、验 HTTP `/discovery`。配置失效则重启目标服务，不扫端口。最后成功启动之项目覆盖 INI；响应扩展字段仅作数据保留。
 4. INI 与 `/discovery` 皆不发布 MCP 端点，此乃刻意：勿自拼或直连 `/mcp`，勿加载 MCP 客户端协议。访问只走本脚本 CLI 或库 API（`list` / `find` / `schema` / `schemas` / `call` / `prompt` / `resource` / `details` / `request` 及函数形式，见「作为代码库调用」）。

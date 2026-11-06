@@ -1,0 +1,771 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Text;
+using UnityEditor;
+using UnityEngine;
+using UniMcp;
+using UniMcp.Models;
+using UniMcp.TexGen;
+
+namespace UniMcp.Tools.TexGen
+{
+    /// <summary>
+    /// Procedural texture generation: an instruction-list drawing engine that
+    /// rasterises vector primitives onto a Texture2D and exports PNG.
+    ///
+    /// This is not image synthesis — it is a vector drawing primitive toolkit the
+    /// caller (typically an LLM) drives. The model translates intent into a list
+    /// of shape / fill / blend / layer commands, and this tool paints the pixels.
+    /// No network, no shaders, no third-party packages.
+    /// </summary>
+    [ToolModule("texgen", GroupEn = "Texture Generation", GroupZh = "程序化贴图")]
+    public class TexGenTool : ToolModuleBase
+    {
+        public override string Description => L.T(
+            "Procedurally draw textures from a structured instruction list (shapes + fills + blends + layers) and export PNG. Use texgen.spec for the full grammar and texgen.examples for ready-made instruction lists.",
+            "按结构化绘图指令表（图元 + 填充 + 混合 + 图层）程序化绘制贴图并导出 PNG。用 texgen.spec 取完整指令语法，用 texgen.examples 取现成示例指令表。");
+
+        protected override MethodKey[] CreateKeys()
+        {
+            return new MethodKey[]
+            {
+                // --- Input ---
+                new MethodArr("layers", L.T(
+                    "Layer list: [{shape, fill, blend, ...}] (preferred). Each entry is one drawing operation.",
+                    "图层列表：[{shape, fill, blend, ...}]（推荐）。每项为一次绘制操作。"), true, "object"),
+                new MethodStr("layers_json", L.T(
+                    "Same layer list as a JSON string, for clients that cannot nest arrays.",
+                    "与 layers 等价的 JSON 字符串，供不便嵌套数组的客户端使用。")),
+                new MethodArr("specs", L.T(
+                    "Batch input: [{name, width, height, background, layers:[...]}] rendered as separate files.",
+                    "批量输入：[{name, width, height, background, layers:[...]}]，各自渲染为独立文件。"), true, "object"),
+
+                // --- Canvas ---
+                new MethodInt("width", L.T("Canvas width in pixels", "画布宽度（像素）"))
+                    .SetRange(1, TgSpec.MaxDimension).SetDefault(256),
+                new MethodInt("height", L.T("Canvas height in pixels", "画布高度（像素）"))
+                    .SetRange(1, TgSpec.MaxDimension).SetDefault(256),
+                new MethodStr("background", L.T(
+                    "Canvas background: #RRGGBB, #RRGGBBAA, \"r,g,b[,a]\" or a colour name. Default transparent.",
+                    "画布底色：#RRGGBB、#RRGGBBAA、\"r,g,b[,a]\" 或颜色名。默认透明。"))
+                    .AddExamples("#00000000", "#1a1a2e"),
+                new MethodStr("origin", L.T(
+                    "Coordinate origin: topLeft (default) or center. Y always grows downward.",
+                    "坐标原点：topLeft（默认）或 center。Y 始终向下增长。"))
+                    .SetEnumValues("topLeft", "center").SetDefault("topLeft"),
+                new MethodInt("supersample", L.T(
+                    "Antialiasing factor 1-4 (internal supersampling). Default 2.",
+                    "抗锯齿倍数 1-4（内部超采样）。默认 2。"))
+                    .SetRange(1, 4).SetDefault(2),
+
+                // --- Normal map ---
+                new MethodBool("normal_map", L.T(
+                    "Convert the rendered result into a tangent-space normal map.",
+                    "把渲染结果转为切线空间法线贴图。")),
+                new MethodFloat("normal_strength", L.T(
+                    "Relief strength when normal_map is on. Default 4.",
+                    "normal_map 开启时的凹凸强度。默认 4。"))
+                    .SetRange(0f, 64f).SetDefault(4f),
+                new MethodStr("image_path", L.T(
+                    "Source PNG for normal_from_image (project-relative or absolute).",
+                    "normal_from_image 的源 PNG（工程相对路径或绝对路径）"))
+                    .AddExample("Assets/Textures/height.png"),
+
+                // --- Output ---
+                new MethodStr("output_path", L.T(
+                    "PNG path to write, e.g. Assets/Textures/icon.png (project-relative or absolute).",
+                    "PNG 输出路径，如 Assets/Textures/icon.png（工程相对或绝对）。"))
+                    .AddExamples("Assets/Textures/icon.png", "Assets/Textures/magic_orb.png"),
+                new MethodStr("output_dir", L.T(
+                    "Folder for batch output. Default Assets/TexGen.",
+                    "批量输出目录。默认 Assets/TexGen。"))
+                    .AddExample("Assets/Textures/Icons"),
+                new MethodStr("prefix", L.T(
+                    "File name prefix for batch output.", "批量输出的文件名前缀。")),
+                new MethodBool("overwrite", L.T(
+                    "Allow replacing an existing PNG. Default true.",
+                    "允许覆盖已存在的 PNG。默认 true。")).SetDefault(true),
+
+                // --- Import settings (applied when the PNG lands under Assets/) ---
+                new MethodStr("texture_type", L.T(
+                    "Importer texture type: Default, Sprite, NormalMap, EditorGUIAndLegacy, Cursor, Cookie, Lightmap, HDR.",
+                    "导入器纹理类型：Default、Sprite、NormalMap、EditorGUIAndLegacy、Cursor、Cookie、Lightmap、HDR。"))
+                    .SetEnumValues("Default", "Sprite", "NormalMap", "EditorGUIAndLegacy", "Cursor", "Cookie", "Lightmap", "HDR"),
+                new MethodStr("filter_mode", L.T("Importer filter mode.", "导入器过滤模式。"))
+                    .SetEnumValues("Point", "Bilinear", "Trilinear"),
+                new MethodStr("wrap_mode", L.T("Importer wrap mode.", "导入器包裹模式。"))
+                    .SetEnumValues("Repeat", "Clamp", "Mirror", "MirrorOnce"),
+                new MethodInt("pixels_per_unit", L.T("Sprite pixels-per-unit when texture_type is Sprite.", "texture_type 为 Sprite 时的像素/单位。"))
+                    .SetRange(1, 2048).SetDefault(100),
+                new MethodInt("max_size", L.T("Importer max texture size.", "导入器最大纹理尺寸。"))
+                    .SetEnumValues("32", "64", "128", "256", "512", "1024", "2048", "4096", "8192"),
+                new MethodBool("sprite_pivot_center", L.T("Keep the sprite pivot centred.", "精灵轴心保持居中。")).SetDefault(true),
+
+                // --- Misc ---
+                new MethodBool("open_preview", L.T(
+                    "Open the TexGen preview window with the rendered result.",
+                    "用渲染结果打开 TexGen 预览窗口。")),
+                new MethodBool("select_asset", L.T(
+                    "Ping the written asset in the Project window.",
+                    "在 Project 窗口中定位写出的资源。"))
+            };
+        }
+
+        // ------------------------------------------------------------------
+        // Actions
+        // ------------------------------------------------------------------
+
+        [ToolAction("render",
+            DescriptionEn = "Draw an instruction list onto a canvas and export it as a PNG (optionally converting to a normal map).",
+            DescriptionZh = "把指令表绘制到画布并导出 PNG（可选转为法线贴图）。",
+            Parameters = new[]
+            {
+                "layers", "layers_json", "width", "height", "background", "origin", "supersample",
+                "normal_map", "normal_strength", "output_path", "overwrite",
+                "texture_type", "filter_mode", "wrap_mode", "pixels_per_unit", "max_size",
+                "sprite_pivot_center", "open_preview", "select_asset"
+            },
+            Inject = new[] { "action=render" })]
+        private object ActionRender(JsonClass args)
+        {
+            var parse = ParseArguments(args);
+            if (!parse.Ok) return ValidationError(parse);
+
+            string outputPath = TgJson.GetString(args, "output_path");
+            return RenderAndWrite(parse.Spec, outputPath, args, true);
+        }
+
+        [ToolAction("batch",
+            DescriptionEn = "Render several independent specs into one folder, each as its own PNG.",
+            DescriptionZh = "把多个独立 spec 渲染到同一目录，各自输出一个 PNG。",
+            Parameters = new[]
+            {
+                "specs", "output_dir", "prefix", "width", "height", "background", "origin", "supersample",
+                "overwrite", "select_asset", "texture_type", "filter_mode", "wrap_mode",
+                "pixels_per_unit", "max_size"
+            },
+            Inject = new[] { "action=batch" })]
+        private object ActionBatch(JsonClass args)
+        {
+            JsonNode specsNode = TgJson.Get(args, "specs");
+            JsonArray specs = specsNode as JsonArray;
+            if (specs == null || specs.Count == 0)
+                return Response.Error(L.T(
+                    "\"specs\" must be a non-empty array of {name, width, height, layers:[...]}.",
+                    "\"specs\" 必须是非空数组，元素为 {name, width, height, layers:[...]}。"));
+
+            string outputDir = TgJson.GetString(args, "output_dir", "Assets/TexGen");
+            string prefix = TgJson.GetString(args, "prefix", "");
+
+            var written = new JsonArray();
+            var failed = new JsonArray();
+
+            for (int i = 0; i < specs.Count; i++)
+            {
+                JsonClass item = specs[i] as JsonClass;
+                string label = item != null ? TgJson.GetString(item, "name", "specs[" + i + "]") : "specs[" + i + "]";
+                if (item == null)
+                {
+                    failed.Add(new JsonData(label + " is not an object"));
+                    continue;
+                }
+
+                // Field-wise merge: item wins, args act as defaults.
+                var merged = new JsonClass();
+                CopyIfPresent(args, merged, "width", "height", "background", "origin", "supersample",
+                    "texture_type", "filter_mode", "wrap_mode", "pixels_per_unit", "max_size",
+                    "normal_map", "normal_strength");
+                foreach (var kv in item.AsEnumerable()) merged[kv.Key] = kv.Value;
+
+                var parse = ParseArguments(merged);
+                if (!parse.Ok)
+                {
+                    failed.Add(new JsonData(label + ": " + string.Join("; ", parse.Errors.ToArray())));
+                    continue;
+                }
+
+                string name = TgJson.GetString(item, "name", "tex_" + i);
+                string filePath = outputDir.TrimEnd('/', '\\') + "/" + prefix + name + ".png";
+
+                var result = RenderAndWrite(parse.Spec, filePath, merged, false) as JsonClass;
+                bool ok = result != null && result.TryGetValue("success", out JsonNode okNode) && okNode.AsBoolDefault(false);
+
+                if (ok)
+                {
+                    var entry = new JsonClass();
+                    entry["name"] = name;
+                    entry["path"] = filePath;
+                    entry["width"] = parse.Spec.Width;
+                    entry["height"] = parse.Spec.Height;
+                    written.Add(entry);
+                }
+                else
+                {
+                    string err = "render failed";
+                    if (result != null && result.TryGetValue("error", out JsonNode errNode) && errNode != null)
+                        err = errNode.Value;
+                    failed.Add(new JsonData(label + ": " + err));
+                }
+            }
+
+            if (written.Count == 0)
+                return Response.Error(L.T("No spec rendered successfully.", "没有任何 spec 渲染成功。"), failed);
+
+            var data = new JsonClass();
+            data["output_dir"] = outputDir;
+            data["written"] = written;
+            data["count"] = written.Count;
+            if (failed.Count > 0) data["failed"] = failed;
+
+            if (TgJson.GetBool(args, "select_asset", false))
+                SelectAsset(outputDir);
+
+            return Response.Success(
+                L.T($"Rendered {written.Count} texture(s) into '{outputDir}'.",
+                    $"已渲染 {written.Count} 张贴图到 '{outputDir}'。"), data);
+        }
+
+        [ToolAction("validate",
+            DescriptionEn = "Parse an instruction list and report resolution, layer summary and any problems, without rendering.",
+            DescriptionZh = "只解析指令表，返回解析结果、图层摘要与问题，不渲染。",
+            Parameters = new[] { "layers", "layers_json", "width", "height", "background", "origin", "supersample", "normal_map" },
+            Inject = new[] { "action=validate" })]
+        private object ActionValidate(JsonClass args)
+        {
+            var parse = ParseArguments(args);
+            var data = new JsonClass();
+            data["valid"] = parse.Ok;
+
+            if (parse.Spec != null)
+            {
+                data["width"] = parse.Spec.Width;
+                data["height"] = parse.Spec.Height;
+                data["origin"] = parse.Spec.Origin.ToString();
+                data["supersample"] = parse.Spec.Supersample;
+                data["normal_map"] = parse.Spec.NormalMap;
+
+                var layerInfo = new JsonArray();
+                foreach (var layer in parse.Spec.Layers)
+                {
+                    var entry = new JsonClass();
+                    entry["index"] = layerInfo.Count;
+                    entry["name"] = layer.Name;
+                    entry["shape"] = layer.Shape.ToString();
+                    entry["fill"] = layer.Fill.ToString();
+                    entry["blend"] = layer.Blend.ToString();
+                    entry["opacity"] = layer.Opacity;
+                    layerInfo.Add(entry);
+                }
+                data["layer_count"] = layerInfo.Count;
+                data["layers"] = layerInfo;
+            }
+
+            if (parse.Errors.Count > 0) data["errors"] = ToJsonArray(parse.Errors);
+            if (parse.Warnings.Count > 0) data["warnings"] = ToJsonArray(parse.Warnings);
+
+            if (!parse.Ok)
+                return Response.Error(L.T("Instruction list is invalid.", "指令表无效。"), data);
+
+            return Response.Success(
+                L.T($"Instruction list is valid: {parse.Spec.Layers.Count} layer(s), {parse.Spec.Width}x{parse.Spec.Height}.",
+                    $"指令表有效：{parse.Spec.Layers.Count} 个图层，{parse.Spec.Width}x{parse.Spec.Height}。"), data);
+        }
+
+        [ToolAction("spec",
+            DescriptionEn = "Return the full instruction grammar: canvas options, layer fields, enums, units and coordinate system.",
+            DescriptionZh = "返回完整指令语法：画布选项、图层字段、枚举、单位与坐标系。",
+            Parameters = new string[0],
+            Inject = new[] { "action=spec" })]
+        private object ActionSpec(JsonClass args)
+        {
+            var data = new JsonClass();
+            data["canvas"] = CanvasGrammar();
+            data["layer"] = LayerGrammar();
+            data["coordinate_system"] = new JsonData(L.T(
+                "Y grows downward. With origin=topLeft the canvas spans [0,width]x[0,height] and (0,0) is the top-left corner. " +
+                "With origin=center the canvas spans [-w/2,w/2]x[-h/2,h/2] and (0,0) is the middle. All lengths are in pixels at the final (non-supersampled) resolution.",
+                "Y 向下增长。origin=topLeft 时画布覆盖 [0,width]x[0,height]，(0,0) 为左上角；origin=center 时覆盖 [-w/2,w/2]x[-h/2,h/2]，(0,0) 为正中。所有长度均为最终（非超采样）分辨率下的像素。"));
+            data["layers"] = new JsonData(L.T(
+                "Layers are drawn in array order, each composited over the accumulated result. Put glows and shadows before their subject, highlights after.",
+                "图层按数组顺序绘制，逐层叠加到已有结果之上。辉光/阴影放在主体之前，高光放在之后。"));
+            data["tips"] = ToJsonArray(new List<string>
+            {
+                L.T("Alpha is supported everywhere; default canvas background is fully transparent.",
+                    "全流程支持 Alpha；画布底色默认完全透明。"),
+                L.T("blend \"mask\" keeps the image only inside that shape; blend \"erase\" punches a hole. Neither paints colour.",
+                    "blend \"mask\" 只保留该形状内部的图像；blend \"erase\" 在该形状内挖洞。两者都不绘制颜色。"),
+                L.T("fill \"radial\" picks colours from color to edgeColor (or a gradient) over the shape's radius.",
+                    "fill \"radial\" 沿形状半径从 color 渐变到 edgeColor（或按 gradient 取值）。"),
+                L.T("Everything is deterministic: the same instructions plus the same seed always produce identical pixels.",
+                    "完全确定性：相同指令加相同 seed 永远产生相同像素。"),
+                L.T("For a normal map, draw a greyscale/alpha height field and set normal_map=true (or call normal_from_image).",
+                    "做法线贴图时，先绘制灰度/Alpha 高度场，再设 normal_map=true（或调用 normal_from_image）。")
+            });
+
+            return Response.Success(L.T("Texture generation instruction grammar.", "程序化贴图指令语法。"), data);
+        }
+
+        [ToolAction("examples",
+            DescriptionEn = "Return ready-to-use instruction lists (magic orb, skill icon, noise height field, star burst).",
+            DescriptionZh = "返回可直接使用的指令表示例（魔法球、技能图标、噪波高度场、星爆）。",
+            Parameters = new string[0],
+            Inject = new[] { "action=examples" })]
+        private object ActionExamples(JsonClass args)
+        {
+            var data = new JsonClass();
+
+            data["magic_orb"] = Sample(L.T(
+                "Blue magic orb: outer glow, radial orb, rim ring, cross flare, core highlight",
+                "蓝色魔法球：外发光、径向球体、边缘圆环、十字光效、中心高光"), TexGenSamples.MagicOrb);
+
+            data["skill_icon"] = Sample(L.T(
+                "Skill icon: gradient plate, rounded cut-out frame, ring, chevron glyph",
+                "技能图标：渐变底板、圆角镂空边框、圆环、折角图形"), TexGenSamples.SkillIcon);
+
+            data["noise_height"] = Sample(L.T(
+                "Fractal noise height field (good input for normal_map)",
+                "分形噪波高度场（适合作为 normal_map 的输入）"), TexGenSamples.Noise);
+
+            data["star_burst"] = Sample(L.T(
+                "Six-point star burst with halo and spark",
+                "六角星爆，带光晕与高光点"), TexGenSamples.Star);
+
+            return Response.Success(
+                L.T("4 ready-made instruction lists; pass an object's value straight into texgen.render as the whole argument set.",
+                    "4 个现成指令表；把其中某个对象的值整体作为参数传给 texgen.render 即可。"), data);
+        }
+
+        private static JsonClass Sample(string title, string json)
+        {
+            var entry = new JsonClass();
+            entry["title"] = title;
+            entry["instructions"] = Json.Parse(json);
+            return entry;
+        }
+
+        [ToolAction("preview",
+            DescriptionEn = "Render an instruction list and open it in the TexGen preview window for interactive inspection.",
+            DescriptionZh = "渲染指令表并在 TexGen 预览窗口中打开，便于交互查看。",
+            Parameters = new[] { "layers", "layers_json", "width", "height", "background", "origin", "supersample", "normal_map", "normal_strength" },
+            Inject = new[] { "action=preview" })]
+        private object ActionPreview(JsonClass args)
+        {
+            var parse = ParseArguments(args);
+            if (!parse.Ok) return ValidationError(parse);
+
+            Texture2D tex = TgRasterizer.Render(parse.Spec, out int ss);
+            TexGenPreviewWindow.Show(parse.Spec, tex);
+
+            var data = new JsonClass();
+            data["width"] = tex.width;
+            data["height"] = tex.height;
+            data["supersample"] = ss;
+            data["layers"] = parse.Spec.Layers.Count;
+
+            return Response.Success(
+                L.T($"Rendered {tex.width}x{tex.height} (SSAA x{ss}) and opened the preview window.",
+                    $"已渲染 {tex.width}x{tex.height}（超采样 x{ss}）并打开预览窗口。"), data);
+        }
+
+        [ToolAction("normal_from_image",
+            DescriptionEn = "Convert an existing PNG into a tangent-space normal map and write it to disk.",
+            DescriptionZh = "把已有 PNG 转为切线空间法线贴图并写入磁盘。",
+            Parameters = new[] { "image_path", "output_path", "normal_strength", "overwrite", "texture_type", "filter_mode" },
+            Required = new[] { "image_path" },
+            Inject = new[] { "action=normal_from_image" })]
+        private object ActionNormalFromImage(JsonClass args)
+        {
+            string imagePath = TgJson.GetString(args, "image_path");
+            if (string.IsNullOrEmpty(imagePath))
+                return Response.Error(L.T("'image_path' is required.", "'image_path' 必填。"));
+
+            string source = ResolvePath(imagePath, false);
+            if (!File.Exists(source))
+                return Response.Error(L.T($"Source PNG not found: {source}", $"源 PNG 不存在：{source}"));
+
+            var bytes = File.ReadAllBytes(source);
+            var sourceTex = new Texture2D(2, 2, TextureFormat.RGBA32, false);
+            if (!sourceTex.LoadImage(bytes))
+            {
+                UnityEngine.Object.DestroyImmediate(sourceTex);
+                return Response.Error(L.T("Source file is not a readable image.", "源文件不是可读图像。"));
+            }
+
+            var spec = new TgSpec
+            {
+                Width = sourceTex.width,
+                Height = sourceTex.height,
+                Background = Color.black,
+                NormalMap = true,
+                NormalStrength = TgJson.GetFloat(args, "normal_strength", 4f),
+                Supersample = 1
+            };
+
+            // Feed the source pixels through the normal-map stage.
+            var pixels = sourceTex.GetPixels();
+            float[] rgba = new float[pixels.Length * 4];
+            for (int i = 0; i < pixels.Length; i++)
+            {
+                rgba[i * 4] = pixels[i].r;
+                rgba[i * 4 + 1] = pixels[i].g;
+                rgba[i * 4 + 2] = pixels[i].b;
+                rgba[i * 4 + 3] = pixels[i].a;
+            }
+            UnityEngine.Object.DestroyImmediate(sourceTex);
+
+            string outputPath = TgJson.GetString(args, "output_path");
+            if (string.IsNullOrEmpty(outputPath))
+                outputPath = Path.ChangeExtension(imagePath, null) + "_n.png";
+
+            Texture2D normal = TgRasterizer.NormalMapFromRgba(rgba, spec.Width, spec.Height, spec.NormalStrength);
+
+            string absolute = ResolvePath(outputPath, true);
+            if (!TgJson.GetBool(args, "overwrite", true) && File.Exists(absolute))
+                return Response.Error(L.T($"File already exists: {absolute}", $"文件已存在：{absolute}"));
+
+            TgRasterizer.WritePng(absolute, TgRasterizer.EncodePng(normal));
+            UnityEngine.Object.DestroyImmediate(normal);
+
+            ApplyImporterSettings(absolute, args, true);
+            SelectAsset(absolute);
+
+            var data = new JsonClass();
+            data["path"] = outputPath;
+            data["width"] = spec.Width;
+            data["height"] = spec.Height;
+            data["strength"] = spec.NormalStrength;
+
+            return Response.Success(
+                L.T($"Normal map written to '{outputPath}'.", $"法线贴图已写入 '{outputPath}'。"), data);
+        }
+
+        // ------------------------------------------------------------------
+        // Rendering + output helpers
+        // ------------------------------------------------------------------
+
+        private object RenderAndWrite(TgSpec spec, string outputPath, JsonClass args, bool selectByDefault)
+        {
+            Texture2D tex;
+            int ss;
+            var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+            try
+            {
+                tex = TgRasterizer.Render(spec, out ss);
+            }
+            catch (Exception e)
+            {
+                return Response.Error(L.T($"Render failed: {e.Message}", $"渲染失败：{e.Message}"));
+            }
+
+            if (TgJson.GetBool(args, "open_preview", false))
+                TexGenPreviewWindow.Show(spec, tex);
+
+            byte[] png = TgRasterizer.EncodePng(tex);
+            stopwatch.Stop();
+
+            var data = new JsonClass();
+            data["width"] = tex.width;
+            data["height"] = tex.height;
+            data["supersample"] = ss;
+            data["layers"] = spec.Layers.Count;
+            data["normal_map"] = spec.NormalMap;
+            data["bytes"] = png.Length;
+            data["render_ms"] = stopwatch.ElapsedMilliseconds;
+
+            UnityEngine.Object.DestroyImmediate(tex);
+
+            if (string.IsNullOrEmpty(outputPath))
+            {
+                data["written"] = false;
+                return Response.Success(
+                    L.T($"Rendered {spec.Width}x{spec.Height} in memory; pass output_path to write a PNG.",
+                        $"已在内存中渲染 {spec.Width}x{spec.Height}；传入 output_path 可写出 PNG。"), data);
+            }
+
+            string absolute = ResolvePath(outputPath, true);
+            if (!TgJson.GetBool(args, "overwrite", true) && File.Exists(absolute))
+                return Response.Error(L.T($"File already exists: {absolute}", $"文件已存在：{absolute}"));
+
+            try
+            {
+                TgRasterizer.WritePng(absolute, png);
+            }
+            catch (Exception e)
+            {
+                return Response.Error(L.T($"Failed to write '{absolute}': {e.Message}",
+                    $"写入 '{absolute}' 失败：{e.Message}"));
+            }
+
+            bool underAssets = IsUnderAssets(absolute);
+            if (underAssets)
+            {
+                if (TgJson.GetBool(args, "select_asset", selectByDefault))
+                    SelectAsset(absolute);
+                else
+                    AssetDatabase.Refresh();
+            }
+
+            ApplyImporterSettings(absolute, args, spec.NormalMap);
+
+            data["path"] = outputPath;
+            data["written"] = true;
+
+            string warningSuffix = "";
+            if (!underAssets)
+                warningSuffix = L.T(" (outside Assets/, not imported as an asset)",
+                    "（位于 Assets/ 之外，未作为资源导入）");
+
+            return Response.Success(
+                L.T($"Rendered {spec.Width}x{spec.Height} with {spec.Layers.Count} layer(s) and wrote '{outputPath}'{warningSuffix}.",
+                    $"已用 {spec.Layers.Count} 个图层渲染 {spec.Width}x{spec.Height} 并写出 '{outputPath}'{warningSuffix}。"), data);
+        }
+
+        private static void ApplyImporterSettings(string absolutePath, JsonClass args, bool normalMap)
+        {
+            if (!IsUnderAssets(absolutePath)) return;
+
+            if (!absolutePath.StartsWith(Application.dataPath)) return;
+            string assetPath = "Assets" + absolutePath.Substring(Application.dataPath.Length).Replace('\\', '/');
+
+            AssetDatabase.Refresh();
+
+            var importer = AssetImporter.GetAtPath(assetPath) as TextureImporter;
+            if (importer == null) return;
+
+            string type = TgJson.GetString(args, "texture_type");
+            if (string.IsNullOrEmpty(type))
+                type = normalMap ? "NormalMap" : null;
+            if (!string.IsNullOrEmpty(type) && Enum.TryParse(type, true, out TextureImporterType parsedType))
+                importer.textureType = parsedType;
+
+            string filter = TgJson.GetString(args, "filter_mode");
+            if (!string.IsNullOrEmpty(filter) && Enum.TryParse(filter, true, out FilterMode fm))
+                importer.filterMode = fm;
+
+            string wrap = TgJson.GetString(args, "wrap_mode");
+            if (!string.IsNullOrEmpty(wrap) && Enum.TryParse(wrap, true, out TextureWrapMode wm))
+                importer.wrapMode = wm;
+
+            int maxSize = TgJson.GetInt(args, "max_size", 0);
+            if (maxSize > 0) importer.maxTextureSize = maxSize;
+
+            if (importer.textureType == TextureImporterType.Sprite)
+            {
+                importer.spriteImportMode = SpriteImportMode.Single;
+                importer.spritePixelsPerUnit = TgJson.GetInt(args, "pixels_per_unit", 100);
+                if (TgJson.GetBool(args, "sprite_pivot_center", true))
+                    importer.spritePivot = new Vector2(0.5f, 0.5f);
+            }
+
+            if (normalMap) importer.textureType = TextureImporterType.NormalMap;
+
+            EditorUtility.SetDirty(importer);
+            importer.SaveAndReimport();
+        }
+
+        private static void SelectAsset(string assetOrAbsolutePath)
+        {
+            AssetDatabase.Refresh();
+            if (!IsUnderAssets(assetOrAbsolutePath)) return;
+
+            string assetPath = assetOrAbsolutePath.Replace('\\', '/');
+            if (!assetPath.StartsWith("Assets/"))
+            {
+                if (!assetOrAbsolutePath.StartsWith(Application.dataPath)) return;
+                assetPath = "Assets" + assetOrAbsolutePath.Substring(Application.dataPath.Length).Replace('\\', '/');
+            }
+
+            var obj = AssetDatabase.LoadAssetAtPath<UnityEngine.Object>(assetPath);
+            if (obj != null)
+            {
+                EditorGUIUtility.PingObject(obj);
+                Selection.activeObject = obj;
+            }
+        }
+
+        private static bool IsUnderAssets(string absolutePath)
+        {
+            if (string.IsNullOrEmpty(absolutePath)) return false;
+            string normalized = absolutePath.Replace('\\', '/');
+            string assets = Application.dataPath.Replace('\\', '/');
+            return normalized.StartsWith(assets + "/") || normalized == assets;
+        }
+
+        /// <summary>Resolve a project-relative ("Assets/...") or absolute path.</summary>
+        private static string ResolvePath(string path, bool ensureDirectory)
+        {
+            if (string.IsNullOrEmpty(path)) return path;
+
+            string projectRoot = Directory.GetParent(Application.dataPath)?.FullName ?? Application.dataPath;
+            string resolved;
+
+            if (Path.IsPathRooted(path))
+            {
+                resolved = Path.GetFullPath(path);
+            }
+            else if (path.Replace('\\', '/').StartsWith("Assets/", StringComparison.OrdinalIgnoreCase))
+            {
+                resolved = Path.GetFullPath(Path.Combine(projectRoot, path));
+            }
+            else
+            {
+                // Default relative paths to the project root, not the process CWD.
+                resolved = Path.GetFullPath(Path.Combine(projectRoot, path));
+            }
+
+            if (ensureDirectory)
+            {
+                string dir = Path.GetDirectoryName(resolved);
+                if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir)) Directory.CreateDirectory(dir);
+            }
+
+            return resolved;
+        }
+
+        // ------------------------------------------------------------------
+        // Parsing helpers
+        // ------------------------------------------------------------------
+
+        private static TgParseResult ParseArguments(JsonClass args)
+        {
+            JsonNode layers = TgJson.Get(args, "layers");
+            if (layers == null)
+            {
+                string json = TgJson.GetString(args, "layers_json");
+                if (!string.IsNullOrEmpty(json))
+                {
+                    try { layers = Json.Parse(json); }
+                    catch (Exception e)
+                    {
+                        var bad = new TgParseResult { Spec = new TgSpec() };
+                        bad.Errors.Add("layers_json is not valid JSON: " + e.Message);
+                        return bad;
+                    }
+                }
+            }
+
+            var root = new JsonClass();
+            if (layers != null) root["layers"] = layers;
+
+            CopyIfPresent(args, root, "width", "height", "background", "origin", "supersample",
+                "normal_map", "normal_strength");
+
+            var parse = TgParser.Parse(root);
+
+            if (layers == null)
+                parse.Errors.Insert(0, L.T(
+                    "No layers given. Pass \"layers\":[{...}] or a \"layers_json\" string. Call texgen.examples for ready-made lists.",
+                    "未提供图层。请传 \"layers\":[{...}] 或 \"layers_json\" 字符串。可用 texgen.examples 取现成指令表。"));
+
+            return parse;
+        }
+
+        private static void CopyIfPresent(JsonClass from, JsonClass to, params string[] keys)
+        {
+            foreach (string key in keys)
+            {
+                JsonNode v = TgJson.Get(from, key);
+                if (v != null) to[key] = v;
+            }
+        }
+
+        private static object ValidationError(TgParseResult parse)
+        {
+            var data = new JsonClass();
+            data["errors"] = ToJsonArray(parse.Errors);
+            if (parse.Warnings.Count > 0) data["warnings"] = ToJsonArray(parse.Warnings);
+            return Response.Error(string.Join(" | ", parse.Errors.ToArray()), data);
+        }
+
+        private static JsonArray ToJsonArray(List<string> values)
+        {
+            var arr = new JsonArray();
+            foreach (string v in values) arr.Add(new JsonData(v));
+            return arr;
+        }
+
+        // ------------------------------------------------------------------
+        // Grammar description
+        // ------------------------------------------------------------------
+
+        private static JsonClass CanvasGrammar()
+        {
+            var canvas = new JsonClass();
+            canvas["width"] = new JsonData("integer 1-2048 (default 256)");
+            canvas["height"] = new JsonData("integer 1-2048 (default 256)");
+            canvas["background"] = new JsonData("#RRGGBB / #RRGGBBAA / #RGB / #RGBA / \"r,g,b[,a]\" / colour name");
+            canvas["origin"] = EnumGrammar(typeof(TgOrigin), "topLeft");
+            canvas["supersample"] = new JsonData("integer 1-4 (default 2)");
+            canvas["normal_map"] = new JsonData("boolean (default false)");
+            canvas["normal_strength"] = new JsonData("number >= 0 (default 4)");
+            return canvas;
+        }
+
+        private static JsonClass LayerGrammar()
+        {
+            var layer = new JsonClass();
+
+            var geometry = new JsonClass();
+            geometry["shape"] = EnumGrammar(typeof(TgShape), "circle");
+            geometry["center"] = new JsonData("array [x, y] in pixels (alias: at)");
+            geometry["radius"] = new JsonData("number: circle/ring/star radius, or a fallback for ellipse");
+            geometry["innerRadius"] = new JsonData("number: ring inner edge / star inner radius");
+            geometry["thickness"] = new JsonData("number: ring band width (overrides innerRadius)");
+            geometry["radiusX"] = new JsonData("number: ellipse horizontal radius");
+            geometry["radiusY"] = new JsonData("number: ellipse vertical radius");
+            geometry["size"] = new JsonData("array [w, h]: rect / roundRect bounds");
+            geometry["cornerRadius"] = new JsonData("number: roundRect corner radius");
+            geometry["from"] = new JsonData("array [x, y]: line start");
+            geometry["to"] = new JsonData("array [x, y]: line end");
+            geometry["width"] = new JsonData("number: line stroke width");
+            geometry["roundCap"] = new JsonData("boolean: round line caps (default true)");
+            geometry["points"] = new JsonData("array [[x,y],...]: polygon vertices, >= 3 (relative to center)");
+            geometry["pointCount"] = new JsonData("integer 3-64: star spike count (alias: spikes)");
+            geometry["rotation"] = new JsonData("number: degrees; rotates star/polygon seeds and the linear-gradient axis");
+            layer["geometry"] = geometry;
+
+            var paint = new JsonClass();
+            paint["fill"] = EnumGrammar(typeof(TgFill), "solid");
+            paint["color"] = new JsonData("colour: solid fill, or radial/linear start (aliases: centerColor)");
+            paint["edgeColor"] = new JsonData("colour: radial/linear end (alias: color2 / toColor)");
+            paint["midColor"] = new JsonData("optional colour: adds a middle stop to noise/ripple ramps");
+            paint["gradient"] = new JsonData("array of {offset:0..1, color} or {\"0\":\"#000\",\"1\":\"#fff\"}");
+            paint["noise"] = EnumGrammar(typeof(TgNoiseKind), "fbm");
+            paint["seed"] = new JsonData("integer: deterministic noise seed");
+            paint["octaves"] = new JsonData("integer 1-10: fbm/ridged detail");
+            paint["scale"] = new JsonData("number: noise cell size in pixels (default 48)");
+            paint["frequency"] = new JsonData("number: ripple cycles per 100 px");
+            paint["phase"] = new JsonData("number: ripple phase in turns");
+            paint["amplitude"] = new JsonData("number 0-1: ripple contrast");
+            paint["cell"] = new JsonData("array [w, h]: grid cell size");
+            paint["lineWidth"] = new JsonData("number: grid line thickness");
+            layer["paint"] = paint;
+
+            var compositing = new JsonClass();
+            compositing["blend"] = EnumGrammar(typeof(TgBlend), "normal");
+            compositing["opacity"] = new JsonData("number 0-1 (default 1)");
+            compositing["feather"] = new JsonData("number: soft edge band width in pixels");
+            compositing["blur"] = new JsonData("number: layer blur radius in pixels");
+            compositing["glow"] = new JsonData("{enabled, radius, color, intensity}: outer glow added under the layer");
+            layer["compositing"] = compositing;
+
+            layer["name"] = new JsonData("string: label used in diagnostics");
+            return layer;
+        }
+
+        private static JsonNode EnumGrammar(Type enumType, string def)
+        {
+            var obj = new JsonClass();
+            var values = new JsonArray();
+            foreach (string name in Enum.GetNames(enumType))
+            {
+                string camel = char.ToLowerInvariant(name[0]) + name.Substring(1);
+                values.Add(new JsonData(camel));
+            }
+            obj["values"] = values;
+            obj["default"] = new JsonData(def);
+            return obj;
+        }
+    }
+}

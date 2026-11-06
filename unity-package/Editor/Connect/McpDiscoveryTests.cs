@@ -32,6 +32,13 @@ namespace UniMcp
             Check(prompt.Contains(".unity-mcp/skill.ini", StringComparison.Ordinal), "安装提示词说明 INI 位置");
             Check(prompt.Contains("SKILL.md", StringComparison.Ordinal), "安装提示词指向 SKILL.md");
             Check(!prompt.Contains("mcp_url", StringComparison.Ordinal), "安装提示词不暴露 MCP 端点");
+            // 技能源目录随连接信息一起发布，技能侧无需再靠提示词/猜测定位。
+            var withSkill = new McpConnectionInfo(new[] { "http://127.0.0.1:8000/" }, "E:/工程", 1, DateTime.UtcNow, skillDir: path);
+            Check(withSkill.ToIni().Contains("\nskill_dir=" + path + "\n"), "INI 携带技能源目录");
+            Check(Json.Parse(withSkill.ToJson())["skill_dir"].Value == path, "discovery 携带技能源目录");
+            var noSkill = new McpConnectionInfo(new[] { "http://127.0.0.1:8000/" }, "E:/工程", 1, DateTime.UtcNow);
+            Check(noSkill.ToIni().Contains("\nskill_dir=\n"), "技能目录缺失时 INI 值为空");
+            Check(Json.Parse(noSkill.ToJson())["skill_dir"].Value == string.Empty, "技能目录缺失时 discovery 为空串");
         }
 
         private static void Check(bool condition, string message)

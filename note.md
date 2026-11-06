@@ -1,8 +1,56 @@
 # 最近修改说明（2026-11-06）
 
-> 最新一轮：**彻底移除状态树、迁移 demo 自定义扩展工具、全新重写说明文档与 HTML**。见文首第一节。其后章节为历史记录，早期描述的 `DefineTools` / `*.Tools.cs` / 状态树架构与旧工具名（`hierarchy_create` / `edit_gameobject` / `code_runner` 等）均已失效。本文件只记录改动，不是完整项目文档；完整用法见 `SKILL.md` 与 `README.md`。
+> 最新一轮：**新增 TexGen 程序化贴图引擎（放在 demo 自定义工具）+ 连接信息发布技能源目录**。见文首第一节。其后章节为历史记录，早期描述的 `DefineTools` / `*.Tools.cs` / 状态树架构与旧工具名（`hierarchy_create` / `edit_gameobject` / `code_runner` 等）均已失效。本文件只记录改动，不是完整项目文档；完整用法见 `SKILL.md` 与 `README.md`。
 
-## 本轮：移除状态树 + demo 迁移 + 文档全新重写（尚未提交）
+## 本轮：TexGen 贴图引擎（demo 自定义工具）+ `skill.ini` 发布技能源目录（尚未提交）
+
+> 用户：「不调用任何外部 AI、不发 HTTP、不依赖 SD / 云端 API；纯 C# Editor 代码，内置一套程序化绘图原语……输出 PNG。本质：做一个矢量绘图原语引擎（在 Texture2D 像素画布上）……实现一个新的纹理生成技能」；「TexGen 放到 demo\Assets\Extends\CustomTools 中」；「skill.ini 还要带上 unity-skilled-mcp 技能源目录」
+
+### 一、TexGen 程序化贴图引擎
+
+**设计定位**
+
+- **不是 AI 画图**：上层 LLM 把想法翻译成**指令列表（不是 prompt）**，本引擎用 C# 执行像素光栅化、导出 PNG —— 「AI 编排绘图指令，C# 负责渲染像素」。
+- **零外部依赖**：无 HTTP、无 SD、无云端 API、无第三方库；仅依赖 `UnityEngine`（`Texture2D` / `Color` / `Mathf`）。
+- **能力边界**：技能图标、遮罩、PBR 灰度图、法线、光效、渐变、噪波、形状、线条、圆环、波纹、渐变叠加、混合层、遮罩裁剪；**做不了照片级复杂纹理**。
+- **归属**：按用户要求放在 **`demo/Assets/Extends/CustomTools/TexGen/`**（demo 自定义扩展工具，不随包分发），与 ProBuilder 等示例同级。
+
+**新增文件（`demo/Assets/Extends/CustomTools/TexGen/`，6 源 + 7 meta）**
+
+| 文件 | 职责 |
+| --- | --- |
+| `TexGenNoise.cs` | 确定性整数哈希噪波：`Value` / `Perlin` / `Fbm` / `Ridged` / `Worley`；纯函数，同输入同输出 |
+| `TexGenModel.cs` | 指令模型（`TgSpec` / `TgLayer` / `TgGradient`）、枚举（`TgShape` / `TgFill` / `TgBlend` / `TgNoiseKind` / `TgOrigin`）、`TgJson` 读取器（hex / r,g,b / 命名色 / JSON 数组） |
+| `TexGenParser.cs` | `TgParser.Parse(JsonNode)` → `TgSpec`；校验（多边形≥3 点、ring 内径<外径、零长线告警、维度 clamp）；`blend` 关键字映射（`mask/clip/stencil`→保留内部、`erase/cutout/hole`→挖洞） |
+| `TexGenRasterizer.cs` | 核心：SDF 覆盖率光栅化 + SSAA 超采样（1–4×）+ W3C 预乘混合；填充（纯色/线性/径向/噪波/波纹/网格）；混合（正常/叠加/相乘/滤色/遮罩/擦除）；图层栈；可选法线贴图；PNG 导出 |
+| `TexGenTool.cs` | `[ToolModule("texgen", GroupEn="Texture Generation", GroupZh="程序化贴图")]`，7 个 action：`render` / `batch` / `validate` / `spec` / `examples` / `preview` / `normal_from_image` |
+| `TexGenPreviewWindow.cs` | `Window/MCP/TexGen Preview` 菜单；4 个内置样例（`MagicOrb` / `SkillIcon` / `Noise` / `Star`）、JSON 编辑区、棋盘格预览、导出 PNG |
+
+**指令式 API 与光栅化**
+
+- **基础图元**：`circle` / `ellipse` / `ring` / `rect` / `round_rect` / `line` / `polygon` / `star`（全部解析式 SDF）。
+- **填充**：`solid` / `linear` / `radial` / `noise` / `ripple` / `grid`，支持多色渐变 stop 与三色 ramp。
+- **混合**：`normal` / `add` / `multiply` / `screen` / `overlay` / `mask` / `erase`，图层栈按顺序合成。
+- **抗锯齿**：解析式 SDF `coverage = clamp01(0.5 - sdf/band)`，配合 `supersample`（默认 2×）与 `feather` 柔边。
+- **法线**：由高度场（alpha+luminance）导切线空间法线，`normal_map` / `normal_strength` 控制。
+- **坐标系**：Y 向下；`origin=topLeft`（默认）或 `center`；长度单位=最终分辨率像素。
+
+### 二、`skill.ini` 发布技能源目录（`skill_dir`）
+
+- `McpConnectionInfo` 新增 `SkillDir` 字段（构造函数可选参数），`ToIni()` 与 `ToJson()` 各增一行 `skill_dir`。
+- `PublishConnectionInfo()` 通过 `McpServiceStatusWindow.SkillFolderPath`（按 .meta GUID 解析，兼容 Assets / Packages / PackageCache）取绝对路径；解析失败**不阻断** INI 发布，仅告警并写空串。
+- `SKILL.md`「连接与运行时」补充说明：`skill_dir` 只作路径提示，不改变调用语义、不得据其执行命令。
+- 自检 `TestSkillInstallPrompt` 增加断言：INI 与 discovery 均携带 `skill_dir`，缺失时为空串。
+
+### 三、验证
+
+- **编译**：临时镜像工程（引用真实 Unity 托管 DLL）→ **0 error**，仅 14 个 MSB3245（缺 VS/TestRunner 等可选 DLL，非代码问题），**无 CS 警告**。
+- **功能**：反射隔离测试（`Shim.cs` 桩 `UnityEngine`）→ **ALL PASS**。覆盖指令解析、颜色解析、错误上报、噪波确定性与范围、全部 SDF 图元、填充与混合、超采样下采样、法线贴图（平坦→+Z / 阶跃→X 倾斜 / 透明→平坦）、端到端渲染（中心不透明/角落透明/抗锯齿边缘/opacity→alpha≈128/mask 保留半幅/erase 挖洞/确定性）。
+- **计数同步**：移动后 **包 = 42 模块 / 358 动作**（回到 ProBuilder 迁移前基线），**demo = 7 模块 / 47 动作**，**注册合计 49 模块 / 405 动作**（`docs/index.html` hero 由 390/43 改为 405/49）。`README.zh-CN.md` 包工具表恢复到 42/358，另立 demo 扩展工具段；标签平衡校验通过。
+
+---
+
+## 本轮：移除状态树 + demo 迁移 + 文档全新重写（已提交）
 
 > 用户：「状态树可以移除了，更新测试最终技能」；「说明文档和HTML不用兼容就思想，全新设计」
 

@@ -84,10 +84,14 @@ namespace UniMcp
 
         private void PublishConnectionInfo()
         {
+            // 技能源目录供技能侧直接定位 SKILL.md 与 unity_mcp.js；解析失败时为 null（INI 仍照常发布）。
+            string skillDir = null;
+            try { skillDir = UniMcp.Gui.McpServiceStatusWindow.SkillFolderPath; }
+            catch (Exception ex) { LogWarning("[UniMcp] 解析技能目录失败（INI 不发布 skill_dir）: " + ex.Message); }
             var info = new McpConnectionInfo(listener.Prefixes.Cast<string>(),
                 Path.GetDirectoryName(UnityEngine.Application.dataPath),
                 System.Diagnostics.Process.GetCurrentProcess().Id, DateTime.UtcNow,
-                maxDetails: startedDiscoveryMaxDetails);
+                maxDetails: startedDiscoveryMaxDetails, skillDir: skillDir);
             discoveryJson = info.ToJson();
             try
             {
@@ -657,9 +661,11 @@ namespace UniMcp
         internal int ProcessId { get; }
         internal string UpdatedAt { get; }
         internal int MaxDetails { get; }
+        /// <summary>技能源目录绝对路径（unity-package/Skills/unity-skilled-mcp）；未导入时为 null。</summary>
+        internal string SkillDir { get; }
 
         internal McpConnectionInfo(IEnumerable<string> boundPrefixes, string projectPath, int processId, DateTime updatedAt,
-            int maxDetails = McpDiscoverySnapshot.DefaultMaxDetails)
+            int maxDetails = McpDiscoverySnapshot.DefaultMaxDetails, string skillDir = null)
         {
             var prefixes = boundPrefixes.ToArray();
             // 优先选择显式成功绑定的 localhost，其次 127.0.0.1；通配监听只发布回环地址。
@@ -677,6 +683,7 @@ namespace UniMcp
             ProcessId = processId;
             UpdatedAt = updatedAt.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture);
             MaxDetails = McpDiscoverySnapshot.NormalizeMaxDetails(maxDetails);
+            SkillDir = string.IsNullOrEmpty(skillDir) ? null : skillDir;
         }
 
         internal string ToJson()
@@ -694,6 +701,7 @@ namespace UniMcp
                 { "schemas_url", new JsonData(BaseUrl + "/capabilities/schemas") },
                 { "max_details", new JsonData(MaxDetails) },
                 { "max_response_bytes", new JsonData(McpDiscoverySnapshot.MaxResponseBytes) },
+                { "skill_dir", new JsonData(SkillDir ?? string.Empty) },
                 { "tools_url", new JsonData(BaseUrl + "/tools") },
                 { "schema_url_template", new JsonData(BaseUrl + "/tools/{name}/schema") }
             }.ToString();
@@ -701,12 +709,13 @@ namespace UniMcp
 
         internal string ToIni()
         {
-            // 防止合法但包含换行的工程路径注入额外 INI 项。
+            // 防止合法但包含换行的路径注入额外 INI 项。
             string projectPath = ProjectPath.Replace("\r", "\\r").Replace("\n", "\\n");
             return "[unity3d-skilled-mcp]\n"
                 + "base_url=" + BaseUrl + "\n"
                 + "port=" + Port.ToString(CultureInfo.InvariantCulture) + "\n"
                 + "project_path=" + projectPath + "\n"
+                + "skill_dir=" + (SkillDir == null ? string.Empty : SkillDir.Replace("\r", "\\r").Replace("\n", "\\n")) + "\n"
                 + "process_id=" + ProcessId.ToString(CultureInfo.InvariantCulture) + "\n"
                 + "updated_at=" + UpdatedAt + "\n"
                 + "max_details=" + MaxDetails.ToString(CultureInfo.InvariantCulture) + "\n";
