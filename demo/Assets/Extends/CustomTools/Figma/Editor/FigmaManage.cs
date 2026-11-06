@@ -14,7 +14,8 @@ using Object = UnityEngine.Object;
 namespace UniMcp.Tools
 {
     [ToolName("figma_manage", "UI Management", "UI管理")]
-    public class FigmaManage : StateMethodBase
+    [ToolModule("figma", GroupEn = "UI Management", GroupZh = "UI管理", LegacyName = "figma_manage")]
+    public class FigmaManage : ToolModuleBase
     {
         private const string FIGMA_API_BASE = "https://api.figma.com/v1";
 
@@ -74,28 +75,14 @@ namespace UniMcp.Tools
         }
 
         /// <summary>
-        /// 创建状态树
-        /// </summary>
-        protected override StateTree CreateStateTree()
-        {
-            return StateTreeBuilder
-                .Create()
-                .Key("action")
-                    .Leaf("preview", PreviewImage)
-                    .Leaf("fetch_document", FetchNodes)
-                    .Leaf("download_images", DownloadNodeImages)
-                    .Leaf("get_conversion_rules", GetConversionRules)
-                .Build();
-        }
-
-        /// <summary>
         /// 拉取节点数据功能
         /// 
         /// 支持两种模式：
         /// 1. 指定节点模式：通过node_imgs指定要拉取的节点ID列表
         /// 2. 节点扫描模式：通过node_id指定节点，自动扫描所有子节点
         /// </summary>
-        private object FetchNodes(StateTreeContext ctx)
+        [ToolAction("fetch_document", "file_key=require", "node_imgs", "node_id", "include_children", "use_component_pfb")]
+        private object FetchNodes(ToolContext ctx)
         {
             string fileKey = ctx["file_key"]?.ToString();
             string nodeImgsParam = ctx["node_imgs"]?.ToString();
@@ -164,7 +151,8 @@ namespace UniMcp.Tools
         /// 
         /// 注意：禁止使用node_id参数下载图片，必须使用node_imgs参数
         /// </summary>
-        private object DownloadNodeImages(StateTreeContext ctx)
+        [ToolAction("download_images", "file_key=require", "node_imgs=require", "local_json_path", "save_path", "image_format", "image_scale")]
+        private object DownloadNodeImages(ToolContext ctx)
         {
             string fileKey = ctx["file_key"]?.ToString();
             string nodeImgsParam = ctx["node_imgs"]?.ToString();
@@ -223,7 +211,8 @@ namespace UniMcp.Tools
         /// <summary>
         /// 获取UI框架转换规则
         /// </summary>
-        private object GetConversionRules(StateTreeContext ctx)
+        [ToolAction("get_conversion_rules", "ui_framework")]
+        private object GetConversionRules(ToolContext ctx)
         {
             string uiFramework = ctx["ui_framework"]?.ToString() ?? "all";
             uiFramework = uiFramework.ToLower();
@@ -270,7 +259,8 @@ namespace UniMcp.Tools
         }
 
         /// </summary>
-        private object PreviewImage(StateTreeContext ctx)
+        [ToolAction("preview", "file_key=require", "node_id=require", "image_format", "image_scale")]
+        private object PreviewImage(ToolContext ctx)
         {
             string fileKey = ctx["file_key"]?.ToString();
             string nodeId = ctx["node_id"]?.ToString();

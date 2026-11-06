@@ -64,7 +64,7 @@
                 </h1>
                 <p class="hero-description">
                     技能负责「怎么调」，MCP 负责「真正执行」。<br>
-                    先拿名称与短说明的目录，需要时再按名称读取完整参数，最后发起调用——40+ 专业工具全部可用，常驻上下文只有几 KB。
+                    先拿名称与短说明的目录，需要时再按名称读取完整参数，最后发起调用——数百个专业工具全部可用，常驻上下文只有几 KB。
                 </p>
                 <div class="hero-cta">
                     <a href="#quickstart" class="btn btn-primary">
@@ -82,12 +82,12 @@
                 </div>
                 <div class="hero-stats">
                     <div class="stat-item">
-                        <div class="stat-number">40+</div>
-                        <div class="stat-label">专业工具</div>
+                        <div class="stat-number">390</div>
+                        <div class="stat-label">注册工具</div>
                     </div>
                     <div class="stat-item">
-                        <div class="stat-number">2</div>
-                        <div class="stat-label">客户端运行时</div>
+                        <div class="stat-number">43</div>
+                        <div class="stat-label">工具模块</div>
                     </div>
                     <div class="stat-item">
                         <div class="stat-number">0</div>
@@ -233,7 +233,7 @@
                         <div class="layer-title">Unity 编辑器层</div>
                         <div class="layer-items">
                             <span class="layer-item">主线程消息队列</span>
-                            <span class="layer-item">40+ 专业工具</span>
+                            <span class="layer-item">390 注册工具</span>
                         </div>
                     </div>
                     <div class="arch-arrow">↓</div>
@@ -417,7 +417,7 @@
             </div>
             <div class="skills-content">
                 <div class="skills-intro">
-                    <p>技能目录位于 <code>unity-package/Skills/unity3d-skill/</code>，只说明「服务怎么连、先取什么、再取什么、参数怎么传」，不枚举 40+ 工具的参数；工具参数始终按需从服务端读取，替代过去一次性灌入全部 Schema 的做法。</p>
+                    <p>技能目录位于 <code>unity-package/Skills/unity3d-skill/</code>，只说明「服务怎么连、先取什么、再取什么、参数怎么传」，不枚举任何工具的参数；工具参数始终按需从服务端读取，替代过去一次性灌入全部 Schema 的做法。</p>
                 </div>
 
                 <div class="skills-mechanism">
@@ -458,11 +458,10 @@ node scripts/unity_mcp.js schema NAME_FROM_LIST
 node scripts/unity_mcp.js schemas NAME1 NAME2
 node scripts/unity_mcp.js call NAME_FROM_LIST --args-file args.json
 
-<span class="comment"># 5. 目录检索、正文读取与顺序批量调用</span>
+<span class="comment"># 5. 目录检索与正文读取，多步访问由库 API 编排</span>
 node scripts/unity_mcp.js find QUERY --kind tools
 node scripts/unity_mcp.js prompt NAME
 node scripts/unity_mcp.js resource URI
-node scripts/unity_mcp.js calls --calls-file steps.json
 
 <span class="comment"># 6. 文档不预设能力：任何工具都先发现、再取定义</span>
 node scripts/unity_mcp.js list --kind tools
@@ -471,11 +470,11 @@ node scripts/unity_mcp.js schemas NAME1 NAME2</code></pre>
                 </div>
 
                 <div class="skills-usage">
-                    <h3>检索、正文与批量</h3>
+                    <h3>检索与正文读取</h3>
                     <ul>
                         <li><code>find QUERY</code>：只取一次目录摘要，在本地按名称 / URI / 说明 / 标签做大小写不敏感过滤，工具再多也不必灌入整份目录；不取详情、不读正文。</li>
                         <li><code>prompt NAME</code> / <code>resource URI</code>：详情接口只给注册定义，这两条命令先校验名称或 URI 在目录中，再走 <code>prompts/get</code> / <code>resources/read</code> 取正文。资源 URI 必须是已注册项，禁止借服务端对任意 <code>http://</code>、<code>file://</code> 的兼容读取绕过外发授权。</li>
-                        <li><code>calls</code>：输入为 <code>[{"name":"...","arguments":{}}, ...]</code>，顺序执行、失败即停，仍输出已执行步骤与 <code>stopped_at</code> / <code>exit_code</code>。数量上限复用 <code>max_details</code>，请求体最多 65536 字节；无事务与回滚，重放前先核实编辑器状态。</li>
+                        <li>多步访问由调用方以库 API 编排：每步先取 <code>schema</code> 再 <code>call</code>，技能不提供批量调用接口；循环次序、遇错是否继续与重放范围皆由代码决定。每次调用仍独立校验 INI 与 discovery。</li>
                     </ul>
                 </div>
 
@@ -506,7 +505,7 @@ const summary = await unity.workflowContext('TASK', 'DESCRIPTION', async functio
                     <ul>
                         <li>SKILL.md 只写连接、发现、取定义、调用与安全边界，<strong>不描述任何具体工具、动作或参数</strong>。</li>
                         <li>当前服务注册了哪些工具，取决于 Unity 版本、工程、已安装包与启动设置；文档或旧会话里出现过的名字不代表它现在可用。</li>
-                        <li>固定顺序：<code>discover</code> → <code>groups</code> / <code>list</code> / <code>find</code> → <code>details</code> / <code>schema</code> / <code>schemas</code> → <code>call</code> / <code>calls</code>。</li>
+                        <li>固定顺序：<code>discover</code> → <code>groups</code> / <code>list</code> / <code>find</code> → <code>details</code> / <code>schema</code> / <code>schemas</code> → <code>call</code>。</li>
                         <li>参数语义只以该工具本次 <code>schema</code> 为准；返回未启用、未安装或未知时如实告知并停止，不换名猜、不重试、不用 <code>request</code> 绕过。</li>
                         <li>INI 不发布 MCP 端点；客户端固定为 <code>scripts/unity_mcp.js</code>（Node.js 18+），不再有脚本语言选项。</li>
                     </ul>
@@ -544,8 +543,8 @@ max_details=32</code></pre>
                     <p class="example-command">"修复控制台中的所有警告和报错"</p>
                     <p class="example-desc">AI 自动分析控制台日志，识别问题类型，提供修复建议并执行修复操作</p>
                     <div class="example-tools">
-                        <span>console_read</span>
-                        <span>code_runner</span>
+                        <span>console.get</span>
+                        <span>code.execute</span>
                     </div>
                 </div>
                 <div class="example-item">
@@ -554,8 +553,8 @@ max_details=32</code></pre>
                     <p class="example-command">"创建一个 60 顶点的圆形雨伞网格，保存到 Meshes 目录"</p>
                     <p class="example-desc">使用 Python 脚本生成复杂 3D 网格，自动导入 Unity 并保存为资源文件</p>
                     <div class="example-tools">
-                        <span>python_runner</span>
-                        <span>edit_mesh</span>
+                        <span>python.execute</span>
+                        <span>mesh.get_info</span>
                     </div>
                 </div>
                 <div class="example-item">
@@ -564,8 +563,8 @@ max_details=32</code></pre>
                     <p class="example-command">"安装 android-logcat 插件到 Unity"</p>
                     <p class="example-desc">通过 Package Manager 自动搜索、下载并安装 Unity 插件包，无需手动操作</p>
                     <div class="example-tools">
-                        <span>manage_package</span>
-                        <span>request_http</span>
+                        <span>package.add_registry</span>
+                        <span>http.get</span>
                     </div>
                 </div>
                 <div class="example-item">
@@ -574,8 +573,8 @@ max_details=32</code></pre>
                     <p class="example-command">"分析 Scripts 目录下的代码，用 Matplotlib 绘制架构图"</p>
                     <p class="example-desc">扫描项目代码结构，分析类依赖关系，生成专业的 UML 架构图</p>
                     <div class="example-tools">
-                        <span>project_search</span>
-                        <span>python_runner</span>
+                        <span>project.find_asset</span>
+                        <span>python.execute</span>
                     </div>
                 </div>
                 <div class="example-item">
@@ -584,9 +583,9 @@ max_details=32</code></pre>
                     <p class="example-command">"基于 Prefabs 下的美术资源及文档，在场景中布置一个房间"</p>
                     <p class="example-desc">AI 理解资源说明文档，自动选择合适的预制体，按照设计规范摆放场景物体</p>
                     <div class="example-tools">
-                        <span>project_search</span>
-                        <span>hierarchy_create</span>
-                        <span>edit_gameobject</span>
+                        <span>project.find_prefab</span>
+                        <span>hierarchy.create_cube</span>
+                        <span>gameobject.modify</span>
                     </div>
                 </div>
                 <div class="example-item">
@@ -595,8 +594,8 @@ max_details=32</code></pre>
                     <p class="example-command">"使用规则文件，在场景中构建 UGUI 界面"</p>
                     <p class="example-desc">根据 JSON/YAML 规则文件自动创建 UI 层级结构，设置布局和样式</p>
                     <div class="example-tools">
-                        <span>ui_rule_manage</span>
-                        <span>ugui_layout</span>
+                        <span>ui_rule.record_modify</span>
+                        <span>ugui.do_layout</span>
                     </div>
                 </div>
                 <div class="example-item">
@@ -945,56 +944,55 @@ node scripts/unity_mcp.js prompt test_talk_step</code></pre>
                 <div class="tool-category">
                     <h4>层级管理</h4>
                     <ul>
-                        <li>hierarchy_create</li>
-                        <li>hierarchy_search</li>
-                        <li>hierarchy_apply</li>
+                        <li>hierarchy.create_cube</li>
+                        <li>hierarchy.find_by_name</li>
+                        <li>hierarchy.apply_prefab_changes</li>
                     </ul>
                 </div>
                 <div class="tool-category">
                     <h4>资源编辑</h4>
                     <ul>
-                        <li>edit_gameobject</li>
-                        <li>edit_component</li>
-                        <li>edit_material</li>
-                        <li>edit_texture</li>
-                        <li>edit_mesh</li>
+                        <li>gameobject.modify</li>
+                        <li>component.get_component_propertys</li>
+                        <li>material.set_properties</li>
+                        <li>texture.set_type</li>
+                        <li>mesh.get_info</li>
                     </ul>
                 </div>
                 <div class="tool-category">
                     <h4>项目管理</h4>
                     <ul>
-                        <li>project_search</li>
-                        <li>project_operate</li>
-                        <li>manage_package</li>
+                        <li>project.find_asset</li>
+                        <li>project.modify</li>
+                        <li>package.add_registry</li>
                     </ul>
                 </div>
                 <div class="tool-category">
                     <h4>UI 工具</h4>
                     <ul>
-                        <li>ugui_layout</li>
-                        <li>ui_rule_manage</li>
-                        <li>figma_manage</li>
+                        <li>ugui.do_layout</li>
+                        <li>ui.add_element</li>
+                        <li>figma.fetch_document</li>
                     </ul>
                 </div>
                 <div class="tool-category">
                     <h4>代码运行</h4>
                     <ul>
-                        <li>code_runner (C#，mode=none / runtime / dll)</li>
-                        <li>python_runner</li>
+                        <li>code.execute (C#，mode=none / runtime / dll)</li>
+                        <li>python.execute</li>
                     </ul>
                 </div>
                 <div class="tool-category">
                     <h4>存储管理</h4>
                     <ul>
-                        <li>prefers (偏好设置)</li>
-                        <li>source_location (资源定位)</li>
+                        <li>prefers.set (偏好设置)</li>
+                        <li>source_location.reveal_in_finder (资源定位)</li>
                     </ul>
                 </div>
                 <div class="tool-category">
                     <h4>内置入口</h4>
                     <ul>
-                        <li>async_call / batch_call</li>
-                        <li>sync_call</li>
+                        <li>async_call（结论落盘，重启可查）</li>
                         <li>search_tool</li>
                         <li>get_prompt</li>
                     </ul>
@@ -1002,10 +1000,10 @@ node scripts/unity_mcp.js prompt test_talk_step</code></pre>
                 <div class="tool-category">
                     <h4>其他工具</h4>
                     <ul>
-                        <li>console_read / write</li>
-                        <li>request_http</li>
-                        <li>gameplay</li>
-                        <li>base_editor</li>
+                        <li>console.get / console.log</li>
+                        <li>http.get / http.download</li>
+                        <li>gameplay.play / gameplay.pause</li>
+                        <li>editor.get_state / editor.execute_menu</li>
                     </ul>
                 </div>
             </div>

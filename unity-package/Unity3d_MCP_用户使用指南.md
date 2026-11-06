@@ -1,3 +1,5 @@
+> **注意（工具重构后）**：本文为旧版使用指南。工具注册已改为声明式细粒度工具，名称形如 `分组.动作`，原先的「大工具 + `action` 分派」与 `batch_call` 批量调用接口均已移除；技能客户端的 `calls` / `callMany` 亦已删除。文中命令、工具名与参数仅作历史参考，实际能力一律以 `discover` / `list` / `schema` 的本次返回为准，多步操作请用技能库 API 编排。
+
 # Unity Skilled MCP 用户使用指南
 
 ![Unity Skilled MCP Logo](docs/unity3d-mcp.png)
@@ -157,7 +159,7 @@ AI指令 → FacadeTools → MethodTools → Unity API
 ```
 
 #### FacadeTools（门面工具）
-- **async_call**：异步单次调用
+- **async_call**：异步调用门面；结论落盘到 `ProjectSettings/UnitySkilledMcpAsyncResults.asset`，Unity 重启后可按原 `id` 取回（`type=in` 启动 / `type=out` 取结论）
 - **batch_call**：批量调用
 
 #### MethodTools（功能工具）
@@ -499,9 +501,9 @@ Renderer数量: 89
    将复杂操作拆分为多个简单步骤
    ```
 
-2. **使用批量操作**
+2. **多步操作交给技能脚本**
    ```
-   优先使用batch_call而不是多次async_call
+   批量门面已移除；用技能库 API 顺序调用，耗时任务交给 async_call 落盘取回
    ```
 
 3. **优化Unity编辑器**
@@ -542,12 +544,12 @@ Renderer数量: 89
 ### Q7：可以离线使用吗？
 **A：**MCP服务器在本地运行，不需要互联网连接。但某些功能（如HTTP请求、Figma集成）需要网络。
 
-### Q8：如何提高批量操作性能？
+### Q8：如何编排多步操作？
 **A：**
-1. 使用`batch_call`而不是多次`async_call`
-2. 合理分批，避免单次操作过多
-3. 按依赖关系排序操作
-4. 在操作前暂停自动刷新
+1. `batch_call` / `sync_call` 已移除，直接在技能脚本里逐次调用 `分组.动作` 工具
+2. 耗时任务用 `async_call`（`type=in` 启动、`type=out` 取结论，结论落盘且重启可查）
+3. 按依赖关系顺序编排，避免单次操作过多
+4. 必要时在操作前暂停自动刷新
 
 ---
 

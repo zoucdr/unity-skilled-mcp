@@ -25,7 +25,8 @@ namespace UniMcp.Tools
     /// 对应方法名: asset_index
     /// </summary>
     [ToolName("asset_index", "System Tools", "系统工具")]
-    public class AssetIndexManage : StateMethodBase
+    [ToolModule("asset_index", GroupEn = "System Tools", GroupZh = "系统工具", LegacyName = "asset_index")]
+    public class AssetIndexManage : ToolModuleBase
     {
         public override string Description => L.T("Asset index management tool supporting add, remove, query, locate operations", "资源索引管理工具，支持添加、删除、查询、定位等操作");
         /// <summary>
@@ -67,29 +68,12 @@ namespace UniMcp.Tools
             };
         }
 
-        protected override StateTree CreateStateTree()
-        {
-            return StateTreeBuilder
-                .Create()
-                .Key("action")
-                    .Leaf("add", HandleAddAssetIndex)
-                    .Leaf("remove", HandleRemoveAssetIndex)
-                    .Leaf("update", HandleUpdateAssetIndex)
-                    .Leaf("search", HandleSearchAssetIndex)
-                    .Leaf("categories", HandleGetCategories)
-                    .Leaf("locate", HandleLocateAsset)
-                    .Leaf("details", HandleGetDetails)
-                    .Leaf("show", HandleShowInExplorer)
-                    .Leaf("lost", HandleGetLostAssets)
-                    .DefaultLeaf(HandleUnknownAction)
-                .Build();
-        }
-
-        // --- State Tree Action Handlers ---
+        // --- Tool Action Handlers ---
 
         /// <summary>
         /// 处理添加资源索引的操作
         /// </summary>
+        [ToolAction("add", "name=require", "path=require", "category", "note")]
         private object HandleAddAssetIndex(JsonClass args)
         {
             try
@@ -123,6 +107,7 @@ namespace UniMcp.Tools
         }
 
 
+        [ToolAction("remove", "id", "path")]
         /// <summary>
         /// 处理删除资源索引的操作
         /// </summary>
@@ -191,6 +176,7 @@ namespace UniMcp.Tools
             }
         }
 
+        [ToolAction("search", "pattern=require")]
         /// <summary>
         /// 处理搜索资源索引的操作（使用正则表达式）
         /// </summary>
@@ -266,6 +252,7 @@ namespace UniMcp.Tools
             }
         }
 
+        [ToolAction("update", "id", "path", "name", "category", "note")]
         /// <summary>
         /// 处理修改资源索引的操作
         /// </summary>
@@ -369,6 +356,7 @@ namespace UniMcp.Tools
             }
         }
 
+        [ToolAction("categories")]
         /// <summary>
         /// 处理获取所有分类的操作
         /// </summary>
@@ -405,6 +393,7 @@ namespace UniMcp.Tools
             }
         }
 
+        [ToolAction("locate", "id", "path")]
         /// <summary>
         /// 处理定位资源的操作
         /// </summary>
@@ -469,6 +458,7 @@ namespace UniMcp.Tools
             }
         }
 
+        [ToolAction("details", "id=require")]
         /// <summary>
         /// 处理获取资源详细信息的操作
         /// </summary>
@@ -521,6 +511,7 @@ namespace UniMcp.Tools
             }
         }
 
+        [ToolAction("show", "id", "path")]
         /// <summary>
         /// 处理在文件夹中显示资源的操作
         /// </summary>
@@ -586,6 +577,7 @@ namespace UniMcp.Tools
             }
         }
 
+        [ToolAction("lost")]
         /// <summary>
         /// 处理获取丢失资源列表的操作
         /// </summary>
@@ -647,16 +639,6 @@ namespace UniMcp.Tools
                 LogError(L.T($"[AssetIndexManager] Failed to get lost assets list: {e.Message}", $"[AssetIndexManager] 获取丢失资源列表失败: {e.Message}"));
                 return Response.Error(L.T($"Failed to get lost assets list: {e.Message}", $"获取丢失资源列表失败: {e.Message}"));
             }
-        }
-
-        /// <summary>
-        /// 处理未知操作的回调方法
-        /// </summary>
-        private object HandleUnknownAction(JsonClass args)
-        {
-            string action = args["action"]?.Value;
-            if (string.IsNullOrEmpty(action)) action = "null";
-            return Response.Error(L.T($"Unknown action: '{action}'. Valid actions: 'add'(add), 'remove'(remove), 'update'(update), 'search'(search), 'categories'(categories), 'locate'(locate), 'details'(details), 'show'(show in folder), 'lost'(lost list)", $"未知操作: '{action}'。有效操作: 'add'(添加), 'remove'(删除), 'update'(修改), 'search'(搜索), 'categories'(分类), 'locate'(定位), 'details'(详情), 'show'(在文件夹中显示), 'lost'(丢失列表)"));
         }
 
         // --- Parameter Extraction Helper Methods ---

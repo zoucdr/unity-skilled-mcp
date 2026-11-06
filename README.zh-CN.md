@@ -9,37 +9,44 @@
 ## 目录
 1. [系统概述](#系统概述)
 2. [设计架构](#设计架构)
-3. [源码解析](#源码解析)
-4. [使用方法](#使用方法)
-5. [Agent 技能模块](#agent-技能模块)
-6. [创新点](#创新点)
-7. [技术特性](#技术特性)
-8. [API参考](#api参考)
+3. [工具框架](#工具框架)
+4. [源码结构](#源码结构)
+5. [使用方法](#使用方法)
+6. [Agent 技能模块](#agent-技能模块)
+7. [HTTP 发现 API](#http-发现-api)
+8. [扩展新工具](#扩展新工具)
 9. [故障排除](#故障排除)
 
 ---
 
-> 说明：本文出现的工具名、动作与参数均为**源码内置能力示例**，不代表当前 Unity 服务一定可用。实际能力一律以技能脚本的 `discover` / `list` / `schema` 返回为准；技能客户端只有 `unity_mcp.js`（Node.js 18+），INI 与 Unity 设置中不再有脚本语言选项。
+> **重要**：本文出现的工具名、动作与参数均为**源码内置能力示例**，不代表当前 Unity 服务一定可用。实际能力一律以技能脚本的 `discover` / `list` / `schema` 返回为准。
+>
+> 工具注册已改为**声明式 `ToolCatalog` + Attribute 反射**：一个动作即一个工具，名称形如 `分组.动作`（如 `animator.create`、`hierarchy.create_cube`、`gameobject.modify`），参数由各自的 `inputSchema` 精确声明。
+>
+> **状态树（StateTree）已彻底移除**：`StateTree` / `StateTreeBuilder` / `StateTreeContext` / `StateMethodBase` / `DualStateMethodBase` / `Selector/` 全部删除。工具类为**无状态树的普通类**，直接以 `[ToolModule]` + `[ToolAction]` 声明。旧的「大工具 + `action` 分派」名称（`hierarchy_create`、`edit_gameobject`、`code_runner` 等）已失效，仅作为 `LegacyName` 保留兼容标识。
+>
+> 技能客户端只有 `unity_mcp.js`（Node.js 18+）；INI 与 Unity 设置中不再有脚本语言选项。批量调用接口 `batch_call` 与技能 `calls` / `callMany` 已移除，多步操作请用技能库 API 自行编排。
 
 ## 系统概述
 
-*Unity Skilled MCP - 连接AI与Unity的桥梁，实现智能化游戏开发*
+*Unity Skilled MCP —— 连接 AI 与 Unity 的桥梁，实现智能化游戏开发*
 
-Unity Skilled MCP (Model Context Protocol) 是一个创新的AI-Unity集成系统，它通过内置的MCP服务器将AI助手（如Cursor、Claude、Trae）与Unity编辑器无缝连接，实现AI驱动的Unity开发工作流。
+Unity Skilled MCP 是一个 AI–Unity 集成系统：它在 Unity 编辑器内运行一个轻量 MCP 服务，把大量 Unity 开发能力以「**一个动作 = 一个工具**」的粒度暴露出来；同时提供一份**不内联任何能力清单**的轻量技能，让 AI 助手（Cursor、Claude、Trae 等）先发现、再取定义、后调用，从而把常驻上下文压到几 KB。
 
 ### 核心价值
-- **AI驱动开发**：通过自然语言指令控制Unity编辑器
-- **无缝集成**：支持主流AI客户端，无需修改现有工作流
-- **功能丰富**：提供40+专业工具，覆盖Unity开发全流程
-- **高性能**：基于HTTP的高效通信机制
-- **可扩展**：模块化设计，易于添加新功能
-- **零配置**：Unity内置MCP服务器，无需外部依赖
+- **AI 驱动开发**：通过自然语言指令控制 Unity 编辑器
+- **动作即工具**：每个工具参数明确、`inputSchema` 精确，不再「一堆参数塞进一个大函数」
+- **省 Token**：渐进式发现，先拿短目录，需要时再读定义
+- **高性能**：基于 HTTP 的 JSON-RPC 2.0，消息队列主线程安全执行
+- **可扩展**：新增工具只需在一个类上加 Attribute，无需任何额外声明文件
+- **零外部依赖**：Unity 内置 MCP 服务器；技能客户端仅需 Node.js 18+
 
 ### 系统组成
-- **内置MCP Server** (C#)：Unity编辑器内置的MCP协议服务器
-- **Unity Package** (C#)：完整的Unity编辑器插件
-- **工具生态**：40+专业Unity开发工具
-- **通信协议**：基于HTTP的JSON-RPC 2.0通信
+- **内置 MCP Server** (C#)：Unity 编辑器内置的 MCP 协议服务器
+- **Unity Package** (C#)：完整的 Unity 编辑器插件（`unity-package`）
+- **Runtime Package** (C#)：独立精简运行时包（`unity-runtime-package`，供 Player 侧使用）
+- **Agent 技能**：`unity-package/Skills/unity3d-skill/`，Node.js 客户端 + 说明书
+- **通信协议**：HTTP（可自定义端口，默认 8000）+ JSON-RPC 2.0
 
 ---
 
@@ -47,380 +54,200 @@ Unity Skilled MCP (Model Context Protocol) 是一个创新的AI-Unity集成系�
 
 ### 整体架构
 
-系统采用分层架构设计，从上到下分为：
+```
+AI 客户端（Cursor / Claude / Trae）
+  └─ Unity 轻量技能（SKILL.md + unity_mcp.js）
+       ├─ 读 ~/.unity-mcp/skill.ini，校验在线服务
+       ├─ 经 HTTP 发现短目录，按需读取所选能力定义
+       └─ 经客户端脚本发起调用
+            └─ Unity 编辑器服务 → 消息队列 → 主线程执行 → Unity API
 
-1. **AI客户端层**：Cursor、Claude、Trae等AI助手
-2. **MCP协议层**：Unity内置MCP服务器
-3. **通信层**：HTTP (可自定义端口，默认8000) + JSON-RPC 2.0
-4. **Unity编辑器层**：Unity Editor + Unity API
-5. **工具层**：40+专业工具 + 消息队列执行引擎
+既有 MCP 客户端 ─────────────────────────────────┘（兼容保留）
+```
+
+系统自上而下：
+1. **AI 客户端层**：Cursor、Claude、Trae 等 AI 助手
+2. **技能层**：`SKILL.md` 契约 + `unity_mcp.js` 客户端
+3. **MCP 协议层**：Unity 内置 MCP 服务器（HTTP + JSON-RPC 2.0）
+4. **执行层**：消息队列 → Editor 主线程 → Unity API
+5. **工具层**：43 个工具模块（364 个动作）+ 3 个内置入口
 
 #### 系统架构图
 
 ![Unity Skilled MCP 系统架构图](docs/architecture.png)
 
-*图1：Unity Skilled MCP系统整体架构图，展示了从AI客户端到Unity编辑器的完整数据流和组件关系*
+*图1：Unity Skilled MCP 系统整体架构图，展示从 AI 客户端到 Unity 编辑器的完整数据流与组件关系*
 
 #### 数据流图
 
 ![Unity Skilled MCP 数据流图](docs/data_flow_graph.png)
 
-*图2：Unity Skilled MCP数据流图，详细展示了从AI指令到Unity执行的完整数据流转过程*
+*图2：数据流图，展示从 AI 指令到 Unity 执行的完整数据流转过程*
 
 ### 核心设计原则
 
-#### 1. 双层调用架构
-```
-AI客户端 → FacadeTools → MethodTools → Unity API
-```
+**1. 动作即工具（细粒度）**
 
-- **FacadeTools**：`async_call` 和 `batch_call` 两个门面工具
-- **MethodTools**：40+专业功能方法，仅通过FacadeTools调用
+每个动作都是独立工具，名称形如 `分组.动作`，参数由各自的 `inputSchema` 精确声明。例如 `animator.create` 只有 `path`，`hierarchy.create_cube` 参数完整，`gameobject.modify` 含 `path` / `instance_id` 目标定位参数。不再有 `action` / `source` 这类隐式首键分派。
 
-#### 2. 状态树执行引擎
-- 基于状态模式的路由系统
-- 支持参数验证和类型转换
-- 提供统一的错误处理机制
+**2. Attribute 声明 + 反射发现（唯一真源）**
 
-#### 3. 智能连接管理
-- 可自定义端口配置 (默认8000)
+- `[ToolModule(prefix, GroupEn, GroupZh, LegacyName)]` 标模块类（如 `[ToolModule("animator", GroupEn = "Animation", GroupZh = "动画", LegacyName = "edit_animator")]`）
+- `[ToolAction(action, Parameters, Required, Inject)]` 标 handler 方法（一个方法可声明多个动作）
+- `[ToolParam(name)]` 标参数（可标在方法上，也可标在强类型参数上）
+- `ToolCatalog.Reload()` 纯反射扫描全部 `[ToolModule]` 真实顶层类 → 绑定 handler 委托 → 从 `Keys` 解析参数元数据 → 生成精确 `inputSchema`
+- **不再需要任何生成的 `*.Tools.cs` 声明文件，也不经状态树分派**
+
+**3. 无状态树的分发**
+
+`ToolCall.HandleCommand` 命中工具名后直接 `MethodInfo.Invoke` 绑定方法；如需目标对象，实现 `ITargetedTool.ResolveTarget(ToolContext)` 在 handler 前一次性解析并存入 `_resolved_targets`。
+
+**4. 智能连接管理**
+- 可自定义端口（默认 8000）
 - 消息队列处理机制
 - 主线程安全执行保障
 
 ---
 
-## 源码解析
+## 工具框架
 
-### 1. Unity内置MCP服务器架构 (C#)
+框架位于 `unity-package/Editor/ToolFramework/`：
 
-#### 核心文件结构
+| 文件 | 职责 |
+| --- | --- |
+| `ToolAttributes.cs` | `ToolModuleAttribute` / `ToolActionAttribute` / `ToolParamAttribute` 定义 |
+| `ToolCatalog.cs` | 反射扫描全部 `[ToolModule]` 类并绑定 handler，**唯一真源** |
+| `ToolSpec.cs` | 单个工具的元数据（名称、分组、参数、注入、handler 委托） |
+| `ToolSchema.cs` | 为每个工具生成精确 `inputSchema` |
+| `ToolCall.cs` | 执行单个工具（每次调用新建实例，无共享分发状态） |
+| `ToolContext.cs` | 单次调用上下文（`JsonData` + `ObjectReferences` 双字典、索引器、`Complete` / `AsyncReturn`） |
+| `ToolModuleBase.cs` | 工具模块基类，含 `ITargetedTool` 契约 |
+| `ToolTargetResolver.cs` | 目标定位（`TargetScope { Any, Hierarchy, Project }`） |
+
+### 一个工具模块的最小形态
+
+```csharp
+[ToolModule("animator", GroupEn = "Animation", GroupZh = "动画", LegacyName = "edit_animator")]
+public class AnimatorTool : ToolModuleBase
+{
+    public override string Description => L.T("Manage Animator controllers", "管理动画控制器");
+
+    // 参数名对应 CreateKeys() 中的 MethodKey；框架反射解析出精确 inputSchema
+    protected override MethodKey[] CreateKeys() => new MethodKey[]
+    {
+        new MethodStr("path", L.T("Controller asset path", "控制器资源路径"), false),
+    };
+
+    [ToolAction("create", Parameters = new[] { "path" },
+        Required = new[] { "path" }, Inject = new[] { "action=create" })]
+    private object CreateController(JsonClass args) { /* ... */ }
+}
+```
+
+也可用强类型参数：`public object Create([ToolParam("path")] string path)`，框架会按名从 JSON 取值并转换。
+
+### 目标定位（可选）
+
+操作已存在对象的模块可实现 `ITargetedTool`，框架在 handler 运行前解析目标并存入 `_resolved_targets`：
+
+```csharp
+public object ResolveTarget(ToolContext ctx)
+    => ToolTargetResolver.Resolve<GameObject>(ctx, TargetScope.Hierarchy);
+```
+
+`TargetScope.Any` 覆盖场景与项目资源，`Hierarchy` 仅场景对象，`Project` 仅项目资源。解析失败返回 `Response.Error`，框架中止本次调用并原样回报。
+
+---
+
+## 源码结构
+
+### Unity 内置 MCP 服务器
+
 ```
 unity-package/Editor/Connect/
-├── McpService.cs           # 内置MCP服务器核心
-├── McpServiceStatusWindow.cs # 服务状态监控窗口
-└── McpServiceGUI.cs        # 服务管理界面
+├── McpService.cs               # 内置 MCP 服务器核心（HTTP + JSON-RPC + 消息队列）
+├── McpDiscovery.cs             # 发现快照、连接信息、INI 发布
+└── McpDiscoveryTests.cs        # 发现链路自检（Unity 菜单：Tools/Unity MCP/Run Discovery Self Tests）
 ```
 
-#### 关键组件解析
+**关键组件**
 
-**1. 内置MCP服务器 (McpService.cs)**
-```csharp
-// HTTP监听器管理
-public static void StartService()
-{
-    // 创建HttpListener
-    // 配置可自定义端口
-    // 启动消息队列处理
-}
-
-// MCP协议处理
-private async Task<string> ProcessMcpRequest(string requestBody)
-{
-    // JSON-RPC 2.0协议解析
-    // 工具调用路由
-    // 响应格式化
-}
-```
-
-**2. 消息队列系统**
 ```csharp
 // 主线程安全执行
-private void EnqueueTask(Action task)
-{
-    // 添加任务到队列
-    // 注册EditorApplication.update回调
-    // 确保Unity API在主线程执行
-}
+private void EnqueueTask(Action task)      // 入队 + 注册 EditorApplication.update
+private void ProcessMessageQueue()          // 出队执行 + 自动注销
 
-private void ProcessMessageQueue()
-{
-    // 处理队列中的任务
-    // 自动注册/注销update回调
-    // 线程安全的任务执行
-}
-```
-
-**3. 工具发现系统**
-```csharp
+// 工具装载（声明式）
 private void DiscoverTools()
 {
-    // 反射发现IToolMethod实现
-    // 自动注册async_call和batch_call
-    // 构建工具信息和输入模式
+    RefreshToolInfos();      // ToolCatalog.Reload() + 3 个内置入口
 }
 ```
 
-### 2. Unity工具生态架构 (C#)
+### Unity 编辑器扩展
 
-#### 核心文件结构
 ```
-unity-package/
-├── Runtime/                    # 运行时核心（精简）
-│   └── StateTreeContext.cs    # 执行上下文
-├── Editor/                     # 编辑器扩展（完整实现）
-│   ├── Connection/            # 连接管理
-│   │   └── McpService.cs     # TCP连接核心
-│   ├── Executer/              # 执行器（核心执行层）
-│   │   ├── SingleCall.cs     # 单次调用
-│   │   ├── BatchCall.cs      # 批量调用
-│   │   ├── ToolsCall.cs      # 工具调用
-│   │   ├── CoroutineRunner.cs # 协程运行器
-│   │   ├── McpTool.cs        # MCP工具基类
-│   │   ├── StateMethodBase.cs # 状态方法基类
-│   │   ├── DualStateMethodBase.cs # 双状态方法基类
-│   │   ├── IToolMethod.cs    # 工具方法接口
-│   │   ├── MethodKey.cs      # 方法键定义
-│   │   └── ToolNameAttribute.cs # 工具名称属性
-│   ├── StateTree/             # 状态树引擎
-│   │   ├── StateTree.cs      # 状态树核心
-│   │   ├── StateTreeBuilder.cs # 状态树构建器
-│   │   └── StateTreeContext.cs # 执行上下文
-│   ├── Selector/              # 选择器系统
-│   │   ├── HierarchySelector.cs # 层级选择器
-│   │   ├── ProjectSelector.cs   # 项目选择器
-│   │   ├── ObjectSelector.cs    # 对象选择器
-│   │   └── IObjectSelector.cs   # 选择器接口
-│   ├── Model/                 # 数据模型
-│   │   ├── Command.cs        # 命令模型
-│   │   ├── Response.cs       # 响应模型
-│   │   ├── McpSettings.cs    # MCP设置
-│   │   ├── McpExecuteRecordObject.cs # 执行记录
-│   │   └── UIDefineRuleObject.cs # UI规则定义
-│   ├── GUI/                   # 编辑器GUI
-│   │   ├── McpServiceGUI.cs  # 连接GUI
-│   │   ├── McpDebugWindow.cs # 调试窗口
-│   │   ├── UIDefineRuleObjectDrawer.cs # UI规则绘制器
-│   │   └── UIDefineRuleObjectEditor.cs # UI规则编辑器
-│   ├── Provider/              # 设置提供者
-│   │   ├── McpSettingsProvider.cs # MCP设置提供者
-│   │   ├── McpUISettingsProvider.cs # UI设置提供者
-│   │   └── FigmaSettingsProvider.cs # Figma设置提供者
-│   ├── Tools/                 # 工具实现
-│   │   ├── Hierarchy/        # 层级管理
-│   │   │   ├── HierarchyCreate.cs
-│   │   │   ├── HierarchySearch.cs
-│   │   │   └── HierarchyApply.cs
-│   │   ├── Projet/           # 项目管理
-│   │   │   ├── ProjectSearch.cs
-│   │   │   └── ProjectOperate.cs
-│   │   ├── ResEdit/          # 资源编辑
-│   │   │   ├── EditGameObject.cs
-│   │   │   ├── EditComponent.cs
-│   │   │   ├── EditMaterial.cs
-│   │   │   └── ... (更多编辑工具)
-│   │   ├── Console/          # 控制台工具
-│   │   │   ├── ConsoleRead.cs
-│   │   │   └── ConsoleWrite.cs
-│   │   ├── RunCode/          # 代码运行
-│   │   │   ├── CodeRunner.cs
-│   │   │   └── PythonRunner.cs
-│   │   ├── UI/               # UI工具
-│   │   │   ├── UGUILayout.cs
-│   │   │   ├── UIRuleManage.cs
-│   │   │   ├── FigmaManage.cs
-│   │   │   └── FigmaDataSimplifier.cs
-│   │   ├── GameWindow/       # 游戏窗口
-│   │   ├── Setting/          # 设置工具
-│   │   ├── GamePlay.cs       # 游戏玩法
-│   │   ├── BaseEditor.cs   # 编辑器管理
-│   │   ├── ManagePackage.cs  # 包管理
-│   │   ├── ObjectDelete.cs   # 对象删除
-│   │   ├── RequestHttp.cs    # HTTP请求
-│   │   └── Storage/          # 存储管理
-│   │       ├── Prefers.cs    # 偏好设置
-│   │       └── SourceLocation.cs # 资源定位
-│   ├── Utils/                # 工具类库
-│   │   ├── ConsoleUtils.cs   # 控制台工具
-│   │   ├── GameObjectUtils.cs # GameObject工具
-│   │   ├── UGUIUtil.cs       # UGUI工具
-│   │   ├── MenuUtils.cs      # 菜单工具
-│   │   └── CursorChatIntegration.cs # Cursor集成
-│   └── UniMcp.Editors.asmdef # 程序集定义
-└── package.json              # 包配置
+unity-package/Editor/
+├── Connect/                   # MCP 服务与发现
+├── Executer/                  # 执行器（AsyncCall / CoroutineRunner / McpTool / MethodKey / ToolNameAttribute）
+├── ToolFramework/            # Attribute 反射框架（见「工具框架」）
+├── Tools/                    # 工具模块：一个 [ToolModule] = 一个真实顶层类
+│   ├── Hierarchy/            # HierarchyApplyTool / HierarchyCreateTool / HierarchySearchTool
+│   ├── Projet/               # ProjectCreateTool / ProjectOperateTool / ProjectSearchTool
+│   ├── Console/ConsoleTool.cs        # 控制台（单类暴露 14 个 console.* 工具）
+│   ├── ResEdit/              # AnimatorTool / AnimClipTool / GameObjectTool / MaterialTool / MeshTool ...
+│   ├── RunCode/              # CodeTool / PythonTool
+│   ├── UI/                   # UGUILayoutTool / UiToolkitTool
+│   ├── Window/               # GameViewTool / CameraTool / SceneViewTool
+│   ├── Setting/              # PackageTool / TagLayerTool
+│   ├── Storage/              # PrefersTool / SourceLocationTool
+│   ├── BaseEditorTool.cs / EngineTool.cs / GamePlayTool.cs / ObjectTool.cs / HttpTool.cs / TestsTool.cs
+├── Model/                    # 数据模型（Response / McpSettings / AsyncCallResultStore ...）
+├── GUI/                      # MCP 状态窗口、调试窗口
+├── Provider/                 # 设置提供者
+├── Utils/                    # 工具类库（ConsoleUtils / GameObjectUtils / MenuUtils ...）
+└── Unity.Mcp.Editors.asmdef
 ```
 
-#### 关键组件解析
+> `StateTree/` 与 `Selector/` 目录**已删除**。
 
-**1. 状态树引擎 (Editor/StateTree/StateTree.cs)**
-```csharp
-public class StateTree
-{
-    public string key;                                    // 当前层变量
-    public Dictionary<object, StateTree> select = new(); // 选择分支
-    public Func<StateTreeContext, object> contextFunc;   // 叶子函数
-    
-    public object Run(StateTreeContext ctx)
-    {
-        // 状态树路由逻辑
-        // 参数验证和类型转换
-        // 方法执行和结果处理
-    }
-}
+### Runtime Package（独立精简运行时）
+
 ```
-- **位置变化**：从 Runtime 移动到 Editor/StateTree
-- **配套工具**：新增 StateTreeBuilder 构建器，简化状态树构建流程
-
-**2. HTTP服务器管理 (Editor/Connect/McpService.cs)**
-```csharp
-public partial class McpService
-{
-    private HttpListener listener;
-    private readonly Queue<Action> messageQueue = new();
-    
-    public void Start()
-    {
-        // 可自定义端口监听 (默认8000)
-        // HTTP请求处理
-        // 消息队列管理
-    }
-    
-    private async Task<string> ProcessMcpRequest(string requestBody)
-    {
-        // JSON-RPC 2.0解析
-        // 工具调用路由
-        // 响应生成
-    }
-}
+unity-runtime-package/Runtime/
+├── Connect/                  # RuntimeMcpService / McpRequest / McpResponse / ToolInfo
+├── Executer/                 # McpTool / IToolMethod / StateTreeContext / ToolsCall / ToolNameAttribute
+├── Model/                    # MethodKey / Response
+└── Utils/                    # RuntimeLogger / SimpleJson
 ```
 
-**3. 门面工具 (Editor/Executer/AsyncCall.cs / BatchCall.cs)**
-```csharp
-public class AsyncCall : McpTool
-{
-    public override void HandleCommand(JsonNode cmd, Action<JsonNode> callback)
-    {
-        string id = cmd["id"]?.Value;
-        string type = cmd["type"]?.Value;
-        
-        // 异步调用管理
-        // 结果缓存和获取
-        HandleAsyncOperation(id, type, cmd, callback);
-    }
-}
-```
+> **注意**：运行时包是**独立程序集**，面向 Player 侧，未随 Editor 侧移除状态树。Editor 侧 demo 中 `Assets/Runtime/RuntimeToolsExample.cs` 使用该包的 `IToolMethod` + `StateTreeContext`，属预期，不受 Editor 重构影响。
 
-**4. 协程运行器 (Editor/Executer/CoroutineRunner.cs)**
-```csharp
-public class CoroutineRunner : MonoBehaviour
-{
-    // 支持在编辑器模式下运行协程
-    // 用于异步操作（如HTTP请求、文件下载等）
-}
-```
-- **位置变化**：从 Runtime 移动到 Editor/Executer
-- **功能增强**：支持编辑器模式下的协程执行
+### 工具模块分类
 
-**5. 选择器系统 (Editor/Selector/)**
-```csharp
-// 统一的对象选择接口
-public interface IObjectSelector
-{
-    Object[] SelectObjects(string[] paths);
-}
+当前 `unity-package/Editor/Tools/` 共 **43 个 `[ToolModule]`、364 个 `[ToolAction]`**，主要域包括：
 
-// 层级选择器：用于选择场景中的GameObject
-public class HierarchySelector : IObjectSelector { }
+| 域前缀 | 覆盖 |
+| --- | --- |
+| `hierarchy` (22) | 层级创建 / 搜索 / 应用预制体 |
+| `project` (33) | 项目资源创建 / 操作 / 搜索 |
+| `animator` (20) | Animator 结构（层、状态、过渡、参数、1D 混合树）与运行时控制 |
+| `anim_clip` (10) | 动画片段、曲线、事件、设置 |
+| `engine` (17) | 构建、平台、工程设置、编译诊断、撤销重做、选择集 |
+| `gameplay` (18) | Play 模式驱动、帧步进、时间缩放 |
+| `ui` (16) | UI Toolkit（UXML/USS、PanelSettings、UIDocument） |
+| `ugui` (3) | UGUI 布局 |
+| `camera` (11) | 相机创建 / 配置 / 截图；Cinemachine（可选） |
+| `effects` (12) | LineRenderer / TrailRenderer；VFX Graph（可选） |
+| `terrain` (14) / `probuilder` (6) / `tests` (3) | 地形；ProBuilder（可选）；Test Runner（可选） |
+| `console` (14) | 控制台读 / 写 / 清空 |
+| `code` (3) / `python` (4) | C# 代码执行（`mode` 显式选择）/ Python 脚本 |
+| `http` (8) | HTTP 请求、下载、上传 |
+| `package` (10) / `tag_layer` (6) / `prefers` (6) / `source_location` (5) | 包管理 / 标签层 / 偏好设置 / 资源定位 |
+| `material` / `mesh` / `model` / `prefab` / `scene` / `script` / `shader` / `sprite_atlas` / `scriptable_object` / `particle` / `audio` / `texture` / `object` / `component` / `gameobject` | 资源编辑系列 |
+| `game_view` / `scene_view` / `editor` | 窗口 / 编辑器基础 |
 
-// 项目选择器：用于选择项目资源
-public class ProjectSelector : IObjectSelector { }
-```
-- **新增模块**：提供统一的对象选择机制
-- **应用场景**：支持灵活的对象查询和批量操作
-
-**6. 工具方法基类 (Editor/Executer/)**
-- **StateMethodBase**：单状态树工具基类
-- **DualStateMethodBase**：双状态树工具基类（支持更复杂的路由）
-- **IToolMethod**：工具方法接口，定义工具标准
-- **ToolNameAttribute**：工具名称属性，用于自动注册
-
-**7. GUI系统 (Editor/GUI/)**
-- **McpServiceGUI**：连接状态显示和控制
-- **McpDebugWindow**：调试窗口，查看执行历史和日志
-- **UI规则编辑器**：可视化UI规则定义工具
-
-### 3. 工具生态架构
-
-#### 工具分类体系
-1. **层级管理工具** (Tools/Hierarchy/)
-   - `hierarchy_create`：创建GameObject
-   - `hierarchy_search`：搜索和查询GameObject
-   - `hierarchy_apply`：应用预制体
-
-2. **资源编辑工具** (Tools/ResEdit/)
-   - `edit_gameobject`：编辑GameObject属性
-   - `edit_component`：编辑组件属性
-   - `edit_material`：编辑材质
-   - `edit_texture`：编辑纹理
-   - 等多个编辑工具
-
-3. **项目管理工具** (Tools/Projet/)
-   - `project_search`：搜索项目资源
-   - `project_operate`：项目操作
-
-4. **UI开发工具** (Tools/UI/)
-   - `ugui_layout`：UGUI布局
-   - `ui_rule_manage`：UI规则管理
-   - `figma_manage`：Figma资源管理
-   - `figma_data_simplifier`：Figma数据简化
-
-5. **控制台工具** (Tools/Console/)
-   - `console_read`：读取控制台日志
-   - `console_write`：写入控制台日志
-
-6. **代码运行工具** (Tools/RunCode/)
-   - `code_runner`：运行 C# 代码，必须显式传 `mode` 才会编译。`mode=none`（默认）**不编译、不执行**；`mode=runtime` 走 CodeDOM `GenerateInMemory` 内存编译（不落盘、不生成工程内 DLL、不触发 Unity 编译管线，接收 C# 语句片段）；`mode=dll` 走原 `AssemblyBuilder` 流程（写临时 `.cs` → 编译 DLL → 加载，支持完整类/命名空间）。`action` 支持 `probe` / `validate` / `execute`
-   - `python_runner`：运行Python脚本
-
-7. **编辑器工具** (Tools/)
-   - `base_editor`：编辑器管理
-   - `manage_package`：包管理
-   - `gameplay`：游戏玩法控制
-   - `object_delete`：对象删除
-
-8. **引擎控制工具** (Tools/EngineControl.cs)
-   - `engine_control`：构建流水线（构建设置、平台切换、构建执行与状态）、编辑器工具与选择集、工程设置（Player/时间/质量/物理/序列化/进入播放模式）、编译状态与重编译、撤销重做与单步
-
-9. **动画、UI、相机、特效、测试与建模工具**
-   - `edit_animator`：Animator Controller 结构（层、状态、过渡、参数、1D 混合树）与运行时 Animator 控制；片段/曲线仍用 `edit_anim_clip`
-   - `ui_toolkit`：UXML/USS 文本读写、元素增删改、UIDocument 挂接、PanelSettings 配置与可视化结构检查；UGUI 布局仍用 `ugui_layout`
-   - `manage_camera`：场景相机创建/配置/朝向/离屏截图/多视角截图，安装 Cinemachine 后提供虚拟相机与 Brain 操作
-   - `edit_effects`：LineRenderer、TrailRenderer 创建与样式，VFX Graph 参数、事件与播放控制；传统粒子仍用 `edit_particle_system`
-   - `run_tests`：Unity Test Runner 的 Edit/Play 模式执行与结果轮询（需 `com.unity.test-framework`）
-   - `edit_probuilder`：ProBuilder 形状创建、拓扑挤出/删面与平滑（需 `com.unity.probuilder`）
-   - 说明：Cinemachine、VFX Graph、ProBuilder、Test Framework 均为可选包，通过运行时反射访问，未安装时对应工具返回明确提示，不影响其余工具编译与使用
-
-10. **存储管理工具** (Tools/Storage/)
-   - `prefers`：偏好设置管理（EditorPrefs/PlayerPrefs）
-   - `source_location`：资源定位（文件浏览器、项目定位）
-
-11. **网络工具** (Tools/)
-   - `request_http`：HTTP请求
-
-#### 工具实现模式
-```csharp
-[ToolName("tool_name", "工具描述")]
-public class ToolClass : StateMethodBase
-{
-    protected override MethodKey[] CreateKeys()
-    {
-        return new[]
-        {
-            new MethodKey("param1", "参数描述", false),
-            new MethodKey("param2", "参数描述", true)
-        };
-    }
-    
-    protected override StateTree CreateStateTree()
-    {
-        return StateTreeBuilder
-            .Create()
-            .Key("action")
-                .Leaf("action1", HandleAction1)
-                .Leaf("action2", HandleAction2)
-            .Build();
-    }
-}
-```
+> 可选包（Cinemachine、VFX Graph、ProBuilder、Test Framework）均通过运行时反射访问，未安装时**不影响其余工具编译与使用**，对应工具返回明确的「未安装」提示。
 
 ---
 
@@ -428,591 +255,136 @@ public class ToolClass : StateMethodBase
 
 ### 1. 环境准备
 
-#### 系统要求
-- Unity 2020.3+ (推荐 2022.3.61f1c1)
-- 支持MCP协议的AI客户端 (Cursor/Claude/Trae)
-- Windows/macOS/Linux (跨平台支持)
+- Unity 2021.3+（本项目在 2021.3.45f2c1 验证）
+- 支持 MCP 协议的 AI 客户端（Cursor / Claude / Trae 等）
+- Windows / macOS / Linux
+- 技能客户端仅需 **Node.js 18+**，无第三方依赖
 
-#### 依赖安装
-```bash
-# Unity Package
-# 将unity-package导入Unity项目
-# 技能客户端只需 Node.js 18+，无第三方依赖
+### 2. 安装与启动
+
+1. 将 `unity-package` 导入 Unity 项目（`unity-runtime-package` 视需要导入）。
+2. 在 Unity 中打开 **Window → MCP → Status**，确认设置后启动服务，默认端口 `8000`。
+3. 每次成功启动会把当前连接与技能运行设置写入：
+
+```text
+~/.unity-mcp/skill.ini
 ```
 
-### 2. 配置设置
+改端口在服务重启后生效；最后成功启动的 Unity 项目会覆盖该文件。
 
-#### MCP客户端配置
-在AI客户端的MCP配置文件中添加：
-**Mcp客户端口配置** 
+### 3. Unity 编辑器配置
+
+- **MCP 设置窗口**（`Edit → Project Settings → MCP`）：连接开关、已注册工具列表、端口、日志级别、UI 设置、Figma 设置。
+
+  ![MCP 设置窗口](docs/mcp_settings.png)
+
+- **MCP 调试窗口**（`Window → MCP → Debug Window`）：调用记录、执行结果、时间戳、重新触发、过滤搜索、导出日志。
+
+  ![MCP 调试窗口](docs/mcp_debug.png)
+
+### 4. Unity 设置与连接文件
+
+| 设置 | 取值 | 默认 / 行为 |
+| --- | --- | --- |
+| 服务端口 | 合法端口号 | `8000` |
+| 单次请求详情上限 `max_details` | 非负整数 | `32`；`0` 取消数量上限 |
+
+即使数量上限为 `0`，**响应字节上限仍为 65,536 UTF-8 字节**；一次选择全部可用能力会被拒绝；服务不会静默截断超限结果。
+
+```ini
+[unity3d-skilled-mcp]
+base_url=http://localhost:8000
+port=8000
+project_path=/path/to/UnityProject
+process_id=12345
+updated_at=2026-11-06T02:00:00.0000000Z
+max_details=32
+```
+
+INI 只含本地连接元数据与启动设置，**不发布 `mcp_url`**，也不再发布脚本语言字段。技能客户端每次命令重新读取并校验服务；不扫端口、不自动重放写操作。
+
+### 5. 基本使用
+
+在 AI 客户端中直接描述任务，客户端会先发现、再调用。例如「创建一个 Cube 并放到 (0,1,0)」「把控制台的报错整理出来」。
+
+### 6. MCP 客户端配置（兼容路径）
+
+既有 MCP 客户端可继续直连，无需安装技能：
+
 ```json
 {
   "mcpServers": {
     "unity3d-mcp": {
-      "url":  "http://localhost:8000"
+      "url": "http://localhost:8000"
     }
   }
 }
 ```
-**Cursor配置** (`~/.cursor/mcp.json`)：
-**Claude配置** (`~/AppData/Roaming/Claude/claude_desktop_config.json`)：
-**VS配置** (`~/.vs/mcp.json`)：  
-**Trae配置** (`~/.trae/mcp.json`)
 
-#### Unity编辑器配置
+常见客户端配置位置：`~/.cursor/mcp.json`、`~/AppData/Roaming/Claude/claude_desktop_config.json`、`~/.vs/mcp.json`、`~/.trae/mcp.json`。
 
-在Unity编辑器中，可以通过以下窗口进行MCP配置和调试：
+### 7. 多步操作编排
 
-**1. MCP设置窗口** (`Edit → Project Settings → MCP`)
+批量调用接口已移除。需要连续执行多个调用时，用技能的 JS 库 API 自己写循环：先取定义、再按次序逐次 `callSkill`；遇错是否继续、失败后重放哪些步骤，都由调用方代码决定。每次调用独立校验 INI 与 discovery，写操作不自动回滚。
 
-![MCP设置窗口](docs/mcp_settings.png)
-
-*图：MCP设置窗口 - 配置MCP连接开关、查看已注册的工具列表、管理工具分类等*
-
-MCP设置窗口提供以下功能：
-- **连接开关**：启用/禁用MCP服务器连接
-- **工具列表**：查看所有已注册的MCP工具及其分类
-- **端口配置**：配置HTTP监听端口（默认8000，可自定义）
-- **日志级别**：设置调试日志的详细程度
-- **UI设置**：配置UI类型（UGUI、UIToolkit等）和构建流程
-- **Figma设置**：配置Figma访问令牌和下载选项
-
-**2. MCP调试窗口** (`Window → MCP → Debug Window`)
-
-![MCP调试窗口](docs/mcp_debug.png)
-
-*图：MCP调试窗口 - 记录和查看所有MCP调用历史，支持重新执行历史命令*
-
-MCP调试窗口提供以下功能：
-- **调用记录**：实时记录所有MCP工具调用及其参数
-- **执行结果**：显示每次调用的成功/失败状态和返回数据
-- **时间戳**：记录每次调用的准确时间
-- **重新触发**：点击历史记录可以重新执行相同的命令
-- **过滤搜索**：按工具名称、状态、时间等条件过滤记录
-- **导出日志**：将调用记录导出为JSON格式，便于分析和调试
-
-通过这两个窗口，开发者可以：
-- 快速配置和管理MCP连接
-- 实时监控AI与Unity的交互过程
-- 调试和重现问题
-- 学习和理解MCP工具的使用方式
-
-### 3. Agent 技能与省 Token 使用建议
-
-为避免 MCP 工具列表与 Schema 占用过多上下文 Token，项目提供 **Agent 技能模块**（见 [Agent 技能模块](#agent-技能模块)）。建议在 Cursor Rules 或 Agent 配置中按需引用 `demo/.cursor/skills` 下对应技能的 `SKILL.md`，由 Agent 在相关任务时再加载该技能说明并调用 MCP，从而显著节省 Token。
-
-### 4. 启动流程
-
-#### 4.1 启动Unity编辑器
-```bash
-# 打开Unity项目
-# Unity Package会自动启动内置MCP服务器
-```
-
-#### 4.2 验证连接
-在AI客户端中测试连接：
-```
-请帮我创建一个Cube对象
-```
-
-### 5. 基本使用示例
-
-#### 创建GameObject
-```python
-# 通过AI客户端发送指令
-"创建一个名为Player的Cube对象"
-```
-
-#### 批量操作
-```python
-# 批量创建多个对象
-"创建5个Enemy对象，位置分别为(0,0,0), (1,0,0), (2,0,0), (3,0,0), (4,0,0)"
-```
-
-#### 资源管理
-```python
-# 下载并应用图片
-"下载一张随机图片并应用到Image组件"
-```
-
-### 6. 高级用法
-
-#### 自定义工具开发
-1. 在`unity-package/Editor/Tools/`目录创建新工具文件
-2. 继承`StateMethodBase`或`IToolMethod`接口
-3. 使用`ToolNameAttribute`标记工具名称
-4. Unity会自动发现和注册新工具
-
-#### 批量操作优化
-```json
-// 使用batch_call提高性能
-{
-  "func": "batch_call",
-  "args": [
-    {"func": "hierarchy_create", "args": {...}},
-    {"func": "edit_gameobject", "args": {...}},
-    {"func": "edit_component", "args": {...}}
-  ]
+```js
+const unity = require('./scripts/unity_mcp.js');
+const catalog = await unity.listCapabilities('tools');
+for (const step of await planFromCatalog(catalog)) {
+  await unity.callSkill(step.name, step.args);
 }
 ```
 
-### 7. 扩展性应用场景
-
-#### 场景1：AI图片生成与自动应用
-通过 `python_runner` 集成AI图像生成库，自动创建游戏素材：
-
-```python
-# Python脚本示例：AI生成游戏纹理
-"""
-用途：使用Stable Diffusion批量生成游戏纹理
-提示词：帮我生成10张fantasy风格的地面纹理
-"""
-from diffusers import StableDiffusionPipeline
-import torch
-
-def generate_textures(prompt, count=10, save_path="Assets/Textures/Generated"):
-    # 加载模型
-    pipe = StableDiffusionPipeline.from_pretrained("stabilityai/stable-diffusion-2-1")
-    pipe = pipe.to("cuda")
-    
-    # 批量生成
-    for i in range(count):
-        image = pipe(f"{prompt}, texture, seamless, 4k, #{i}").images[0]
-        image.save(f"{save_path}/texture_{i:03d}.png")
-        
-    return f"生成了{count}张纹理到{save_path}"
-
-# 然后通过code_runner自动应用到Material
-"""
-C#代码：自动创建Material并应用生成的纹理
-"""
-string[] texturePaths = Directory.GetFiles("Assets/Textures/Generated", "*.png");
-foreach(var path in texturePaths)
-{
-    AssetDatabase.ImportAsset(path);
-    Texture2D texture = AssetDatabase.LoadAssetAtPath<Texture2D>(path);
-    
-    Material mat = new Material(Shader.Find("Standard"));
-    mat.mainTexture = texture;
-    AssetDatabase.CreateAsset(mat, path.Replace(".png", ".mat"));
-}
-AssetDatabase.Refresh();
-```
-
-**应用价值**：
-- 快速原型制作，无需等待美术资源
-- 根据游戏风格批量生成一致性素材
-- 实验不同艺术风格，提高创意迭代速度
-
-#### 场景2：批量爬取游戏资源
-通过 `python_runner` 从开源资源站批量下载并整理资源：
-
-```python
-# Python脚本示例：批量爬取Poly Haven资源
-"""
-用途：从Poly Haven批量下载高质量PBR材质
-提示词：帮我下载所有metal类别的PBR材质到项目中
-"""
-import requests
-import os
-from concurrent.futures import ThreadPoolExecutor
-
-def download_polyhaven_assets(category, asset_type="textures", resolution="2k"):
-    # 获取资源列表
-    api_url = f"https://api.polyhaven.com/assets?t={asset_type}&c={category}"
-    assets = requests.get(api_url).json()
-    
-    save_dir = f"Assets/Materials/{category}"
-    os.makedirs(save_dir, exist_ok=True)
-    
-    def download_asset(asset_id):
-        # 获取下载链接
-        files_url = f"https://api.polyhaven.com/files/{asset_id}"
-        files = requests.get(files_url).json()
-        
-        # 下载PBR贴图（Diffuse, Normal, Roughness等）
-        for map_type in ["Diffuse", "Normal", "Rough", "Displacement"]:
-            if map_type in files[resolution]:
-                url = files[resolution][map_type]["url"]
-                filename = f"{save_dir}/{asset_id}_{map_type}.jpg"
-                
-                response = requests.get(url)
-                with open(filename, 'wb') as f:
-                    f.write(response.content)
-        
-        return asset_id
-    
-    # 并发下载
-    with ThreadPoolExecutor(max_workers=5) as executor:
-        results = list(executor.map(download_asset, assets.keys()))
-    
-    return f"下载了{len(results)}个{category}材质到{save_dir}"
-
-# 配合code_runner自动创建PBR材质
-"""
-C#代码：根据下载的贴图自动创建PBR Material
-"""
-string materialDir = "Assets/Materials/metal";
-var assetGroups = Directory.GetFiles(materialDir, "*_Diffuse.jpg")
-    .Select(path => Path.GetFileNameWithoutExtension(path).Replace("_Diffuse", ""));
-
-foreach(var assetName in assetGroups)
-{
-    Material mat = new Material(Shader.Find("Standard"));
-    
-    // 设置PBR贴图
-    mat.mainTexture = LoadTexture($"{materialDir}/{assetName}_Diffuse.jpg");
-    mat.SetTexture("_BumpMap", LoadTexture($"{materialDir}/{assetName}_Normal.jpg"));
-    mat.SetTexture("_MetallicGlossMap", LoadTexture($"{materialDir}/{assetName}_Rough.jpg"));
-    
-    AssetDatabase.CreateAsset(mat, $"{materialDir}/{assetName}.mat");
-}
-```
-
-**应用价值**：
-- 快速充实资源库，节省采购成本
-- 自动化资源导入和配置流程
-- 支持定制化资源筛选和分类
-
-#### 场景3：项目架构图自动生成
-通过 `python_runner` 分析Unity项目，生成可视化架构图：
-
-```python
-# Python脚本示例：生成项目架构图
-"""
-用途：分析Unity项目结构，生成交互式架构图
-提示词：帮我生成当前Unity项目的架构图，包括脚本依赖关系
-"""
-import os
-import re
-from graphviz import Digraph
-import json
-
-def generate_project_architecture(project_path="Assets/Scripts"):
-    # 解析C#脚本，提取类和依赖关系
-    classes = {}
-    dependencies = []
-    
-    for root, dirs, files in os.walk(project_path):
-        for file in files:
-            if file.endswith('.cs'):
-                filepath = os.path.join(root, file)
-                with open(filepath, 'r', encoding='utf-8') as f:
-                    content = f.read()
-                    
-                    # 提取类名
-                    class_match = re.search(r'class\s+(\w+)', content)
-                    if class_match:
-                        class_name = class_match.group(1)
-                        classes[class_name] = {
-                            'file': filepath,
-                            'namespace': re.search(r'namespace\s+([\w.]+)', content),
-                            'inherits': re.search(r':\s*(\w+)', content)
-                        }
-                        
-                        # 提取依赖
-                        using_matches = re.findall(r'using\s+([\w.]+);', content)
-                        for using in using_matches:
-                            if using in classes:
-                                dependencies.append((class_name, using))
-    
-    # 生成GraphViz图
-    dot = Digraph(comment='Unity Project Architecture')
-    dot.attr(rankdir='TB', size='20,20')
-    
-    # 按命名空间分组
-    namespaces = {}
-    for class_name, info in classes.items():
-        ns = info['namespace'].group(1) if info['namespace'] else 'Global'
-        if ns not in namespaces:
-            namespaces[ns] = []
-        namespaces[ns].append(class_name)
-    
-    # 添加节点和子图
-    for ns, class_list in namespaces.items():
-        with dot.subgraph(name=f'cluster_{ns}') as c:
-            c.attr(label=ns, style='filled', color='lightgrey')
-            for class_name in class_list:
-                c.node(class_name, shape='box')
-    
-    # 添加依赖边
-    for src, dst in dependencies:
-        dot.edge(src, dst)
-    
-    # 保存图
-    output_path = 'docs/unity_architecture'
-    dot.render(output_path, format='png', cleanup=True)
-    
-    # 生成JSON报告
-    report = {
-        'total_classes': len(classes),
-        'namespaces': {ns: len(cls) for ns, cls in namespaces.items()},
-        'dependencies_count': len(dependencies)
-    }
-    
-    with open(f'{output_path}.json', 'w') as f:
-        json.dump(report, f, indent=2)
-    
-    return f"架构图已生成: {output_path}.png"
-```
-
-**应用价值**：
-- 快速了解项目结构，新成员快速上手
-- 识别循环依赖和架构问题
-- 文档自动化，保持与代码同步
-
-#### 场景4：性能分析与优化建议
-通过 `code_runner` 分析场景性能瓶颈：
-
-```csharp
-// C#代码：场景性能分析工具
-using System.Linq;
-using UnityEngine;
-using UnityEngine.SceneManagement;
-using UnityEditor;
-
-public class PerformanceAnalyzer
-{
-    public static string AnalyzeCurrentScene()
-    {
-        var report = new System.Text.StringBuilder();
-        report.AppendLine("=== 场景性能分析报告 ===\n");
-        
-        // 统计GameObject数量
-        var allObjects = Object.FindObjectsOfType<GameObject>();
-        report.AppendLine($"总GameObject数量: {allObjects.Length}");
-        
-        // 检查Draw Call问题
-        var renderers = Object.FindObjectsOfType<Renderer>();
-        var materials = renderers.SelectMany(r => r.sharedMaterials).Distinct().ToList();
-        report.AppendLine($"Renderer数量: {renderers.Length}");
-        report.AppendLine($"不同材质数量: {materials.Count}");
-        
-        // 检查大型Mesh
-        var meshFilters = Object.FindObjectsOfType<MeshFilter>();
-        var largeMeshes = meshFilters
-            .Where(mf => mf.sharedMesh != null && mf.sharedMesh.vertexCount > 10000)
-            .Select(mf => new { mf.gameObject.name, mf.sharedMesh.vertexCount })
-            .OrderByDescending(m => m.vertexCount)
-            .ToList();
-        
-        if (largeMeshes.Any())
-        {
-            report.AppendLine("\n⚠️ 高多边形模型:");
-            foreach (var mesh in largeMeshes)
-                report.AppendLine($"  - {mesh.name}: {mesh.vertexCount:N0} 顶点");
-        }
-        
-        // 检查缺失脚本
-        var missingScripts = allObjects
-            .Where(go => go.GetComponents<Component>().Any(c => c == null))
-            .ToList();
-        
-        if (missingScripts.Any())
-        {
-            report.AppendLine($"\n⚠️ 发现{missingScripts.Count}个对象包含缺失脚本");
-        }
-        
-        // 检查灯光设置
-        var lights = Object.FindObjectsOfType<Light>();
-        var realtimeLights = lights.Where(l => l.type != LightType.Directional && l.lightmapBakeType == LightmapBakeType.Realtime).ToList();
-        
-        if (realtimeLights.Count > 4)
-        {
-            report.AppendLine($"\n⚠️ 实时光源过多({realtimeLights.Count}个)，建议烘焙");
-        }
-        
-        // 优化建议
-        report.AppendLine("\n=== 优化建议 ===");
-        if (materials.Count > 50)
-            report.AppendLine("• 考虑合并材质球以减少Draw Call");
-        if (largeMeshes.Count > 10)
-            report.AppendLine("• 对高多边形模型启用LOD系统");
-        if (realtimeLights.Count > 4)
-            report.AppendLine("• 将静态光源改为Baked模式");
-        
-        return report.ToString();
-    }
-}
-
-// 调用示例
-Debug.Log(PerformanceAnalyzer.AnalyzeCurrentScene());
-```
-
-**应用价值**：
-- 自动发现性能瓶颈
-- 提供可执行的优化建议
-- 定期性能审计，防止性能退化
-
-#### 场景5：自动化测试数据生成
-通过 `python_runner` 生成测试用游戏数据：
-
-```python
-# Python脚本示例：生成游戏测试数据
-"""
-用途：批量生成游戏配置数据，用于压力测试
-提示词：帮我生成1000个随机的敌人配置数据
-"""
-import random
-import json
-import faker
-
-fake = faker.Faker('zh_CN')
-
-def generate_game_data(data_type, count=1000):
-    if data_type == "enemies":
-        enemies = []
-        for i in range(count):
-            enemy = {
-                "id": f"enemy_{i:04d}",
-                "name": fake.name(),
-                "level": random.randint(1, 100),
-                "health": random.randint(100, 10000),
-                "attack": random.randint(10, 500),
-                "defense": random.randint(5, 300),
-                "speed": round(random.uniform(1.0, 10.0), 2),
-                "skills": random.sample([
-                    "火球术", "冰冻", "闪电链", "治疗", "护盾", 
-                    "狂暴", "隐身", "召唤", "毒雾", "眩晕"
-                ], k=random.randint(2, 5)),
-                "drop_items": [
-                    {"item_id": f"item_{random.randint(1,100)}", 
-                     "drop_rate": round(random.uniform(0.01, 0.5), 3)}
-                    for _ in range(random.randint(1, 5))
-                ]
-            }
-            enemies.append(enemy)
-        
-        # 保存为JSON
-        output_path = "Assets/Resources/Data/Enemies.json"
-        os.makedirs(os.path.dirname(output_path), exist_ok=True)
-        with open(output_path, 'w', encoding='utf-8') as f:
-            json.dump(enemies, f, ensure_ascii=False, indent=2)
-        
-        return f"生成了{count}个敌人配置到{output_path}"
-    
-    elif data_type == "items":
-        # 类似的物品数据生成...
-        pass
-    
-    elif data_type == "quests":
-        # 任务数据生成...
-        pass
-
-# 然后用code_runner加载并验证数据
-"""
-C#代码：验证生成的游戏数据
-"""
-string json = File.ReadAllText("Assets/Resources/Data/Enemies.json");
-var enemies = JsonUtility.FromJson<EnemyData[]>(json);
-
-Debug.Log($"成功加载{enemies.Length}个敌人配置");
-Debug.Log($"平均等级: {enemies.Average(e => e.level):F1}");
-Debug.Log($"最强敌人: {enemies.OrderByDescending(e => e.attack).First().name}");
-```
-
-**应用价值**：
-- 快速生成大量测试数据
-- 压力测试和性能测试
-- 验证系统承载能力
-
-#### 场景6：自动化本地化翻译
-通过 `python_runner` 集成翻译API，批量翻译游戏文本：
-
-```python
-# Python脚本示例：批量翻译游戏文本
-"""
-用途：使用AI批量翻译游戏本地化文本
-提示词：把所有UI文本翻译成英文、日文、韩文
-"""
-from openai import OpenAI
-import json
-
-def batch_translate_localization(source_file, target_langs=["en", "ja", "ko"]):
-    client = OpenAI()
-    
-    # 读取源语言文本
-    with open(source_file, 'r', encoding='utf-8') as f:
-        source_texts = json.load(f)
-    
-    translations = {lang: {} for lang in target_langs}
-    
-    # 批量翻译
-    for key, text in source_texts.items():
-        for lang in target_langs:
-            prompt = f"Translate this game UI text to {lang}, keep game terminology: {text}"
-            response = client.chat.completions.create(
-                model="gpt-4",
-                messages=[{"role": "user", "content": prompt}]
-            )
-            translations[lang][key] = response.choices[0].message.content
-    
-    # 保存翻译结果
-    for lang, texts in translations.items():
-        output_path = f"Assets/Localization/{lang}/ui_texts.json"
-        os.makedirs(os.path.dirname(output_path), exist_ok=True)
-        with open(output_path, 'w', encoding='utf-8') as f:
-            json.dump(texts, f, ensure_ascii=False, indent=2)
-    
-    return f"翻译完成，生成了{len(target_langs)}个语言版本"
-```
-
-**应用价值**：
-- 快速实现多语言支持
-- 保持术语一致性
-- 降低本地化成本
-
----
-
-通过这些扩展场景，`python_runner` 和 `code_runner` 成为强大的自动化工具，覆盖从资源生成、数据采集、性能分析到质量保证的完整开发流程。
+> 构建、切平台、重编译、测试运行期间不要与其他写操作并发。
 
 ---
 
 ## Agent 技能模块
 
-MCP 协议会向 AI 提供完整的工具列表与参数 Schema，在工具数量较多时**占用大量 Token**。为降低上下文消耗，项目增加了 **Skill 模块**（`unity-package/Skills/unity3d-skill/`），与 MCP 配合使用，实现「按需发现、按需取定义、用完即弃」。
+MCP 协议会向 AI 提供完整工具列表与 Schema，工具较多时**占用大量 Token**。为降低上下文消耗，项目提供 **Skill 模块**（`unity-package/Skills/unity3d-skill/`），实现「按需发现、按需取定义、用完即弃」。
+
+### 铁律：先发现，后使用
+
+- 技能**不载任何具体工具、动作、参数、枚举或能力之名**。工程注册何物、启用何物、缺包不可用何物，唯运行中的服务知之。
+- 顺序固定：`discover` 验服务 → `groups` / `list` / `find` 定成员 → `details` / `schema` / `schemas` 取定义 → `call` 依定义调用。
+- 工具名、提示词名、资源 URI、tag、参数及取值，**皆须出自本次服务返回**。禁凭记忆猜名；禁跳过发现径直 `call`；404/400 不是「换名再试」的信号。
+- 参数语义**只以该工具本次 `schema` 为准**；不可逆操作先读确认参数说明，显式授权只能由调用方给出。
 
 ### 实现方式
 
-- **统一技能入口**：一个 `SKILL.md` 说明连接方式、命令用法与安全边界，不内联任何工具参数。
-- **渐进式发现**：先 `GET /groups` 与 `GET /tools` 只取名称、短说明和标签；需要参数时再取定义，避免一次性灌入全部 Schema。
-- **单个或批量 Schema**：`schema NAME` 读取单个工具定义（`GET /tools/{name}/schema`）；`schemas A B C` 一次读取多个工具定义（`POST /capabilities/schemas`），返回标准 `{name, description, inputSchema}`，可直接用于调用。
-- **混合详情**：`details --tag TAG` 按标签组取详情，`details --members` 按本次任务自选工具/提示词/资源；三种类型可混合，但同样受数量与字节上限约束。
-- **目录检索**：`find QUERY [--kind tools|prompts|resources]` 只在本地对目录摘要（名称、URI、说明、标签）做大小写不敏感过滤，工具变多时不必把整份目录塞进上下文，也不取详情。
-- **内容读取**：`details` 只给注册定义；`prompt NAME` 与 `resource URI` 会先校验目录成员，再走 `prompts/get` / `resources/read` 取正文。资源 URI 只允许目录中已注册项，避免服务端对任意 `http://`、`file://` URI 的兼容读取绕过外发授权。
-- **批量调用**：`calls --calls-file steps.json`（或 `--calls` / `--calls-stdin`）按数组顺序执行多个工具，任一步失败即停，并保留已执行步骤与 `exit_code`；不提供事务回滚。
-- **不内联能力清单**：SKILL.md 不描述任何具体工具、动作或参数；工具名、参数与可用性只能来自本次 `discover` / `list` / `find` / `schema` 的返回。源码里存在的能力也可能因版本、包依赖或设置而在当前服务中不可用。
-- **发现优先**：`discover` → `groups` / `list` / `find` → `details` / `schema` / `schemas` → `call` / `calls` 是固定顺序，跳过发现直接调用、凭名字猜参数都属于错误。
-- **连接发现**：Unity 服务启动时把地址、端口和详情上限写入 `~/.unity-mcp/skill.ini`（不再发布脚本语言字段，客户端固定为 Node.js 18+ 的 `unity_mcp.js`），客户端每次命令重新读取并校验；INI 不发布 MCP 端点，Agent 应始终通过 Skill 脚本访问。
-
-### 与 MCP 系统的结合
-
-- **MCP** 仍负责实际执行；**Skill** 负责「如何发现、取哪份定义、怎么传参」。
-- 原有 MCP 客户端可继续使用 `tools/list`、`tools/call`、`prompts/list`、`prompts/get`、`resources/list`、`resources/read`，无需安装 Skill。
-- Skill 的发现与批量 Schema 请求不会改变旧 MCP 接口行为，两者互不影响；技能只在显式执行 `call` / `calls` / `prompt` / `resource` 时才使用原协议的 `tools/call`、`prompts/get`、`resources/read`。
+- **统一技能入口**：一份 `SKILL.md` 说明连接方式、命令用法与安全边界，不内联任何工具参数。
+- **渐进式发现**：先 `GET /groups` 与 `GET /tools` 只取名称、短说明和标签；需要参数时再取定义。
+- **单个或批量 Schema**：`schema NAME` 读单个定义（`GET /tools/{name}/schema`）；`schemas A B C` 一次读多个（`POST /capabilities/schemas`），返回标准 `{name, description, inputSchema}`。
+- **混合详情**：`details --tag TAG` 按标签组取详情；`details --members` 按本次任务自选工具 / 提示词 / 资源，三种类型可混。
+- **目录检索**：`find QUERY [--kind tools|prompts|resources]` 只在本地对目录摘要做大小写不敏感过滤。
+- **内容读取**：`details` 只给注册定义；`prompt NAME` 与 `resource URI` 先校验目录成员，再走 `prompts/get` / `resources/read` 取正文。
+- **多步访问**：技能不提供批量调用接口；由调用方以库 API 编排。
 
 ### 技能命令示例
 
 ```sh
+node scripts/unity_mcp.js discover
+node scripts/unity_mcp.js groups
+node scripts/unity_mcp.js list --kind tools
 node scripts/unity_mcp.js find camera --kind tools
+node scripts/unity_mcp.js schema NAME_FROM_LIST
+node scripts/unity_mcp.js schemas NAME1 NAME2
+node scripts/unity_mcp.js details --tag TAG_FROM_GROUPS
+node scripts/unity_mcp.js call NAME_FROM_LIST --args-file args.json
 node scripts/unity_mcp.js prompt NAME
 node scripts/unity_mcp.js resource URI
-node scripts/unity_mcp.js discover
-node scripts/unity_mcp.js list --kind tools
-node scripts/unity_mcp.js schema NAME_FROM_LIST
-node scripts/unity_mcp.js calls --calls '[{"name":"NAME_FROM_LIST","arguments":{}}]'
 ```
 
-`calls` 的输入是数组本身，元素仅含 `name` 与可选 `arguments`（JSON 对象，省略为 `{}`）；返回 `{steps, executed, total, stopped_at, exit_code}`。全部成功时 `stopped_at=null`；中途失败时 stdout 仍输出已成功步骤，退出码由 `exit_code` 给出，便于先核实编辑器状态再决定是否重放剩余步骤。
+所有 `NAME_FROM_LIST` / `TAG_FROM_GROUPS` / `URI` 均为占位符，必须换成 `list` / `groups` / `find` 返回的实际成员。
 
-### 脚本作为库调用（程序化访问）
+### 脚本作为库调用
 
-`unity_mcp.js` 既是 CLI 也是零依赖 CommonJS 库，`require(...)` 后可用原生对象直接调用，让 AI 自己写代码组织多步访问，无需拼 JSON 字符串或起子进程。库函数复用 CLI 的 `execute()`，因此 INI/discovery 校验、`max_details`、64 KiB 上限、目录白名单、不重试与错误码全部一致。
+`unity_mcp.js` 既是 CLI 也是零依赖 CommonJS 库，`require(...)` 后可用原生对象直接调用，让 AI 自己写代码组织多步访问。
 
 ```js
 const unity = require('./scripts/unity_mcp.js');
 unity.configure({ timeout: 15 });
-const catalog = await unity.listCapabilities('tools');     // 先发现
+const catalog = await unity.listCapabilities('tools');
 const { name, args } = pickFrom(catalog, await unity.getSchema(name));
 const summary = await unity.workflowContext('TASK', 'DESCRIPTION', async wf => {
   await unity.callSkill(name, args);
@@ -1020,17 +392,16 @@ const summary = await unity.workflowContext('TASK', 'DESCRIPTION', async wf => {
 });
 ```
 
-- `pickFrom` 是伪代码，表示由调用方根据目录与 schema 选择工具和参数；示例不含任何真实工具名。
+- `pickFrom` 是伪代码，表示由调用方根据目录与 schema 选择工具和参数。
 - `callSkill` 返回 MCP `result`；`callTool` 返回完整 JSON-RPC 信封；`*Text` / `*Json` 提取并解析 `content[*].text`。
 - `workflowContext` 只记录调用（`wf.calls`、`wf.summary()`），不重试、不回滚；失败照常抛出。所有方法均为 `async`，异常为带 `.code` 的 `ClientError`。
-- 多连接用 `new Client({...})`；库模式默认静默 stderr。完整 API 对照表见 `SKILL.md`。
 - Windows Git Bash 会把 `request /ROUTE` 转成本地路径，客户端已按 `EXEPATH` 自动还原，也支持裸路由 `request groups`。
 
 ### 约束
 
-- 单次详情/批量 Schema/批量调用的去重数量上限取 Unity 设置中的 `max_details`（默认 `32`，`0` 为不限数量），详情响应最多 65536 个 UTF-8 字节，`calls` 请求体同样最多 65536 字节；超限返回 400/413 或在发送前拒绝，不静默截断、不自动分批。
-- 拒绝 `all`、`*`、空值和未知字段；名称超过一项且覆盖全部已启用工具时按全集拒绝。未知或已禁用的工具返回 404。
-- 批量调用无事务与回滚，构建、切平台、重编译、测试运行期间不要与其他写操作并发。
+- 单次详情与批量 Schema 的去重数量上限取 Unity 设置中的 `max_details`（默认 `32`，`0` 为不限），详情响应最多 65536 个 UTF-8 字节；超限返回 400/413，不静默截断、不自动分批。
+- 拒绝 `all`、`*`、空值和未知字段；名称超过一项且覆盖全部已启用工具时按全集拒绝；未知或已禁用的工具返回 404。
+- 多步编排无事务与回滚：写操作成功即生效，中途失败先以只读手段核状态，再决定余下步骤。
 
 ### 文件结构
 
@@ -1042,182 +413,65 @@ unity-package/Skills/unity3d-skill/
 └── tests/                      # 客户端回归测试
 ```
 
+运行回归测试：
+
+```sh
+node --test tests/test_unity_mcp.js
+```
+
 ---
 
-## 创新点
+## HTTP 发现 API
 
-### 1. 双层调用架构
-**创新描述**：设计了FacadeTools + MethodTools的双层架构
-- **FacadeTools**：`async_call`和`batch_call`两个门面工具
-- **MethodTools**：40+专业功能方法，仅通过门面工具调用
+技能客户端使用以下发现路由：
 
-**技术优势**：
-- 统一的调用接口，简化AI客户端使用
-- 批量操作支持，提高执行效率
-- 参数验证和错误处理集中化
+| 路由 | 用途 |
+| --- | --- |
+| `GET /discovery` | 校验在线服务、读取非 MCP 连接元数据 |
+| `GET /groups` | 列出可用标签及工具 / 提示词 / 资源计数 |
+| `GET /tools` | 列出工具名、短说明与标签 |
+| `GET /prompts` | 列出提示词名、短说明与标签 |
+| `GET /resources` | 列出资源 URI、名称、短说明与标签 |
+| `GET /tools/{name}/schema` | 读取单个工具完整 schema |
+| `POST /capabilities/schemas` | 一次读取多个工具 schema |
+| `POST /capabilities/details` | 按一个标签或显式混合 `members` 数组读详情 |
 
-### 2. 状态树执行引擎
-**创新描述**：基于状态模式的路由系统
+详情端点只接受一种选择模式：`{ "tag": "..." }` 或 `{ "members": [...] }`。拒绝空值、未知选择、通配 / 全集选择；重复成员只计一次。资源详情只描述注册元数据，不隐式读取正文。
+
+Schema 端点接受 `{ "tools": ["name", ...] }`，返回 `{ "items": [{ "name", "description", "inputSchema" }], "count", "max_details" }`，按请求次序、重复计一次。它与详情共享 `max_details` 上限、64 KiB 响应上限、全集拒绝，未知 / 禁用工具返回 404。
+
+### 既有 MCP 客户端
+
+技能工作流是额外的访问路径，不替代既有 MCP 协议。当前 MCP 客户端可继续使用 `tools/list`、`tools/call`、`prompts/list`、`prompts/get`、`resources/list`、`resources/read`，无需安装技能。技能的发现请求不会改变这些 MCP 操作的行为。
+
+---
+
+## 扩展新工具
+
+新增一个工具模块只需**一个文件**：
+
+1. 在 `unity-package/Editor/Tools/` 下创建一个 `XxxTool.cs`（`namespace UniMcp.Tools`）。
+2. 用 `[ToolModule("prefix", GroupEn = "...", GroupZh = "...", LegacyName = "...")]` 标类，继承 `ToolModuleBase`。
+3. 实现 `Description` 与 `protected override MethodKey[] CreateKeys()`。
+4. 每个动作写一个 handler，标 `[ToolAction("action", Parameters, Required, Inject)]`。参数可为 `JsonClass`（原始 JSON）或 `ToolContext`（含对象引用、`AsyncReturn`）。
+5. 若操作已存在对象，实现 `ITargetedTool.ResolveTarget`。
+6. 直接编译即可——`ToolCatalog` 反射发现，无需注册、无需生成文件、无需 meta 之外的额外步骤。
+
 ```csharp
-StateTreeBuilder
-    .Create()
-    .Key("action")
-        .Leaf("create", HandleCreate)
-        .Leaf("edit", HandleEdit)
-        .Leaf("delete", HandleDelete)
-    .Build();
-```
-
-**技术优势**：
-- 灵活的参数路由和验证
-- 支持可选参数和默认值
-- 统一的错误处理机制
-
-### 3. 消息队列执行系统
-**创新描述**：基于EditorApplication.update的消息队列机制
-- 可自定义端口配置（默认8000）
-- 主线程安全执行保障
-- 自动注册/注销update回调
-
-**技术优势**：
-- 确保Unity API在主线程执行
-- 即使Unity失去焦点也能处理请求
-- 智能的资源管理和清理
-
-### 4. 协程支持
-**创新描述**：支持Unity协程的异步操作
-```csharp
-IEnumerator DownloadFileAsync(string url, string savePath, ...)
+[ToolModule("mytool", GroupEn = "My Group", GroupZh = "我的分组", LegacyName = "my_tool")]
+public class MyTool : ToolModuleBase
 {
-    // 异步下载逻辑
-    yield return null;
-}
-```
+    public override string Description => L.T("...", "...");
 
-**技术优势**：
-- 不阻塞主线程
-- 支持长时间运行的操作
-- 提供进度回调
-
-### 5. 文件数据智能处理
-**创新描述**：自动识别文件类型，优化响应数据
-- 自动检测图片、视频、音频等文件类型
-- 大型内容不返回实际数据，只返回元数据
-- 提供文件路径和基本信息
-
-**技术优势**：
-- 减少内存使用
-- 提高网络传输效率
-- 保持响应格式一致性
-
----
-
-## 技术特性
-
-### 1. 高性能通信
-- **HTTP协议**：标准化、易于调试
-- **JSON-RPC 2.0**：标准化协议，完整的错误处理
-- **消息队列**：异步处理，不阻塞主线程
-- **批量操作**：支持批量调用，提高效率
-
-### 2. 可靠性保障
-- **可配置端口**：支持自定义端口（默认8000）
-- **主线程安全**：确保Unity API正确执行
-- **错误处理**：完善的异常处理机制
-- **超时控制**：防止长时间阻塞
-
-### 3. 扩展性设计
-- **模块化架构**：工具独立，易于扩展
-- **反射调用**：动态方法调用
-- **插件化**：支持自定义工具开发
-- **配置化**：灵活的参数配置
-
-### 4. 开发体验
-- **自然语言**：通过AI助手自然交互
-- **实时反馈**：即时执行结果反馈
-- **调试支持**：详细的日志和错误信息
-- **文档完善**：完整的API文档和示例
-
----
-
-## API参考
-
-### 1. 门面工具API
-
-#### async_call
-单次函数调用工具
-```json
-{
-  "func": "async_call",
-  "args": {
-    "func": "hierarchy_create",
-    "args": {
-      "name": "Player",
-      "primitive_type": "Cube",
-      "source": "primitive"
-    }
-  }
-}
-```
-
-#### batch_call
-批量函数调用工具
-```json
-{
-  "func": "batch_call",
-  "args": [
+    protected override MethodKey[] CreateKeys() => new MethodKey[]
     {
-      "func": "hierarchy_create",
-      "args": {"name": "Player", "primitive_type": "Cube"}
-    },
-    {
-      "func": "edit_gameobject", 
-      "args": {"path": "Player", "position": [0, 1, 0]}
-    }
-  ]
-}
-```
+        new MethodStr("name", L.T("Name", "名称"), false),
+    };
 
-### 2. 核心工具API
-
-#### 层级管理工具
-- `hierarchy_create`：创建GameObject
-- `hierarchy_search`：搜索GameObject
-- `hierarchy_apply`：应用预制体
-
-#### 资源编辑工具
-- `edit_gameobject`：编辑GameObject属性
-- `edit_component`：编辑组件属性
-- `edit_material`：编辑材质
-- `edit_texture`：编辑纹理
-
-#### 项目管理工具
-- `project_search`：搜索项目资源
-- `project_operate`：项目操作
-
-#### 网络工具
-- `request_http`：HTTP请求
-- `figma_manage`：Figma资源管理
-
-### 3. 响应格式
-
-#### 成功响应
-```json
-{
-  "success": true,
-  "message": "操作成功",
-  "data": {
-    "result": "具体结果数据"
-  }
-}
-```
-
-#### 错误响应
-```json
-{
-  "success": false,
-  "message": "错误描述",
-  "error": "详细错误信息"
+    [ToolAction("hello", Parameters = new[] { "name" },
+        Required = new[] { "name" }, Inject = new[] { "action=hello" })]
+    private object HandleHello(JsonClass args)
+        => Response.Success("ok", new { name = args["name"]?.Value });
 }
 ```
 
@@ -1225,136 +479,31 @@ IEnumerator DownloadFileAsync(string url, string savePath, ...)
 
 ## 故障排除
 
-### 1. 连接问题
+**连接问题**
+- **无法连接 Unity**：确认编辑器已启动、服务已 Start、端口未被占用、防火墙放行；查看 Unity Console 错误。
+- **连接频繁断开**：检查网络、Unity 卡顿、超时设置。
 
-#### 问题：无法连接到Unity
-**可能原因**：
-- Unity编辑器未启动
-- 端口被占用
-- 防火墙阻止连接
+**发现 / 调用问题**
+- **技能找不到服务**：确认服务在运行且 `~/.unity-mcp/skill.ini` 存在；改端口后须重启服务。
+- **INI 与在线服务不一致**：重启目标 Unity 项目的 MCP 服务，让它重新发布设置。
+- **某标签没有详情**：用 `groups` 取当前标签；标签随配置变化。
+- **详情 / Schema 请求被拒**：减少所选组或成员数；检查 `max_details`；64 KiB 上限与全集拒绝仍然生效。
+- **能力未列出**：检查是否在 Unity MCP 设置中启用、目标项目是否完成初始化。
+- **调用失败**：查看 Unity Console 与 MCP 状态窗口的请求记录；确认参数 JSON 与所选定义一致。可选包（Cinemachine / VFX Graph / ProBuilder / Test Framework）未安装时，对应工具返回明确提示，属预期。
 
-**解决方案**：
-1. 确认Unity编辑器已启动
-2. 检查端口8100-8110是否可用
-3. 检查防火墙设置
-4. 查看Unity控制台错误信息
-
-#### 问题：连接频繁断开
-**可能原因**：
-- 网络不稳定
-- Unity编辑器卡顿
-- 超时设置过短
-
-**解决方案**：
-1. 检查网络连接
-2. 优化Unity项目性能
-3. 调整超时设置
-
-### 2. 工具执行问题
-
-#### 问题：工具调用失败
-**可能原因**：
-- 参数格式错误
-- 目标对象不存在
-- 权限不足
-
-**解决方案**：
-1. 检查参数格式和类型
-2. 确认目标对象存在
-3. 检查Unity编辑器权限
-
-#### 问题：批量操作部分失败
-**可能原因**：
-- 某些操作依赖其他操作
-- 资源冲突
-- 内存不足
-
-**解决方案**：
-1. 调整操作顺序
-2. 检查资源冲突
-3. 分批执行操作
-
-### 3. 性能问题
-
-#### 问题：响应速度慢
-**可能原因**：
-- 网络延迟
-- Unity编辑器性能
-- 操作复杂度高
-
-**解决方案**：
-1. 优化网络环境
-2. 关闭不必要的Unity功能
-3. 简化操作逻辑
-
-#### 问题：内存使用过高
-**可能原因**：
-- 大量对象创建
-- 资源未释放
-- 协程泄漏
-
-**解决方案**：
-1. 及时销毁不需要的对象
-2. 释放未使用的资源
-3. 检查协程生命周期
-
-### 4. 调试技巧
-
-#### 启用详细日志
-```python
-# 在config.py中设置
-log_level: str = "DEBUG"
-```
-
-#### Unity控制台调试
-```csharp
-// 在Unity中启用详细日志
-McpLogger.EnableLog = true;
-```
-
-#### 网络抓包分析
-使用Wireshark等工具分析TCP通信数据
+**性能问题**
+- 响应慢：优化网络、关闭不必要的 Unity 功能、简化操作。
+- 内存高：及时销毁对象、释放资源、检查协程生命周期。
 
 ---
 
-## 总结
+## 相关文件
 
-Unity Skilled MCP系统是一个创新的AI-Unity集成解决方案，通过内置MCP服务器实现了AI助手与Unity编辑器的无缝连接。系统采用双层调用架构、消息队列执行引擎、主线程安全机制等创新技术，提供了40+专业工具，覆盖Unity开发全流程。
-
-### 核心优势
-1. **AI驱动**：通过自然语言控制Unity编辑器
-2. **功能丰富**：40+专业工具，覆盖开发全流程
-3. **高性能**：基于HTTP的高效通信，内置消息队列
-4. **可扩展**：模块化设计，易于扩展
-5. **易用性**：支持主流AI客户端，无需修改工作流
-6. **零配置**：Unity内置MCP服务器，无需外部依赖
-
-### 应用场景
-- AI辅助游戏开发
-- 自动化资源管理
-- 批量操作优化
-- 开发流程自动化
-- 教育和培训
-
-### 未来发展方向
-1. 更多Unity工具支持
-2. 可视化工具开发
-3. 性能优化和监控
-4. 多平台兼容性
-5. 增强的调试和监控功能
-
-### 架构优化历程
-- **Runtime精简**：将状态树和协程运行器移至Editor，优化运行时性能
-- **模块化重组**：新增Selector、GUI、Provider等专业模块，提升代码组织性
-- **工具分类优化**：按功能领域划分工具目录，提高可维护性
-- **基类体系完善**：引入DualStateMethodBase、IToolMethod等，增强扩展性
-- **内置MCP服务器**：移除Python依赖，Unity内置完整MCP协议支持
-- **消息队列系统**：基于EditorApplication.update的主线程安全执行机制
-
-通过Unity Skilled MCP系统，开发者可以享受AI驱动的Unity开发体验，提高开发效率，降低学习成本，实现更智能的游戏开发工作流。
+- 技能契约与完整命令参考：[`unity-package/Skills/unity3d-skill/SKILL.md`](unity-package/Skills/unity3d-skill/SKILL.md)
+- 英文说明：[English README](README.md)
+- 项目网站：[docs/index.html](docs/index.html)
+- 改动记录：[note.md](note.md)
 
 ---
 
-*文档版本：v2.0*  
-*最后更新：2025年09月*  
-*维护团队：Unity Skilled MCP Development Team*
+*文档版本：v3.0（声明式工具框架，无状态树）*

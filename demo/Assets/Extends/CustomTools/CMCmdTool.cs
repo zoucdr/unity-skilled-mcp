@@ -9,7 +9,8 @@ using UniMcp.Utils;
 namespace UniMcp.Tools
 {
     [ToolName("cmd_tool", "System Tools", "系统工具")]
-    public class CMCmdTool : StateMethodBase
+    [ToolModule("cmd", GroupEn = "System Tools", GroupZh = "系统工具", LegacyName = "cmd_tool")]
+    public class CMCmdTool : ToolModuleBase
     {
         public override string Description => L.T("Execute system CMD commands", "执行系统CMD命令");
         
@@ -30,25 +31,17 @@ namespace UniMcp.Tools
             };
         }
 
-        protected override StateTree CreateStateTree()
-        {
-            return StateTreeBuilder
-                .Create()
-                .DefaultLeaf(HandleExecuteCmd)
-                .Build();
-        }
-
         /// <summary>
         /// 处理执行CMD命令的操作
         /// </summary>
-        private object HandleExecuteCmd(JsonClass args)
+        [ToolAction("run", "cmd=require", "args", "env", "working_dir", "timeout")]
+        private object HandleRunAction(ToolContext context)
         {
-            var context = new StateTreeContext(args);
             ExecuteCmdCommand(context);
             return context;
         }
 
-        private void ExecuteCmdCommand(StateTreeContext context)
+        private void ExecuteCmdCommand(ToolContext context)
         {
             try
             {

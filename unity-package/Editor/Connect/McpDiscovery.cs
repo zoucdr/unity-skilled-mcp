@@ -37,32 +37,24 @@ namespace UniMcp
             {
                 if (discoveryLanguage != settings.CurrentLanguage)
                 {
-                    AddAsyncMcpTool();
-                    AddBatchMcpTool();
-                    AddSyncMcpTool();
-                    AddGetPromptDetailTool();
-                    AddSearchMcpTool();
+                    RefreshToolInfos();
                 }
                 var tools = new List<ToolInfo>();
+                var groups = new Dictionary<string, ToolNameAttribute>(StringComparer.Ordinal);
+                var toolTags = new Dictionary<string, string[]>(StringComparer.Ordinal);
+                foreach (var spec in ToolCatalog.All)
+                {
+                    if (!settings.IsToolEnabled(spec.Name)) continue;
+                    tools.Add(ToolCatalog.CreateInfo(spec, true));
+                    groups[spec.Name] = new ToolNameAttribute(spec.Name, spec.GroupEn, spec.GroupZh);
+                    toolTags[spec.Name] = spec.Tags;
+                }
                 foreach (var info in toolInfos.Values)
                 {
                     if (!settings.IsToolEnabled(info.name)) continue;
-                    if (availableTools.TryGetValue(info.name, out var instance))
-                    {
-                        tools.Add(new ToolInfo {
-                            name = info.name,
-                            description = string.IsNullOrEmpty(instance.Description) ? info.description : instance.Description,
-                            inputSchema = RebuildInputSchema(instance, true)
-                        });
-                    }
-                    else if (mcpToolInstanceCache.ContainsKey(info.name)) tools.Add(info);
+                    if (ToolCatalog.Find(info.name) != null) continue;
+                    if (mcpToolInstanceCache.ContainsKey(info.name)) tools.Add(info);
                 }
-                var groups = availableTools.ToDictionary(pair => pair.Key, pair =>
-                    (ToolNameAttribute)Attribute.GetCustomAttribute(pair.Value.GetType(), typeof(ToolNameAttribute))
-                    ?? new ToolNameAttribute(pair.Key), StringComparer.Ordinal);
-                var toolTags = availableTools.ToDictionary(pair => pair.Key, pair =>
-                    McpDiscoverySnapshot.GetTags(pair.Value.GetType(), McpDiscoverySnapshot.Slug(groups[pair.Key].GroupNameEnglish)),
-                    StringComparer.Ordinal);
                 discoverySnapshot = new McpDiscoverySnapshot(tools,
                     availablePrompts.Values.Where(p => settings.IsPromptEnabled(p.Name)),
                     availableResources.Values.Where(r => settings.IsResourceEnabled(r.Name)), groups, toolTags, availableResources.Values,

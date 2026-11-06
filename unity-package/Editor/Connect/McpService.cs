@@ -134,7 +134,7 @@ namespace UniMcp
         /// </summary>
         private bool HasToolCountChanged()
         {
-            int currentCount = availableTools.Count;
+            int currentCount = toolInfos.Count;
             int lastCount = McpLocalSettings.Instance.LastToolCount;
 
             Log($"[UniMcp] 工具数量检查 - 当前: {currentCount}, 上次: {lastCount}");
@@ -216,7 +216,6 @@ namespace UniMcp
         }
 
         // MCP协议相关
-        private readonly Dictionary<string, IToolMethod> availableTools = new();
         private readonly Dictionary<string, ToolInfo> toolInfos = new();
         private readonly Dictionary<string, IPrompts> availablePrompts = new();
         private readonly Dictionary<string, IRes> availableResources = new();
@@ -230,7 +229,6 @@ namespace UniMcp
 
         // MCP工具实例缓存
         private readonly Dictionary<string, McpTool> mcpToolInstanceCache = new();
-        private readonly ToolsCall methodsCall = new();
 
         // 响应缓存系统
         private readonly Dictionary<string, ResponseCacheData> responseCache = new();
@@ -377,7 +375,7 @@ namespace UniMcp
         /// </summary>
         public static int GetToolCount()
         {
-            return Instance.availableTools.Count;
+            return Instance.toolInfos.Count;
         }
 
         /// <summary>
@@ -385,7 +383,7 @@ namespace UniMcp
         /// </summary>
         public static int GetEnabledToolCount()
         {
-            var allToolNames = Instance.availableTools.Keys.ToList();
+            var allToolNames = Instance.toolInfos.Keys.ToList();
             return McpLocalSettings.Instance.GetEnabledToolCount(allToolNames);
         }
 
@@ -394,19 +392,40 @@ namespace UniMcp
         /// </summary>
         public static List<string> GetAllToolNames()
         {
-            return Instance.availableTools.Keys.ToList();
+            return ToolCatalog.Names;
         }
 
         /// <summary>
-        /// 获取启用的工具名称
+        /// 获取声明式工具目录中的全部工具规格（供状态窗口工具树展示子函数与参数）。
+        /// 目录为空时会重新扫描一次，确保界面首次打开即可看到内容。
+        /// </summary>
+        public static IReadOnlyList<ToolSpec> GetAllToolSpecs()
+        {
+            if (ToolCatalog.Count == 0) ToolCatalog.Reload();
+            return ToolCatalog.All;
+        }
+
+        /// <summary>
+        /// 获取内置门面工具（async_call / get_prompt / search_tool）的已发布信息。
+        /// 这些工具不在声明式目录里，工具树需单独展示。
+        /// </summary>
+        public static IReadOnlyList<ToolInfo> GetBuiltinToolInfos()
+        {
+            var result = new List<ToolInfo>();
+            foreach (var info in Instance.toolInfos.Values)
+            {
+                if (info != null && ToolCatalog.Find(info.name) == null) result.Add(info);
+            }
+            return result;
+        }
+
+        /// <summary>
+        /// 获取启用的工具名称（声明式目录 + 少量内置门面工具）
         /// </summary>
         public static List<string> GetEnabledToolNames()
         {
-            var allToolNames = Instance.availableTools.Keys.ToList();
-            // 额外添加系统自带门面/工具（非 IToolMethod，不通过反射发现）
-            allToolNames.Add("batch_call");
+            var allToolNames = ToolCatalog.Names;
             allToolNames.Add("async_call");
-            allToolNames.Add("sync_call");
             allToolNames.Add("get_prompt");
             allToolNames.Add("search_tool");
             return McpLocalSettings.Instance.FilterEnabledTools(allToolNames);
@@ -655,121 +674,49 @@ namespace UniMcp
         /// <summary>
         /// 通过反射发现所有可用的工具
         /// </summary>
+        /// <summary>
+        /// Load the declarative tool catalog. One provider class exposes many small tools;
+        /// every tool has its own name, description, parameter subset and bound handler.
+        /// </summary>
         private void DiscoverTools()
         {
             if (!IsMainThread()) { EnqueueTask(DiscoverTools); return; }
-            Log("[UniMcp] 开始发现工具...");
+            Log("[UniMcp] 开始装载声明式工具目录...");
             Interlocked.Exchange(ref discoveryDirty, 1);
-            // 清空现有工具
-            availableTools.Clear();
             toolInfos.Clear();
-            
-            // 清除工具列表缓存
+
             lock (responseCacheLock)
             {
                 responseCache.Remove("tools/list");
-                McpLogger.Log("[UniMcp] 已清除 tools/list 缓存");
             }
 
             try
             {
-                // 手动添加 async_call、batch_call、sync_call 工具
-                AddAsyncMcpTool();
-                AddBatchMcpTool();
-                AddSyncMcpTool();
-                AddGetPromptDetailTool();
-                AddSearchMcpTool();
-
-                // 获取所有程序集
-                var assemblies = AppDomain.CurrentDomain.GetAssemblies();
-                Log($"[UniMcp] 检查 {assemblies.Length} 个程序集");
-
-                // 查找所有实现IToolMethod接口的类型
-                var toolTypes = assemblies
-                    .SelectMany(assembly =>
-                    {
-                        try
-                        {
-                            var types = assembly.GetTypes();
-                            Log($"[UniMcp] 程序集 {assembly.GetName().Name} 包含 {types.Length} 个类型");
-                            return types;
-                        }
-                        catch (Exception ex)
-                        {
-                            LogWarning($"[UniMcp] 无法获取程序集 {assembly.GetName().Name} 的类型: {ex.Message}");
-                            return new Type[0];
-                        }
-                    })
-                    .Where(type => !type.IsAbstract &&
-                                   !type.IsInterface &&
-                                   typeof(IToolMethod).IsAssignableFrom(type))
-                    .ToList();
-
-                Log($"[UniMcp] 找到 {toolTypes.Count} 个实现IToolMethod接口的类型");
-
-                foreach (var toolType in toolTypes)
-                {
-                    try
-                    {
-                        Log($"[UniMcp] 尝试创建工具实例: {toolType.FullName}");
-
-                        // 创建工具实例
-                        var toolInstance = Activator.CreateInstance(toolType) as IToolMethod;
-                        if (toolInstance == null)
-                        {
-                            LogWarning($"[UniMcp] 无法将 {toolType.Name} 转换为IToolMethod");
-                            continue;
-                        }
-
-                        // 获取工具名称
-                        string toolName = GetToolName(toolType);
-                        Log($"[UniMcp] 工具名称: {toolName}");
-                        
-                        // 验证工具是否有效
-                        if (string.IsNullOrEmpty(toolName))
-                        {
-                            LogWarning($"[UniMcp] 工具名称为空，跳过: {toolType.Name}");
-                            continue;
-                        }
-                        
-                        // 验证工具描述（可选，但建议有）
-                        if (string.IsNullOrEmpty(toolInstance.Description))
-                        {
-                            LogWarning($"[UniMcp] 工具 {toolName} 缺少描述，但仍然注册");
-                        }
-
-                        // 注册工具
-                        availableTools[toolName] = toolInstance;
-
-                        // 创建工具信息
-                        var toolInfo = CreateToolInfo(toolName, toolInstance);
-                        toolInfos[toolName] = toolInfo;
-
-                        Log($"[UniMcp] 成功注册工具: {toolName} ({toolType.Name})");
-                    }
-                    catch (Exception ex)
-                    {
-                        LogError($"[UniMcp] 创建工具实例失败 {toolType.Name}: {ex.Message}\n{ex.StackTrace}");
-                    }
-                }
-
-                Log($"[UniMcp] 工具发现完成，共发现 {availableTools.Count} 个工具");
-
-                // 更新工具数量到McpLocalSettings
-                McpLocalSettings.Instance.LastToolCount = availableTools.Count;
-                Log($"[UniMcp] 已更新工具数量到McpLocalSettings: {availableTools.Count}");
-
-                // 列出所有注册的工具
-                var toolNamesCopy = availableTools.Keys.ToList();
-                foreach (var toolName in toolNamesCopy)
-                {
-                    Log($"[UniMcp] 已注册工具: {toolName}");
-                }
+                RefreshToolInfos();
+                Log("[UniMcp] 工具目录装载完成，共 " + toolInfos.Count + " 个独立工具");
             }
             catch (Exception ex)
             {
-                LogError($"[UniMcp] 工具发现过程中发生错误: {ex.Message}\n{ex.StackTrace}");
+                LogError("[UniMcp] 工具目录装载失败: " + ex.Message + "\n" + ex.StackTrace);
             }
+        }
+
+        /// <summary>
+        /// Rebuild published tool infos. Called on start and when the UI language changes,
+        /// because parameter descriptions are localized.
+        /// </summary>
+        private void RefreshToolInfos()
+        {
+            toolInfos.Clear();
+            AddAsyncMcpTool();
+            AddGetPromptDetailTool();
+            AddSearchMcpTool();
+            foreach (var spec in ToolCatalog.Reload())
+            {
+                toolInfos[spec.Name] = ToolCatalog.CreateInfo(spec, true);
+            }
+            McpLocalSettings.Instance.LastToolCount = toolInfos.Count;
+            lock (responseCacheLock) { responseCache.Remove("tools/list"); }
         }
 
         /// <summary>
@@ -980,7 +927,8 @@ namespace UniMcp
         }
 
         /// <summary>
-        /// 添加AsyncCall工具到可用工具列表
+        /// Publishes the async_call facade. Conclusions are persisted to a local
+        /// .asset (ProjectSettings/UnitySkilledMcpAsyncResults.asset).
         /// </summary>
         private void AddAsyncMcpTool()
         {
@@ -989,14 +937,14 @@ namespace UniMcp
                 string toolName = "async_call";
                 Log($"[UniMcp] 手动添加AsyncCall工具: {toolName}");
 
-                // 将AsyncCall工具添加到缓存中，供GetMcpTool使用
                 if (!mcpToolInstanceCache.ContainsKey(toolName)) mcpToolInstanceCache[toolName] = new AsyncCall();
 
-                // 简化工具信息和输入模式定义
                 var toolInfo = new ToolInfo
                 {
                     name = toolName,
-                    description = L.T("Unity asynchronous call tool, supports asynchronous function calls and result retrieval", "Unity异步调用工具，支持异步函数调用和结果获取"),
+                    description = L.T(
+                        "Asynchronous call: run a long tool by name, then read its persisted conclusion by id even after Unity restarts",
+                        "异步调用：按名称执行耗时工具，结论写入本地 asset，Unity 重启后仍可按 id 取回"),
                     inputSchema = new JsonClass
                     {
                         { "type", new JsonData("object") },
@@ -1004,26 +952,27 @@ namespace UniMcp
                             {
                                 { "id", new JsonClass {
                                     { "type", new JsonData("string") },
-                                    { "description", new JsonData(L.T("Unique identifier for asynchronous call", "异步调用的唯一标识符")) }
+                                    { "description", new JsonData(L.T("Unique call id; reuse it with type='out' after a restart", "调用唯一标识；重启后用同一 id 配合 type='out' 取回结论")) }
                                 }},
                                 { "type", new JsonClass {
                                     { "type", new JsonData("string") },
-                                    { "description", new JsonData(L.T("Operation type: 'in' to start call, 'out' to get result", "操作类型: 'in' 开始调用, 'out' 获取结果")) }
+                                    { "description", new JsonData(L.T("in = start, out = read conclusion, list = list ids, remove = delete one, clear = delete all; defaults to out", "in 启动，out 取结论，list 列出，remove 删除单个，clear 清空；缺省为 out")) },
+                                    { "enum", new JsonArray {
+                                        new JsonData("in"), new JsonData("out"), new JsonData("list"),
+                                        new JsonData("remove"), new JsonData("clear")
+                                    }}
                                 }},
                                 { "func", new JsonClass {
                                     { "type", new JsonData("string") },
-                                    { "description", new JsonData(L.T("Function name to call (required when type='in')", "要调用的函数名称（仅在type='in'时需要）")) }
+                                    { "description", new JsonData(L.T("Tool name to run, e.g. a group.action name discovered via /tools (required when type='in')", "要执行的工具名，如通过 /tools 发现的 分组.动作 名称（type='in' 时必填）")) }
                                 }},
                                 { "args", new JsonClass {
                                     { "type", new JsonData("object") },
-                                    { "description", new JsonData(L.T("Function parameters (required when type='in')", "函数参数（仅在type='in'时需要）")) }
+                                    { "description", new JsonData(L.T("Arguments passed to the tool when type='in'", "type='in' 时传给该工具的参数")) }
                                 }},
                             }
                         },
-                        { "required", new JsonArray {
-                            new JsonData("id"),
-                            new JsonData("type")
-                        }}
+                        { "required", new JsonArray { new JsonData("id") } }
                     }
                 };
                 toolInfos[toolName] = toolInfo;
@@ -1033,110 +982,6 @@ namespace UniMcp
             catch (Exception ex)
             {
                 LogError($"[UniMcp] 添加AsyncCall工具失败: {ex.Message}\n{ex.StackTrace}");
-            }
-        }
-
-        /// <summary>
-        /// 添加BatchCall工具到可用工具列表
-        /// </summary>
-        private void AddBatchMcpTool()
-        {
-            try
-            {
-                string toolName = "batch_call";
-                Log($"[UniMcp] 手动添加BatchCall工具: {toolName}");
-
-                // 将BatchCall工具添加到缓存中，供GetMcpTool使用
-                if (!mcpToolInstanceCache.ContainsKey(toolName)) mcpToolInstanceCache[toolName] = new BatchCall();
-
-                // 创建工具信息并合并写法
-                var toolInfo = new ToolInfo
-                {
-                    name = toolName,
-                    description = L.T("Unity batch call tool, supports sequential execution of multiple function calls", "Unity批量调用工具，支持顺序执行多个函数调用"),
-                    inputSchema = new JsonClass {
-                        { "type", new JsonData("object") },
-                        { "properties", new JsonClass {
-                            { "args", new JsonClass {
-                                { "type", new JsonData("array") },
-                                { "description", new JsonData(L.T("Batch function call list", "批量函数调用列表")) },
-                                { "items", new JsonClass {
-                                    { "type", new JsonData("object") },
-                                    { "properties", new JsonClass {
-                                        { "func", new JsonClass {
-                                            { "type", new JsonData("string") },
-                                            { "description", new JsonData(L.T("Function name to call", "要调用的函数名称")) }
-                                        }},
-                                        { "args", new JsonClass {
-                                            { "type", new JsonData("object") },
-                                            { "description", new JsonData(L.T("Function parameters", "函数参数")) }
-                                        }},
-                                    }},
-                                    { "required", new JsonArray {
-                                        new JsonData("func"),
-                                        new JsonData("args")
-                                    }}
-                                }}
-                            }}
-                        }},
-                        { "required", new JsonArray {
-                            new JsonData("args")
-                        }}
-                    }
-                };
-                toolInfos[toolName] = toolInfo;
-
-                Log($"[UniMcp] 成功添加BatchCall工具: {toolName}");
-            }
-            catch (Exception ex)
-            {
-                LogError($"[UniMcp] 添加BatchCall工具失败: {ex.Message}\n{ex.StackTrace}");
-            }
-        }
-
-        /// <summary>
-        /// 添加 SyncCall 工具到可用工具列表
-        /// </summary>
-        private void AddSyncMcpTool()
-        {
-            try
-            {
-                string toolName = "sync_call";
-                Log($"[UniMcp] 手动添加SyncCall工具: {toolName}");
-
-                if (!mcpToolInstanceCache.ContainsKey(toolName)) mcpToolInstanceCache[toolName] = new SyncCall();
-
-                var toolInfo = new ToolInfo
-                {
-                    name = toolName,
-                    description = L.T("Unity synchronous call tool, executes a single function and returns the result immediately", "Unity同步调用工具，执行单个函数并立即返回结果"),
-                    inputSchema = new JsonClass
-                    {
-                        { "type", new JsonData("object") },
-                        { "properties", new JsonClass
-                            {
-                                { "func", new JsonClass {
-                                    { "type", new JsonData("string") },
-                                    { "description", new JsonData(L.T("Function name to call", "要调用的函数名称")) }
-                                }},
-                                { "args", new JsonClass {
-                                    { "type", new JsonData("object") },
-                                    { "description", new JsonData(L.T("Function parameters", "函数参数")) }
-                                }},
-                            }
-                        },
-                        { "required", new JsonArray {
-                            new JsonData("func")
-                        }}
-                    }
-                };
-                toolInfos[toolName] = toolInfo;
-
-                Log($"[UniMcp] 成功添加SyncCall工具: {toolName}");
-            }
-            catch (Exception ex)
-            {
-                LogError($"[UniMcp] 添加SyncCall工具失败: {ex.Message}\n{ex.StackTrace}");
             }
         }
 
@@ -1250,230 +1095,6 @@ namespace UniMcp
             {
                 LogError($"[UniMcp] 添加 SearchTool 工具失败: {ex.Message}\n{ex.StackTrace}");
             }
-        }
-
-        /// <summary>
-        /// 获取工具名称，优先使用ToolNameAttribute
-        /// </summary>
-        private string GetToolName(Type toolType)
-        {
-            var toolNameAttribute = toolType.GetCustomAttribute<ToolNameAttribute>();
-            if (toolNameAttribute != null)
-            {
-                return toolNameAttribute.ToolName;
-            }
-
-            // 转换类名为snake_case
-            return ConvertToSnakeCase(toolType.Name);
-        }
-
-        /// <summary>
-        /// 将Pascal命名法转换为snake_case命名法
-        /// </summary>
-        private string ConvertToSnakeCase(string pascalCase)
-        {
-            if (string.IsNullOrEmpty(pascalCase))
-                return pascalCase;
-
-            return System.Text.RegularExpressions.Regex.Replace(pascalCase, "(?<!^)([A-Z])", "_$1").ToLower();
-        }
-
-        /// <summary>
-        /// 创建工具信息
-        /// </summary>
-        private ToolInfo CreateToolInfo(string toolName, IToolMethod toolInstance)
-        {
-            var toolInfo = new ToolInfo
-            {
-                name = toolName,
-                description = !string.IsNullOrEmpty(toolInstance.Description) ? toolInstance.Description : $"Unity工具: {toolName}"
-            };
-
-            // 从Keys属性构建输入模式
-            if (toolInstance.Keys != null && toolInstance.Keys.Length > 0)
-            {
-                var properties = new JsonClass();
-                var required = new JsonArray();
-
-                foreach (var key in toolInstance.Keys)
-                {
-                    var property = new JsonClass();
-
-                    // 设置参数类型，默认为string
-                    string paramType = !string.IsNullOrEmpty(key.Type) ? key.Type : "string";
-                    property.Add("type", new JsonData(paramType));
-
-                    // 设置描述
-                    property.Add("description", new JsonData(key.Desc));
-
-                    // 为所有数组类型添加items定义（通用处理）
-                    if (paramType == "array" && !(key is MethodVector) && !(key is MethodArr))
-                    {
-                        var items = new JsonClass();
-                        items.Add("type", new JsonData("string")); // 默认数组元素类型为string
-                        property.Add("items", items);
-                    }
-
-                    // 处理数组类型的特殊属性
-                    if (key is MethodArr methodArr)
-                    {
-                        var items = new JsonClass();
-                        items.Add("type", new JsonData(methodArr.ItemType));
-                        property.Add("items", items);
-                    }
-
-                    // 处理对象类型的特殊属性
-                    if (key is MethodObj methodObj && methodObj.Properties.Count > 0)
-                    {
-                        var objProperties = new JsonClass();
-                        foreach (var prop in methodObj.Properties)
-                        {
-                            var propDef = new JsonClass();
-                            propDef.Add("type", new JsonData(prop.Value));
-
-                            // 为数组类型添加items定义
-                            if (prop.Value == "array")
-                            {
-                                var items = new JsonClass();
-                                string itemType = "string"; // 默认类型
-
-                                // 优先使用存储的itemType信息
-                                if (methodObj.ArrayItemTypes.ContainsKey(prop.Key))
-                                {
-                                    itemType = methodObj.ArrayItemTypes[prop.Key];
-                                }
-                                // 如果没有存储的itemType，根据属性名推断数组元素类型
-                                else if (prop.Key == "position" || prop.Key == "rotation" || prop.Key == "scale" ||
-                                         prop.Key == "color" || prop.Key.Contains("vector") || prop.Key.Contains("Vector"))
-                                {
-                                    itemType = "number";
-                                }
-
-                                items.Add("type", new JsonData(itemType));
-                                propDef.Add("items", items);
-                            }
-
-                            objProperties.Add(prop.Key, propDef);
-                        }
-                        property.Add("properties", objProperties);
-                    }
-
-                    // 处理向量类型的特殊属性
-                    if (key is MethodVector methodVector)
-                    {
-                        // 强制设置类型为array，覆盖任何其他可能的类型
-                        property["type"] = new JsonData("array");
-
-                        // 为数组类型添加items定义
-                        var items = new JsonClass();
-                        items.Add("type", new JsonData("number"));
-                        property.Add("items", items);
-
-                        // 添加最小和最大长度限制
-                        property.Add("minItems", new JsonData(methodVector.Dimension));
-                        property.Add("maxItems", new JsonData(methodVector.Dimension));
-
-                        // 添加严格的数组格式约束
-                        property.Add("format", new JsonData($"vector{methodVector.Dimension}"));
-
-                        // 明确说明只接受数组
-                        property["description"] = new JsonData($"{key.Desc} [x, y, z]");
-                    }
-
-                    // 添加示例值
-                    if (key.Examples != null && key.Examples.Count > 0)
-                    {
-                        var examplesArray = new JsonArray();
-                        foreach (var example in key.Examples)
-                        {
-                            // 对于MethodVector，示例是字符串格式的数组，需要解析为JSON数组
-                            if (key is MethodVector && example is string vectorStr && vectorStr.StartsWith("[") && vectorStr.EndsWith("]"))
-                            {
-                                try
-                                {
-                                    // 解析字符串格式的数组为JsonArray
-                                    var vectorJson = Json.Parse(vectorStr);
-                                    examplesArray.Add(vectorJson);
-                                }
-                                catch
-                                {
-                                    // 如果解析失败，作为字符串添加
-                                    examplesArray.Add(new JsonData(example));
-                                }
-                            }
-                            else
-                            {
-                                examplesArray.Add(new JsonData(example));
-                            }
-                        }
-                        property.Add("examples", examplesArray);
-                    }
-
-                    // 添加枚举值
-                    if (key.EnumValues != null && key.EnumValues.Count > 0)
-                    {
-                        var enumArray = new JsonArray();
-                        foreach (var enumValue in key.EnumValues)
-                        {
-                            enumArray.Add(new JsonData(enumValue));
-                        }
-                        property.Add("enum", enumArray);
-                    }
-
-                    // 添加默认值
-                    if (key.DefaultValue != null)
-                    {
-                        if (key.DefaultValue is string strValue)
-                        {
-                            property.Add("default", new JsonData(strValue));
-                        }
-                        else if (key.DefaultValue is int intValue)
-                        {
-                            property.Add("default", new JsonData(intValue));
-                        }
-                        else if (key.DefaultValue is bool boolValue)
-                        {
-                            property.Add("default", new JsonData(boolValue));
-                        }
-                        else if (key.DefaultValue is float floatValue)
-                        {
-                            property.Add("default", new JsonData(floatValue));
-                        }
-                        else if (key.DefaultValue is string[] strArrayValue)
-                        {
-                            var defaultArray = new JsonArray();
-                            foreach (var item in strArrayValue)
-                            {
-                                defaultArray.Add(new JsonData(item));
-                            }
-                            property.Add("default", defaultArray);
-                        }
-                        else
-                        {
-                            property.Add("default", new JsonData(key.DefaultValue.ToString()));
-                        }
-                    }
-
-                    properties.Add(key.Key, property);
-
-                    if (!key.Optional)
-                    {
-                        required.Add(new JsonData(key.Key));
-                    }
-                }
-
-                var schema = new JsonClass();
-                schema.Add("type", new JsonData("object"));
-                schema.Add("properties", properties);
-                if (required.Count > 0)
-                {
-                    schema.Add("required", required);
-                }
-
-                toolInfo.inputSchema = schema;
-            }
-
-            return toolInfo;
         }
 
         private IEnumerator StartServiceDelay()
@@ -1802,13 +1423,13 @@ namespace UniMcp
                 McpLogger.Log($"[UniMcp] 本机访问: http://127.0.0.1:{mcpPort}/ 或 http://localhost:{mcpPort}/mcp");
                 if (successPrefix.Contains("*"))
                     McpLogger.Log($"[UniMcp] 非本机访问: 使用本机IP http://<本机IP>:{mcpPort}/ （需防火墙放行该端口）");
-                McpLogger.Log($"[UniMcp] 可用工具数量: {availableTools.Count}");
+                McpLogger.Log($"[UniMcp] 可用工具数量: {toolInfos.Count}");
 
                 // 打印所有可用工具的名称
-                if (availableTools.Count > 0)
+                if (toolInfos.Count > 0)
                 {
                     McpLogger.Log($"[UniMcp] 可用工具列表:");
-                    var toolNamesCopy = availableTools.Keys.ToList();
+                    var toolNamesCopy = toolInfos.Keys.ToList();
                     foreach (var toolName in toolNamesCopy)
                     {
                         McpLogger.Log($"[UniMcp] - {toolName}");
@@ -1816,7 +1437,7 @@ namespace UniMcp
                 }
                 else
                 {
-                    McpLogger.LogWarning($"[UniMcp] 没有发现可用工具，请检查IToolMethod接口的实现");
+                    McpLogger.LogWarning($"[UniMcp] 没有发现可用工具，请检查 [ToolModule]/[ToolAction] 声明");
                 }
 
                 // 保存状态到 McpLocalSettings
@@ -2845,45 +2466,21 @@ namespace UniMcp
                     
                     if (enableDescriptions)
                     {
-                        // 启用描述：返回完整描述和参数信息
-                        // 从availableTools重新获取当前语言的描述和inputSchema
-                        string description = toolInfo.description;
-                        JsonNode inputSchema = toolInfo.inputSchema;
-                        
-                        if (availableTools.TryGetValue(toolInfo.name, out var toolInstance))
+                        // 启用描述：返回完整描述和参数信息。
+                        // toolInfos 已在 RefreshToolInfos 中按当前语言重建，直接使用即可。
+                        tool.Add("description", new JsonData(toolInfo.description));
+
+                        if (toolInfo.inputSchema != null)
                         {
-                            // 重新获取当前语言的描述
-                            description = !string.IsNullOrEmpty(toolInstance.Description) ? toolInstance.Description : description;
-                            
-                            // 重新构建inputSchema以获取当前语言的参数描述
-                            inputSchema = RebuildInputSchema(toolInstance, true);
-                        }
-                        
-                        tool.Add("description", new JsonData(description));
-                        
-                        if (inputSchema != null)
-                        {
-                            tool.Add("inputSchema", inputSchema);
+                            tool.Add("inputSchema", toolInfo.inputSchema);
                         }
                     }
                     else
                     {
                         // 禁用描述：不返回 description 字段，减少 token 占用
                         // MCP 客户端应通过 Skill/规则文件获取使用指导
-                        
-                        // 仍然需要提供 inputSchema 结构，但不包含描述信息
-                        if (availableTools.TryGetValue(toolInfo.name, out var toolInstance))
+                        if (toolInfo.inputSchema != null)
                         {
-                            JsonNode minimalSchema = RebuildInputSchema(toolInstance, false);
-                            if (minimalSchema != null)
-                            {
-                                tool.Add("inputSchema", minimalSchema);
-                            }
-                        }
-                        else if (toolInfo.inputSchema != null)
-                        {
-                            // 对于 async_call 和 batch_call 等没有 IToolMethod 实例的工具
-                            // 需要手动处理其 inputSchema 中的描述
                             JsonNode minimalSchema = RemoveDescriptionsFromSchema(toolInfo.inputSchema);
                             tool.Add("inputSchema", minimalSchema);
                         }
@@ -2910,207 +2507,8 @@ namespace UniMcp
         }
 
         /// <summary>
-        /// 重新构建inputSchema以获取当前语言的参数描述
-        /// </summary>
-        /// <param name="toolInstance">工具实例</param>
-        /// <param name="enableDescriptions">是否包含描述信息（默认true）</param>
-        private JsonNode RebuildInputSchema(IToolMethod toolInstance, bool enableDescriptions = true)
-        {
-            if (toolInstance.Keys == null || toolInstance.Keys.Length == 0)
-                return null;
-
-            var properties = new JsonClass();
-            var required = new JsonArray();
-
-            foreach (var key in toolInstance.Keys)
-            {
-                var property = new JsonClass();
-
-                // 设置参数类型，默认为string
-                string paramType = !string.IsNullOrEmpty(key.Type) ? key.Type : "string";
-                property.Add("type", new JsonData(paramType));
-
-                // 设置描述（使用当前语言）- 根据 enableDescriptions 决定是否包含
-                if (enableDescriptions)
-                {
-                    property.Add("description", new JsonData(key.Desc));
-                }
-                // 禁用描述时不添加 description 字段，节省 token
-
-                // 为所有数组类型添加items定义（通用处理）
-                if (paramType == "array" && !(key is MethodVector) && !(key is MethodArr))
-                {
-                    var items = new JsonClass();
-                    items.Add("type", new JsonData("string"));
-                    property.Add("items", items);
-                }
-
-                // 处理数组类型的特殊属性
-                if (key is MethodArr methodArr)
-                {
-                    var items = new JsonClass();
-                    items.Add("type", new JsonData(methodArr.ItemType));
-                    property.Add("items", items);
-                }
-
-                // 处理对象类型的特殊属性
-                if (key is MethodObj methodObj && methodObj.Properties.Count > 0)
-                {
-                    var objProperties = new JsonClass();
-                    foreach (var prop in methodObj.Properties)
-                    {
-                        var propDef = new JsonClass();
-                        propDef.Add("type", new JsonData(prop.Value));
-
-                        if (prop.Value == "array")
-                        {
-                            var items = new JsonClass();
-                            string itemType = "string";
-
-                            if (methodObj.ArrayItemTypes.ContainsKey(prop.Key))
-                            {
-                                itemType = methodObj.ArrayItemTypes[prop.Key];
-                            }
-                            else if (prop.Key == "position" || prop.Key == "rotation" || prop.Key == "scale" ||
-                                     prop.Key == "color" || prop.Key.Contains("vector") || prop.Key.Contains("Vector"))
-                            {
-                                itemType = "number";
-                            }
-
-                            items.Add("type", new JsonData(itemType));
-                            propDef.Add("items", items);
-                        }
-
-                        objProperties.Add(prop.Key, propDef);
-                    }
-                    property.Add("properties", objProperties);
-                }
-
-                // 处理向量类型的特殊属性
-                if (key is MethodVector methodVector)
-                {
-                    property["type"] = new JsonData("array");
-                    var items = new JsonClass();
-                    items.Add("type", new JsonData("number"));
-                    property.Add("items", items);
-                    property.Add("minItems", new JsonData(methodVector.Dimension));
-                    property.Add("maxItems", new JsonData(methodVector.Dimension));
-                    property.Add("format", new JsonData($"vector{methodVector.Dimension}"));
-                    
-                    // 根据 enableDescriptions 决定是否包含详细描述
-                    if (enableDescriptions)
-                    {
-                        property["description"] = new JsonData($"{key.Desc} [x, y, z]");
-                    }
-                }
-
-                // 添加示例值 - 根据 enableDescriptions 决定是否包含
-                if (enableDescriptions && key.Examples != null && key.Examples.Count > 0)
-                {
-                    var examplesArray = new JsonArray();
-                    foreach (var example in key.Examples)
-                    {
-                        if (key is MethodVector && example is string vectorStr && vectorStr.StartsWith("[") && vectorStr.EndsWith("]"))
-                        {
-                            try
-                            {
-                                var vectorJson = Json.Parse(vectorStr);
-                                examplesArray.Add(vectorJson);
-                            }
-                            catch
-                            {
-                                examplesArray.Add(new JsonData(example));
-                            }
-                        }
-                        else
-                        {
-                            examplesArray.Add(new JsonData(example));
-                        }
-                    }
-                    property.Add("examples", examplesArray);
-                }
-
-                // 添加枚举值
-                if (key.EnumValues != null && key.EnumValues.Count > 0)
-                {
-                    var enumArray = new JsonArray();
-                    foreach (var enumValue in key.EnumValues)
-                    {
-                        enumArray.Add(new JsonData(enumValue));
-                    }
-                    property.Add("enum", enumArray);
-                }
-
-                // 添加默认值 - 根据 enableDescriptions 决定是否包含
-                if (enableDescriptions && key.DefaultValue != null)
-                {
-                    if (key.DefaultValue is string strValue)
-                    {
-                        property.Add("default", new JsonData(strValue));
-                    }
-                    else if (key.DefaultValue is int intValue)
-                    {
-                        property.Add("default", new JsonData(intValue));
-                    }
-                    else if (key.DefaultValue is bool boolValue)
-                    {
-                        property.Add("default", new JsonData(boolValue));
-                    }
-                    else if (key.DefaultValue is float floatValue)
-                    {
-                        property.Add("default", new JsonData(floatValue));
-                    }
-                    else if (key.DefaultValue is double doubleValue)
-                    {
-                        property.Add("default", new JsonData((float)doubleValue));
-                    }
-                    else if (key.DefaultValue is string[] strArrayValue)
-                    {
-                        var defaultArray = new JsonArray();
-                        foreach (var item in strArrayValue)
-                        {
-                            defaultArray.Add(new JsonData(item));
-                        }
-                        property.Add("default", defaultArray);
-                    }
-                    else if (key.DefaultValue is float[] floatArrayValue)
-                    {
-                        var defaultArray = new JsonArray();
-                        foreach (var item in floatArrayValue)
-                        {
-                            defaultArray.Add(new JsonData(item));
-                        }
-                        property.Add("default", defaultArray);
-                    }
-                    else
-                    {
-                        property.Add("default", new JsonData(key.DefaultValue.ToString()));
-                    }
-                }
-
-                properties.Add(key.Key, property);
-
-                // 添加必填参数
-                if (!key.Optional)
-                {
-                    required.Add(new JsonData(key.Key));
-                }
-            }
-
-            var inputSchema = new JsonClass();
-            inputSchema.Add("type", new JsonData("object"));
-            inputSchema.Add("properties", properties);
-            if (required.Count > 0)
-            {
-                inputSchema.Add("required", required);
-            }
-
-            return inputSchema;
-        }
-
-        /// <summary>
         /// 递归移除 JSON Schema 中的所有 description 字段
-        /// 用于处理预构建的 inputSchema（如 async_call 和 batch_call）
+        /// 用于处理预构建的 inputSchema（如 async_call）
         /// </summary>
         private JsonNode RemoveDescriptionsFromSchema(JsonNode schema)
         {
@@ -4301,16 +3699,6 @@ namespace UniMcp
 
                 switch (toolName)
                 {
-                    case "batch_call":
-                        // batch_call期望直接的数组格式，但MCP传入的是 {args: [...]}
-                        if (argumentsNode is JsonClass argsObj && argsObj.ContainsKey("args"))
-                        {
-                            var argsArray = argsObj["args"];
-                            Log($"[UniMcp] 适配batch_call参数：从对象格式转换为数组格式");
-                            return argsArray;
-                        }
-                        break;
-
                     case "async_call":
                         // async_call参数保持原样
                         return argumentsNode;
@@ -4320,7 +3708,6 @@ namespace UniMcp
                         return argumentsNode;
                 }
 
-                return argumentsNode;
             }
             catch (Exception ex)
             {
@@ -4356,7 +3743,7 @@ namespace UniMcp
                     return CreateMcpErrorResponse(id, -32602, "Tool name is required");
                 }
 
-                // 检查工具是否启用（保持原 MCP 调用链行为，含 ToolsCall 注册的二级方法）
+                // 检查工具是否启用
                 if (!McpLocalSettings.Instance.IsToolEnabled(toolName))
                 {
                     McpLogger.LogError($"[UniMcp] 工具已禁用: {toolName}, ID: {id}");
@@ -4411,39 +3798,6 @@ namespace UniMcp
                                             func = "checking...";
                                         cmdName = "async_call." + func;
                                         argsString = argumentsNode?.ToString() ?? "{}";
-                                    }
-                                    else if (toolName == "batch_call" && argumentsNode is JsonClass batchArgs && batchArgs.ContainsKey("args"))
-                                    {
-                                        var funcsArray = batchArgs["args"].AsArray;
-                                        if (funcsArray != null)
-                                        {
-                                            var funcNames = new List<string>();
-                                            foreach (JsonNode funcObj in funcsArray.Childs)
-                                            {
-                                                var funcNode = funcObj as JsonClass;
-                                                if (funcNode != null)
-                                                {
-                                                    var funcName = funcNode["func"]?.Value;
-                                                    if (!string.IsNullOrEmpty(funcName))
-                                                    {
-                                                        funcNames.Add(funcName);
-                                                    }
-                                                }
-                                            }
-                                            if (funcNames.Count > 2)
-                                            {
-                                                cmdName = $"batch_call.[{string.Join(",", funcNames.Take(2))}...]";
-                                            }
-                                            else
-                                            {
-                                                cmdName = $"batch_call.[{string.Join(",", funcNames)}]";
-                                            }
-                                        }
-                                        else
-                                        {
-                                            cmdName = "batch_call.[*]";
-                                        }
-                                        argsString = funcsArray?.ToString() ?? "[]";
                                     }
                                     else
                                     {
@@ -4607,44 +3961,25 @@ namespace UniMcp
         /// <returns></returns>
         private McpTool GetMcpTool(string toolName)
         {
-            Log($"[UniMcp] 请求获取工具: {toolName}");
+            Log("[UniMcp] 请求获取工具: " + toolName);
 
-            if (mcpToolInstanceCache.Count == 0)
+            var spec = ToolCatalog.Find(toolName);
+            if (spec != null)
             {
-                Log($"[UniMcp] 工具缓存为空，开始反射查找工具实例");
-                // 没有缓存则反射查找并缓存
-                var toolType = typeof(McpTool);
-                var toolInstances = AppDomain.CurrentDomain.GetAssemblies()
-                    .SelectMany(a => a.GetTypes())
-                    .Where(t => !t.IsAbstract && toolType.IsAssignableFrom(t)).Select(t => Activator.CreateInstance(t) as McpTool);
-
-                int cacheCount = 0;
-                foreach (var toolInstance in toolInstances)
-                {
-                    mcpToolInstanceCache[toolInstance.ToolName] = toolInstance;
-                    cacheCount++;
-                    Log($"[UniMcp] 缓存工具: {toolInstance.ToolName} ({toolInstance.GetType().Name})");
-                }
-                Log($"[UniMcp] 工具缓存完成，共缓存 {cacheCount} 个工具");
+                // A fresh facade per call: no shared dispatcher state.
+                return new ToolCall(spec);
             }
 
             if (mcpToolInstanceCache.TryGetValue(toolName, out var tool))
             {
-                Log($"[UniMcp] 从缓存中获取到工具: {toolName} ({tool.GetType().Name})");
+                Log("[UniMcp] 从缓存中获取到工具: " + toolName + " (" + tool.GetType().Name + ")");
                 return tool;
             }
 
-            if (methodsCall.GetToolMethod(toolName) != null)
-            {
-                Log($"[UniMcp] 从methodsCall中获取到工具: {toolName}");
-                methodsCall.SetToolName(toolName);
-                return methodsCall;
-            }
-
-            var availableToolNames = mcpToolInstanceCache.Keys.ToList();
-            LogError($"[UniMcp] 未找到工具: {toolName}，可用工具: [{string.Join(", ", availableToolNames)}]");
+            LogError("[UniMcp] 未找到工具: " + toolName + "，可用工具数: " + ToolCatalog.Count);
             return null;
         }
+        /// <summary>
         /// <summary>
         /// 创建MCP成功响应
         /// </summary>

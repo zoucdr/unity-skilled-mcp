@@ -810,85 +810,6 @@ test('resource 拒绝未注册 URI，仅读取目录内资源内容', async t =>
   failure(await f.run(['resource', 'res://foo']), 5);
 });
 
-test('calls 顺序执行、id 递增，全部成功时退出码 0', async t => {
-  const f = await fixture(t);
-  const raw = await f.run(['calls', '--calls', '[{"name":"a"},{"name":"b","arguments":{"value":1}}]']);
-  assert.equal(raw.code, 0, raw.stderr);
-  const result = JSON.parse(raw.stdout);
-  assert.equal(result.executed, 2);
-  assert.equal(result.total, 2);
-  assert.equal(result.stopped_at, null);
-  assert.equal(result.exit_code, 0);
-  assert.deepEqual(result.steps.map(s => s.name), ['a', 'b']);
-  assert.ok(result.steps.every(s => s.ok));
-  const rpcs = f.requests.filter(r => r.url === '/mcp');
-  assert.deepEqual(rpcs.map(r => r.body.id), [1, 2]);
-  assert.deepEqual(rpcs[1].body.params.arguments, { value: 1 });
-  assert.match(raw.stderr, /已执行 2\/2 步，全部完成/);
-});
-
-test('calls 中途失败即停，保留已执行步骤且不再发送后续调用', async t => {
-  const f = await fixture(t);
-  f.state.failToolName = 'b';
-  const raw = await f.run(['calls', '--calls', '[{"name":"a"},{"name":"b"},{"name":"c"}]']);
-  assert.equal(raw.code, 6, raw.stderr);
-  const result = JSON.parse(raw.stdout);
-  assert.equal(result.executed, 2);
-  assert.equal(result.total, 3);
-  assert.equal(result.stopped_at, 1);
-  assert.equal(result.exit_code, 6);
-  assert.equal(result.steps[0].ok, true);
-  assert.equal(result.steps[1].ok, false);
-  assert.match(result.steps[1].error.message, /isError/);
-  assert.equal(f.requests.filter(r => r.url === '/mcp').length, 2);
-  assert.match(raw.stderr, /不可盲目重放/);
-});
-
-test('calls 连接/HTTP 失败按原始退出码停止，不重试', async t => {
-  const f = await fixture(t);
-  f.state.mode = 'http_error';
-  const raw = await f.run(['calls', '--calls', '[{"name":"a"},{"name":"b"}]']);
-  assert.equal(raw.code, 4, raw.stderr);
-  const result = JSON.parse(raw.stdout);
-  assert.equal(result.executed, 1);
-  assert.equal(result.steps[0].error.code, 4);
-  assert.equal(f.requests.filter(r => r.url === '/mcp').length, 1);
-});
-
-test('calls 参数校验、上限与请求体上限在网络前失败', async t => {
-  const f = await fixture(t);
-  for (const value of [
-    '[]', '{}', '[null]', '[{"name":"all"}]', '[{"name":"a","arguments":[]}]',
-    '[{"name":"a","extra":1}]', '[{"name":"a","arguments":{"x":1e999}}]',
-  ]) {
-    failure(await f.run(['calls', '--calls', value]), 2);
-  }
-  failure(await f.run(['calls']), 2);
-  failure(await f.run(['calls', 'a']), 2);
-  assert.equal(f.requests.length, 0);
-  const nine = JSON.stringify(Array.from({ length: 9 }, (_, i) => ({ name: 'n' + i })));
-  failure(await f.run(['calls', '--calls', nine]), 2);
-  assert.equal(f.requests.filter(r => r.url === '/mcp').length, 0);
-  const big = JSON.stringify([{ name: 'a', arguments: { blob: 'x'.repeat(70000) } }]);
-  failure(await f.run(['calls', '--calls-stdin'], Buffer.from(big)), 2);
-  assert.equal(f.requests.filter(r => r.url === '/mcp').length, 0);
-});
-
-test('calls 支持文件与 stdin、BOM，且 0 上限解除数量限制', async t => {
-  const f = await fixture(t);
-  const file = path.join(f.dir, 'calls.json');
-  await fs.writeFile(file, '\ufeff[{"name":"a"}]');
-  assert.equal(success(await f.run(['calls', '--calls-file', file])).executed, 1);
-  const raw = await f.run(['calls', '--calls-stdin'], '\ufeff[{"name":"a"},{"name":"b"}]');
-  assert.equal(raw.code, 0, raw.stderr);
-  assert.equal(JSON.parse(raw.stdout).executed, 2);
-  f.state.discovery = { max_details: 0 };
-  const ten = JSON.stringify(Array.from({ length: 10 }, (_, i) => ({ name: 'n' + i })));
-  const unlimited = await f.run(['calls', '--calls', ten]);
-  assert.equal(unlimited.code, 0, unlimited.stderr);
-  assert.equal(JSON.parse(unlimited.stdout).executed, 10);
-});
-
 test('require 模块不会触发 CLI 主流程，并导出库 API', () => {
   assert.equal(typeof lib.main, 'undefined');
   assert.equal(typeof lib.Client, 'function');
@@ -955,7 +876,6 @@ test('库 API：Client 与顶层函数复用 CLI 校验并可直接调用工具'
   assert.equal(await c.callSkillText('demo', {}), '完成');
   assert.equal((await c.prompt('foo')).result.messages.length, 1);
   assert.equal((await c.resource('res://foo')).result.contents.length, 1);
-  assert.equal((await c.calls([{ name: 'demo', arguments: {} }])).executed, 1);
   assert.equal((await c.request('custom')).custom, true);
   assert.equal((await c.request('/custom', { method: 'POST', data: { a: 1 }, headers: ['X-Test: yes'] })).method, 'POST');
   await assert.rejects(c.details(), /只能选一种/);
@@ -974,7 +894,6 @@ test('库 API：Client 与顶层函数复用 CLI 校验并可直接调用工具'
     assert.equal(await lib.callSkillText('demo', {}), '完成');
     assert.equal((await lib.readPrompt('foo')).result.messages.length, 1);
     assert.equal((await lib.readResource('res://foo')).result.contents.length, 1);
-    assert.equal((await lib.callMany([{ name: 'demo', arguments: {} }])).executed, 1);
     assert.equal((await lib.requestRoute('custom')).custom, true);
   } finally {
     lib.configure();
@@ -987,13 +906,12 @@ test('workflowContext 记录成功与失败调用，并支持省略描述', asyn
   const summary = await lib.workflowContext('build_scene', 'Create player and camera', async wf => {
     await c.callSkill('demo', { name: 'Player' });
     await c.callSkillText('demo', {});
-    await c.calls([{ name: 'demo', arguments: {} }]);
     return wf.summary();
   });
   assert.equal(summary.name, 'build_scene');
   assert.equal(summary.description, 'Create player and camera');
-  assert.equal(summary.calls, 3);
-  assert.equal(summary.succeeded, 3);
+  assert.equal(summary.calls, 2);
+  assert.equal(summary.succeeded, 2);
   assert.ok(summary.duration_ms >= 0);
 
   f.state.failToolName = 'demo';

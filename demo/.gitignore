@@ -10,6 +10,8 @@
 /[Pp]rojectSettings/ProjectSetting.asset
 /[Pp]rojectSettings/BurstAotSettings_Android.asset
 /[Pp]rojectSettings/TimelineSettings.asset
+# async_call conclusions are per-machine runtime output, not source
+/[Pp]rojectSettings/UnitySkilledMcpAsyncResults.asset
 /UMotionData/
 
 /.vs/*

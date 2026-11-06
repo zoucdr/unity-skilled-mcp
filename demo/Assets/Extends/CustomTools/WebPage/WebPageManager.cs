@@ -25,7 +25,8 @@ namespace UniMcp.Tools
     /// 对应方法名: webpage_manage
     /// </summary>
     [ToolName("webpage_manage", "Network Tools", "网络工具")]
-    public class WebPageManage : StateMethodBase
+    [ToolModule("webpage", GroupEn = "Network Tools", GroupZh = "网络工具", LegacyName = "webpage_manage")]
+    public class WebPageManage : ToolModuleBase
     {
         public override string Description => L.T("Web page management tool, supports add, remove, query, list and other operations", "网页管理工具，支持添加、删除、查询、列表等操作");
         /// <summary>
@@ -67,27 +68,12 @@ namespace UniMcp.Tools
             };
         }
 
-        protected override StateTree CreateStateTree()
-        {
-            return StateTreeBuilder
-                .Create()
-                .Key("action")
-                    .Leaf("add", HandleAddWebPage)
-                    .Leaf("remove", HandleRemoveWebPage)
-                    .Leaf("update", HandleUpdateWebPage)
-                    .Leaf("search", HandleSearchWebPage)
-                    .Leaf("categories", HandleGetCategories)
-                    .Leaf("open", HandleOpenWebPage)
-                    .Leaf("details", HandleGetDetails)
-                    .DefaultLeaf(HandleUnknownAction)
-                .Build();
-        }
-
-        // --- State Tree Action Handlers ---
+        // --- Tool Action Handlers ---
 
         /// <summary>
         /// 处理添加网页的操作
         /// </summary>
+        [ToolAction("add", "description=require", "url=require", "category", "note")]
         private object HandleAddWebPage(JsonClass args)
         {
             try
@@ -119,6 +105,7 @@ namespace UniMcp.Tools
             }
         }
 
+        [ToolAction("remove", "id", "url", "index")]
         /// <summary>
         /// 处理删除网页的操作
         /// </summary>
@@ -201,6 +188,7 @@ namespace UniMcp.Tools
             }
         }
 
+        [ToolAction("search", "pattern=require")]
         /// <summary>
         /// 处理搜索网页的操作（使用正则表达式）
         /// </summary>
@@ -268,6 +256,7 @@ namespace UniMcp.Tools
             }
         }
 
+        [ToolAction("update", "id", "url", "index", "description", "category", "note")]
         /// <summary>
         /// 处理修改网页的操作
         /// </summary>
@@ -389,6 +378,7 @@ namespace UniMcp.Tools
             }
         }
 
+        [ToolAction("categories")]
         /// <summary>
         /// 处理获取所有分类的操作
         /// </summary>
@@ -425,6 +415,7 @@ namespace UniMcp.Tools
             }
         }
 
+        [ToolAction("open", "id", "url", "index")]
         /// <summary>
         /// 处理打开网页的操作
         /// </summary>
@@ -491,6 +482,7 @@ namespace UniMcp.Tools
             }
         }
 
+        [ToolAction("details", "id=require")]
         /// <summary>
         /// 处理获取网页详细信息的操作
         /// </summary>
@@ -528,16 +520,6 @@ namespace UniMcp.Tools
                 LogError($"[WebPageManager] {L.T("Failed to get details", "获取详情失败")}: {e.Message}");
                 return Response.Error(string.Format(L.T("Failed to get details: {0}", "获取详情失败: {0}"), e.Message));
             }
-        }
-
-        /// <summary>
-        /// 处理未知操作的回调方法
-        /// </summary>
-        private object HandleUnknownAction(JsonClass args)
-        {
-            string action = args["action"]?.Value;
-            if (string.IsNullOrEmpty(action)) action = "null";
-            return Response.Error(string.Format(L.T("Unknown action: '{0}'. Valid actions: 'add'(add), 'remove'(remove), 'update'(update), 'search'(regex search), 'list'(list), 'categories'(categories), 'open'(open), 'details'(details)", "未知操作: '{0}'。有效操作: 'add'(添加), 'remove'(删除), 'update'(修改), 'search'(正则搜索), 'list'(列表), 'categories'(分类), 'open'(打开), 'details'(详情)"), action));
         }
 
         // --- Parameter Extraction Helper Methods ---

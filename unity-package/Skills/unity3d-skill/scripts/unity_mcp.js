@@ -341,21 +341,6 @@ function findQuery(value) {
   return value;
 }
 
-function callsPayload(args) {
-  const value = inputJson(args);
-  if (!Array.isArray(value) || value.length === 0) {
-    throw new ClientError('calls 必须是非空 JSON 数组。', 2);
-  }
-  return value.map((item, index) => {
-    if (!isObject(item) || !selectionValue(item.name)
-        || Object.keys(item).some(key => !['name', 'arguments'].includes(key))
-        || (Object.hasOwn(item, 'arguments') && !isObject(item.arguments))) {
-      throw new ClientError('第 ' + (index + 1) + ' 个调用只能是 {name, arguments?}，arguments 必须是 JSON 对象。', 2);
-    }
-    return { name: item.name, arguments: item.arguments || {} };
-  });
-}
-
 function rpcEnvelope(method, params, id) {
   return { jsonrpc: '2.0', id, method, params };
 }
@@ -423,11 +408,10 @@ function help(command) {
     find: 'find QUERY [--kind tools|prompts|resources]\n  在目录摘要中按名称/描述/标签/URI 做本地关键字过滤，不拉取详情；默认 tools。',
     prompt: 'prompt NAME\n  名称必须来自 list --kind prompts；读取 prompts/get 的消息正文，不隐式调用旧目录接口。',
     resource: 'resource URI\n  URI 必须来自 list --kind resources；读取 resources/read 内容，拒绝未注册的 http/file URI。',
-    calls: 'calls (--calls JSON数组 | --calls-file FILE | --calls-stdin)\n  数组元素为 {name, arguments?}，顺序执行，失败即停并保留已执行步骤；上限由 max_details 决定（默认32，0不限数量），请求体最多 65536 字节。',
     request: 'request TARGET [--method GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS]\n  [--header NAME:VALUE ...] [--data JSON | --data-file FILE | --data-stdin]',
   };
   return '用法：node scripts/unity_mcp.js [--ini PATH] [--timeout SECONDS] '
-    + (usage[command] || 'discover|groups|list|find|details|schema|schemas|call|prompt|resource|calls|request')
+    + (usage[command] || 'discover|groups|list|find|details|schema|schemas|call|prompt|resource|request')
     + '\n默认 INI：~/.unity-mcp/skill.ini；超时：15 秒（正有限数）。'
     + '\n每次读取 INI 并验证 discovery；不重试、不跟随重定向，验证 TLS。'
     + '\nJSON 文件/标准输入支持 UTF-8 BOM；call 默认传 {}；request 支持 /ROUTE、省略斜杠的路由名或授权的绝对 HTTP URL（Git Bash 路径转换自动还原）。'
@@ -446,7 +430,7 @@ function parseArgs(argv) {
     if (!positionalOnly && token.startsWith('-')) {
       const split = token.indexOf('=');
       const flag = split < 0 ? token : token.slice(0, split);
-      const prefix = { call: '--args', request: '--data', details: '--members', schemas: '--names', calls: '--calls' }[args.command];
+      const prefix = { call: '--args', request: '--data', details: '--members', schemas: '--names' }[args.command];
       const source = prefix && (flag === prefix ? 'text' : flag === prefix + '-file' ? 'file' : flag === prefix + '-stdin' ? 'stdin' : null);
       const global = !args.command && ['--ini', '--timeout'].includes(flag);
       const requestOption = args.command === 'request' && ['--method', '--header'].includes(flag);
@@ -472,7 +456,7 @@ function parseArgs(argv) {
       else if (flag === '--method') args.method = value;
       else args.headers.push(value);
     } else if (!args.command) {
-      if (!['discover', 'groups', 'list', 'find', 'details', 'schema', 'schemas', 'call', 'prompt', 'resource', 'calls', 'request'].includes(token)) throw new ClientError('未知命令：' + token, 2);
+      if (!['discover', 'groups', 'list', 'find', 'details', 'schema', 'schemas', 'call', 'prompt', 'resource', 'request'].includes(token)) throw new ClientError('未知命令：' + token, 2);
       args.command = token;
     } else if (['schema', 'call', 'prompt', 'resource', 'find', 'request'].includes(args.command) && args.target === undefined) {
       args.target = token;
@@ -487,9 +471,6 @@ function parseArgs(argv) {
   if (args.command === 'schemas') {
     if (args.targets.length && args.jsonSource) throw new ClientError('schemas 的名称列表与 --names 输入只能二选一。', 2);
     if (!args.targets.length && !args.jsonSource) throw new ClientError('缺少工具名称；使用 --help 查看用法。', 2);
-  }
-  if (args.command === 'calls' && !args.jsonSource) {
-    throw new ClientError('缺少调用列表；使用 --calls / --calls-file / --calls-stdin。', 2);
   }
   if (!Number.isFinite(args.timeout) || args.timeout <= 0) throw new ClientError('--timeout 必须为正有限数。', 2);
   if (!['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'].includes(args.method)) throw new ClientError('不支持的 HTTP 方法。', 2);
@@ -521,7 +502,6 @@ async function execute(args) {
   }
   if (args.command === 'details') payload = detailsPayload(args);
   if (args.command === 'schemas') payload = { tools: schemaNames(args) };
-  if (args.command === 'calls') payload = callsPayload(args);
   // 名称/关键字/URI 的格式校验在 discovery 之前完成，非法输入不产生任何网络请求。
   if (args.command === 'find') payload = { query: findQuery(args.target) };
   if (args.command === 'prompt' || args.command === 'resource') {
@@ -611,34 +591,6 @@ async function execute(args) {
     }
     return rpcCall(info, args, 'resources/read', { uri }, 1, 'contents');
   }
-  if (args.command === 'calls') {
-    const limit = info.max_details;
-    if (limit > 0 && payload.length > limit) {
-      throw new ClientError('一次最多 ' + limit + ' 个调用（discovery max_details）；未发送任何调用。', 2);
-    }
-    if (Buffer.byteLength(JSON.stringify(payload), 'utf8') > MAX_RESPONSE_BYTES) {
-      throw new ClientError('批量调用请求体超过 65536 字节；未发送任何调用。', 2);
-    }
-    const steps = [];
-    let exitCode = 0;
-    let stoppedAt = null;
-    for (let index = 0; index < payload.length; index++) {
-      try {
-        const envelope = await rpcCall(info, args, 'tools/call',
-          { name: payload[index].name, arguments: payload[index].arguments }, index + 1);
-        steps.push({ index, name: payload[index].name, ok: true, result: envelope.result });
-      } catch (error) {
-        const code = error instanceof ClientError ? error.code : 5;
-        steps.push({ index, name: payload[index].name, ok: false, error: { code, message: error.message } });
-        exitCode = code;
-        stoppedAt = index;
-        break;
-      }
-    }
-    logInfo('批量调用：已执行 ' + steps.length + '/' + payload.length + ' 步'
-      + (stoppedAt === null ? '，全部完成。' : ' 后停止；已生效的写操作不可盲目重放。'));
-    return { steps, executed: steps.length, total: payload.length, stopped_at: stoppedAt, exit_code: exitCode };
-  }
   if (args.command === 'call') {
     return rpcCall(info, args, 'tools/call', { name: args.target, arguments: payload }, 1);
   }
@@ -653,10 +605,6 @@ async function main() {
     if (args.help) { console.log(args.help); return; }
     const result = await execute(args);
     console.log(typeof result === 'string' ? result : JSON.stringify(result, null, 2));
-    // calls 即使中途失败也输出已执行步骤，用退出码区分「全部成功」与「已停止」。
-    if (args.command === 'calls' && isObject(result) && Number.isInteger(result.exit_code)) {
-      process.exitCode = result.exit_code;
-    }
   } catch (error) {
     console.error('错误：' + error.message);
     process.exitCode = error instanceof ClientError ? error.code : 2;
@@ -743,18 +691,6 @@ class Client {
   async call(name, args = {}) {
     return this._exec('call', { target: name, jsonSource: 'text', jsonValue: jsonSourceValue(args) });
   }
-  async calls(steps) {
-    const list = Array.isArray(steps) ? steps : [];
-    const result = await this._exec('calls', { jsonSource: 'text', jsonValue: jsonSourceValue(steps) });
-    for (const step of result.steps) {
-      const original = list[step.index] || {};
-      recordCall({
-        name: step.name, arguments: original.arguments || {}, ok: step.ok,
-        batch: true, ...(step.ok ? { result: step.result } : { error: step.error }),
-      });
-    }
-    return result;
-  }
   async request(target, options = {}) {
     const overrides = { target, method: options.method || 'GET' };
     if (Array.isArray(options.headers)) overrides.headers = options.headers.slice();
@@ -794,7 +730,7 @@ function configure(options = {}) {
   return defaultClient;
 }
 
-/** 把一组程序化调用归入命名工作流；回调内的 callSkill/calls 自动记录。 */
+/** 把一组程序化调用归入命名工作流；回调内的 callSkill 等自动记录。 */
 async function workflowContext(name, description, fn, options = {}) {
   if (typeof description === 'function') {
     options = fn && typeof fn === 'object' ? fn : {};
@@ -839,14 +775,13 @@ const callSkillText = (name, args = {}) => getClient().callSkillText(name, args)
 const callSkillJson = (name, args = {}) => getClient().callSkillJson(name, args);
 const readPrompt = name => getClient().prompt(name);
 const readResource = uri => getClient().resource(uri);
-const callMany = steps => getClient().calls(steps);
 const requestRoute = (target, options = {}) => getClient().request(target, options);
 
 module.exports = {
   Client, ClientError, configure, getClient,
   connectionInfo, getGroups, listCapabilities, findCapabilities, getDetails,
   getSchema, getSchemas, callTool, callSkill, callSkillText, callSkillJson,
-  readPrompt, readResource, callMany, requestRoute, workflowContext,
+  readPrompt, readResource, requestRoute, workflowContext,
   resultText, resultJson, normalizeRequestTarget,
   DEFAULT_MAX_DETAILS, MAX_RESPONSE_BYTES,
 };

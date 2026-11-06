@@ -446,32 +446,43 @@ namespace UniMcp
             type.GetField("mcpToolInstanceCache", flags).SetValue(service, new System.Collections.Generic.Dictionary<string, UniMcp.Executer.McpTool>());
             var infos = new System.Collections.Generic.Dictionary<string, ToolInfo>();
             type.GetField("toolInfos", flags).SetValue(service, infos);
-            foreach (string method in new[] { "AddAsyncMcpTool", "AddBatchMcpTool", "AddSyncMcpTool", "AddGetPromptDetailTool", "AddSearchMcpTool" })
+            // GetUninitializedObject skips field initializers, but the legacy
+            // list handlers read the response cache. Supply the three fields.
+            foreach (string field in new[] { "responseCache", "responseCacheLock", "responseCacheExpiry" })
+            {
+                var f = type.GetField(field, flags);
+                object value = f.FieldType == typeof(object) ? new object()
+                    : f.FieldType == typeof(TimeSpan) ? (object)TimeSpan.FromSeconds(5)
+                    : System.Activator.CreateInstance(f.FieldType);
+                f.SetValue(service, value);
+            }
+            // The legacy list handlers also touch these three registries before
+            // UpdateDiscoverySnapshot is exercised below.
+            type.GetField("availablePrompts", flags).SetValue(service, new System.Collections.Generic.Dictionary<string, IPrompts>());
+            type.GetField("availableResources", flags).SetValue(service, new System.Collections.Generic.Dictionary<string, IRes>());
+            foreach (string method in new[] { "AddAsyncMcpTool", "AddGetPromptDetailTool", "AddSearchMcpTool" })
                 type.GetMethod(method, flags).Invoke(service, null);
             var snapshot = new McpDiscoverySnapshot(infos.Values);
             type.GetField("discoverySnapshot", flags).SetValue(service, snapshot);
             var systemGroup = Json.Parse(Response(snapshot, "/groups"))["groups"][0];
-            Check(systemGroup["tag"].Value == "system" && systemGroup["counts"]["tools"].AsInt == 5, "五个系统工具归入 system");
+            Check(systemGroup["tag"].Value == "system" && systemGroup["counts"]["tools"].AsInt == 3, "三个系统工具归入 system");
+            // Legacy MCP list endpoints are intentionally kept working; the Skill
+            // discovery endpoints are an alternative, not a replacement.
             foreach (string method in new[] { "HandleToolsList", "HandlePromptsList", "HandleResourcesList" })
             {
                 var response = Json.Parse((string)type.GetMethod(method, flags).Invoke(service, new object[] { "1" }));
-                Check(response["error"]["code"].AsInt == -32602 && response["error"]["message"].Value.Contains("/capabilities/details"), "旧列表明确拒绝并引导 HTTP 分组发现: " + method);
+                Check(response["result"] != null, "旧 MCP 列表仍兼容返回: " + method);
             }
             Check(type.GetMethod("BuildPromptDetailResult", flags).Invoke(service, new object[] { "disabled" }) == null, "get_prompt 拒绝快照外提示词");
             var missingPrompt = Json.Parse((string)type.GetMethod("HandlePromptsGet", flags).Invoke(service, new object[] {
                 "1", new JsonClass { { "name", new JsonData("disabled") } }
             }));
             Check(missingPrompt["error"]["code"].AsInt == -32602, "prompts/get 拒绝快照外提示词");
-            foreach (string name in new[] { "async_call", "batch_call", "sync_call", "get_prompt", "search_tool" })
+            foreach (string name in new[] { "async_call", "get_prompt", "search_tool" })
             {
                 var schema = Json.Parse(Response(snapshot, "/tools/" + name + "/schema"))["inputSchema"];
                 Check(schema["type"].Value == "object" && schema["properties"].Count > 0 && schema["required"].Count > 0, "内置工具完整 schema: " + name);
             }
-            var batch = Json.Parse(Response(snapshot, "/tools/batch_call/schema"))["inputSchema"];
-            Check(batch["properties"]["args"]["items"]["required"].Count == 2, "批量工具嵌套必填项");
-            type.GetField("availableTools", flags).SetValue(service, new System.Collections.Generic.Dictionary<string, IToolMethod>());
-            type.GetField("availablePrompts", flags).SetValue(service, new System.Collections.Generic.Dictionary<string, IPrompts>());
-            type.GetField("availableResources", flags).SetValue(service, new System.Collections.Generic.Dictionary<string, IRes>());
             type.GetField("isRunning", flags).SetValue(service, true);
             type.GetField("startedDiscoveryMaxDetails", flags).SetValue(service, 12);
             type.GetField("discoveryLanguage", flags).SetValue(service, McpLocalSettings.Instance.CurrentLanguage);

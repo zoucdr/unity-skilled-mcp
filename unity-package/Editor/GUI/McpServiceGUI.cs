@@ -21,8 +21,6 @@ namespace UniMcp.Gui
         private static Dictionary<string, bool> methodFoldouts = new Dictionary<string, bool>();
         private static Dictionary<string, bool> groupFoldouts = new Dictionary<string, bool>(); // 分组折叠状态
         private static Vector2 methodsScrollPosition;
-        private static Dictionary<string, double> methodClickTimes = new Dictionary<string, double>();
-        private const double doubleClickTime = 0.3; // 双击判定时间（秒）
         private static int groupIndex = 0; // 分组序号
 
         // 标签页相关变量
@@ -293,25 +291,29 @@ namespace UniMcp.Gui
         }
 
         /// <summary>
-        /// 绘制工具方法列表，支持折叠展开，按分组分类显示，程序集信息显示在方法名后
+        /// 绘制工具树：分组 → 工具模块（前缀）→ 内含子函数 → 各自参数。
+        /// 一步到位展示“一个模块内含哪些函数、每个函数有哪些参数”，
+        /// 数据源为声明式 ToolCatalog（一个动作即一个工具），另附内置门面工具。
         /// </summary>
         private static void DrawMethodsList()
         {
             // 使用更美观的背景框
             EditorGUILayout.BeginVertical(EditorStyles.helpBox, GUILayout.ExpandHeight(true));
 
-            // 确保方法已注册，供标题下拉框与下方列表使用
-            ToolsCall.EnsureMethodsRegisteredStatic();
-            var methodNames = ToolsCall.GetRegisteredMethodNames();
+            var specs = McpService.GetAllToolSpecs();
+            var builtins = McpService.GetBuiltinToolInfos();
+
+            // 汇总所有可切换的工具名（声明式目录 + 内置门面）
+            var allToolNames = new List<string>();
+            foreach (var spec in specs) allToolNames.Add(spec.Name);
+            foreach (var info in builtins) allToolNames.Add(info.name);
 
             // 美化标题栏：添加背景色和更好的布局
             Rect headerRect = EditorGUILayout.BeginHorizontal(EditorStyles.toolbar, GUILayout.Height(28));
-            
-            // 绘制标题背景渐变效果
+
             Color headerBgColor = new Color(0.25f, 0.25f, 0.3f, 0.3f);
             EditorGUI.DrawRect(headerRect, headerBgColor);
-            
-            // 标题样式
+
             GUIStyle headerTitleStyle = new GUIStyle(EditorStyles.boldLabel)
             {
                 fontSize = 13,
@@ -328,20 +330,20 @@ namespace UniMcp.Gui
                 L.T("Selective (Hybrid)", "选择性开启")
             };
             var localSettings = McpService.GetLocalSettings();
-            bool allEnabled = methodNames.Count() > 0 && methodNames.All(n => localSettings.IsToolEnabled(n));
-            bool allDisabled = methodNames.Count() > 0 && methodNames.All(n => !localSettings.IsToolEnabled(n));
+            bool allEnabled = allToolNames.Count > 0 && allToolNames.All(n => localSettings.IsToolEnabled(n));
+            bool allDisabled = allToolNames.Count > 0 && allToolNames.All(n => !localSettings.IsToolEnabled(n));
             int currentMode = allEnabled ? 0 : (allDisabled ? 1 : 2);
             int newMode = EditorGUILayout.Popup(currentMode, toolModeOptions, headerTitleStyle, GUILayout.Width(220));
             if (newMode != currentMode)
             {
                 if (newMode == 0)
                 {
-                    localSettings.SetToolsEnabled(methodNames, true);
+                    localSettings.SetToolsEnabled(allToolNames, true);
                     Debug.Log($"[McpServiceGUI] {L.T("Tools mode", "工具模式")}: {L.T("All On (Pure MCP)", "全部开启 (纯MCP)")}");
                 }
                 else if (newMode == 1)
                 {
-                    localSettings.SetToolsEnabled(methodNames, false);
+                    localSettings.SetToolsEnabled(allToolNames, false);
                     Debug.Log($"[McpServiceGUI] {L.T("Tools mode", "工具模式")}: {L.T("All Off (Skill Mode)", "全部关闭 (技能方式)")}");
                 }
                 // newMode == 2: Hybrid, no bulk change
@@ -357,25 +359,24 @@ namespace UniMcp.Gui
                 fontStyle = FontStyle.Bold
             };
             Color toolInfoOriginalColor = GUI.backgroundColor;
-            
-            int totalToolCount = McpService.GetToolCount();
-            int enabledToolCount = McpService.GetEnabledToolCount();
+
+            int totalToolCount = allToolNames.Count;
+            int enabledToolCount = allToolNames.Count(n => localSettings.IsToolEnabled(n));
             string toolButtonText = enabledToolCount == totalToolCount ?
                 $"✅ {L.T("Tools", "工具")}({enabledToolCount})" :
                 $"⚠️ {L.T("Tools", "工具")}({enabledToolCount}/{totalToolCount})";
-            
-            // 根据启用状态设置按钮颜色
+
             if (enabledToolCount == totalToolCount)
             {
-                GUI.backgroundColor = new Color(0.4f, 0.9f, 0.5f, 0.8f); // 绿色 - 全部启用
+                GUI.backgroundColor = new Color(0.4f, 0.9f, 0.5f, 0.8f);
             }
             else if (enabledToolCount > 0)
             {
-                GUI.backgroundColor = new Color(1f, 0.85f, 0.4f, 0.8f); // 橙色 - 部分启用
+                GUI.backgroundColor = new Color(1f, 0.85f, 0.4f, 0.8f);
             }
             else
             {
-                GUI.backgroundColor = new Color(1f, 0.5f, 0.5f, 0.8f); // 红色 - 全部禁用
+                GUI.backgroundColor = new Color(1f, 0.5f, 0.5f, 0.8f);
             }
 
             if (GUILayout.Button(toolButtonText, toolInfoButtonStyle, GUILayout.Width(100), GUILayout.Height(22)))
@@ -393,522 +394,106 @@ namespace UniMcp.Gui
                 fontStyle = FontStyle.Bold
             };
             Color titleOriginalColor = GUI.backgroundColor;
-            GUI.backgroundColor = new Color(0.5f, 0.7f, 1f, 0.8f); // 更柔和的蓝色
+            GUI.backgroundColor = new Color(0.5f, 0.7f, 1f, 0.8f);
 
             if (GUILayout.Button(L.T("🐛 Debug Window", "🐛 调试窗口"), titleDebugButtonStyle, GUILayout.Width(110), GUILayout.Height(22)))
             {
-                // 打开调试窗口（不预填充内容）
                 McpDebugWindow.ShowWindow();
             }
 
             GUI.backgroundColor = titleOriginalColor;
             EditorGUILayout.EndHorizontal();
-            
+
             EditorGUILayout.Space(4);
-
-            // 按分组分类方法
-            var methodsByGroup = new Dictionary<string, List<(string methodName, IToolMethod method, string assemblyName)>>();
-
-            foreach (var methodName in methodNames)
-            {
-                var method = ToolsCall.GetRegisteredMethod(methodName);
-                if (method == null) continue;
-
-                // 获取分组名称
-                string groupName = GetMethodGroupName(method);
-                // 获取程序集名称
-                string assemblyName = GetAssemblyDisplayName(method.GetType().Assembly);
-
-                if (!methodsByGroup.ContainsKey(groupName))
-                {
-                    methodsByGroup[groupName] = new List<(string, IToolMethod, string)>();
-                }
-
-                methodsByGroup[groupName].Add((methodName, method, assemblyName));
-            }
 
             // 滚动视图填充剩余空间
             methodsScrollPosition = EditorGUILayout.BeginScrollView(methodsScrollPosition,
                 GUILayout.ExpandHeight(true));
 
-            // 重置分组序号
             groupIndex = 0;
-            // 按分组名称排序并绘制
-            foreach (var groupKvp in methodsByGroup.OrderBy(kvp => kvp.Key))
+
+            // 一级：按分组（GroupName）归类；二级：模块（前缀）；三级：子函数
+            var groups = specs.GroupBy(s => s.GroupName)
+                              .OrderBy(g => g.Key, StringComparer.Ordinal)
+                              .ToList();
+
+            foreach (var group in groups)
             {
-                string groupName = groupKvp.Key;
-                var methods = groupKvp.Value.OrderBy(m => m.methodName).ToList();
+                string groupName = group.Key;
+                var groupSpecs = group.OrderBy(s => s.Name, StringComparer.Ordinal).ToList();
 
-                // 确保分组在折叠字典中有条目
-                if (!groupFoldouts.ContainsKey(groupName))
-                {
-                    groupFoldouts[groupName] = false;
-                }
+                if (!groupFoldouts.ContainsKey(groupName)) groupFoldouts[groupName] = false;
 
-                // 检查组内工具的启用状态
-                var localSettingsForGroup = McpService.GetLocalSettings();
-                bool hasEnabledTools = methods.Any(m => localSettingsForGroup.IsToolEnabled(m.methodName));
-                bool allToolsEnabled = methods.All(m => localSettingsForGroup.IsToolEnabled(m.methodName));
-                int enabledCountInGroup = methods.Count(m => localSettingsForGroup.IsToolEnabled(m.methodName));
-                int totalCountInGroup = methods.Count;
+                bool groupAllEnabled = groupSpecs.All(s => localSettings.IsToolEnabled(s.Name));
+                bool groupAnyEnabled = groupSpecs.Any(s => localSettings.IsToolEnabled(s.Name));
+                int groupEnabledCount = groupSpecs.Count(s => localSettings.IsToolEnabled(s.Name));
+                int groupTotalCount = groupSpecs.Count;
 
-                // 确定组开关的状态：全部启用时为true，部分启用时为mixed，全部禁用时为false
-                bool groupToggleState = allToolsEnabled;
+                groupIndex++;
 
-                // 绘制分组折叠标题 - 不使用背景色，避免文字模糊
                 EditorGUILayout.BeginVertical("box");
+                EditorGUILayout.BeginHorizontal();
+
+                // 分组开关：切换该分组下所有工具
+                Color originalBackgroundColor = GUI.backgroundColor;
+                GUI.backgroundColor = groupAllEnabled ? new Color(0.4f, 0.9f, 0.5f, 0.6f)
+                    : (groupAnyEnabled ? new Color(1f, 0.9f, 0.4f, 0.6f) : new Color(0.9f, 0.4f, 0.4f, 0.6f));
+                bool newGroupToggleState = EditorGUILayout.Toggle(groupAllEnabled, GUILayout.Width(18));
+                GUI.backgroundColor = originalBackgroundColor;
+
+                if (newGroupToggleState != groupAllEnabled)
+                {
+                    localSettings.SetToolsEnabled(groupSpecs.Select(s => s.Name), newGroupToggleState);
+                    string statusText = newGroupToggleState ? L.T("enabled", "启用") : L.T("disabled", "禁用");
+                    Debug.Log($"[McpServiceGUI] {L.T("Tool group", "工具组")} '{groupName}' {L.T("all tools", "所有工具")}{statusText}");
+                }
 
                 GUIStyle groupFoldoutStyle = new GUIStyle(EditorStyles.foldout)
                 {
                     fontStyle = FontStyle.Bold,
                     fontSize = 13
-                    // 使用默认padding，确保展开箭头可见
                 };
+                Color groupColor = groupAllEnabled ? new Color(0.2f, 0.7f, 0.3f)
+                    : (groupAnyEnabled ? new Color(0.8f, 0.7f, 0.2f) : new Color(0.9f, 0.3f, 0.3f));
+                groupFoldoutStyle.normal.textColor = groupColor;
+                groupFoldoutStyle.onNormal.textColor = groupColor;
+                groupFoldoutStyle.focused.textColor = groupColor;
+                groupFoldoutStyle.onFocused.textColor = groupColor;
 
-                // 根据启用状态设置文字颜色
-                if (allToolsEnabled)
-                {
-                    groupFoldoutStyle.normal.textColor = new Color(0.2f, 0.7f, 0.3f);
-                    groupFoldoutStyle.onNormal.textColor = new Color(0.2f, 0.7f, 0.3f);
-                }
-                else if (hasEnabledTools)
-                {
-                    groupFoldoutStyle.normal.textColor = new Color(0.8f, 0.7f, 0.2f);
-                    groupFoldoutStyle.onNormal.textColor = new Color(0.8f, 0.7f, 0.2f);
-                }
-                else
-                {
-                    groupFoldoutStyle.normal.textColor = new Color(0.9f, 0.3f, 0.3f);
-                    groupFoldoutStyle.onNormal.textColor = new Color(0.9f, 0.3f, 0.3f);
-                }
-                groupFoldoutStyle.focused.textColor = groupFoldoutStyle.normal.textColor;
-                groupFoldoutStyle.onFocused.textColor = groupFoldoutStyle.normal.textColor;
+                string groupStatusIcon = groupAllEnabled ? "✅" : (groupAnyEnabled ? "⚠️" : "❌");
+                string groupCountText = groupAllEnabled ? $"{groupTotalCount}" : $"{groupEnabledCount}/{groupTotalCount}";
 
-                // 使用GetControlRect手动布局，确保位置正确
-                Rect groupRowRect = EditorGUILayout.GetControlRect(true, EditorGUIUtility.singleLineHeight, GUILayout.ExpandWidth(true));
-                
-                // 计算各个元素的宽度和位置
-                float groupToggleWidth = 22f;
-                float groupSpacing = 4f;
-                
-                // 绘制组开关（最左侧）- 美化样式
-                Color originalBackgroundColor = GUI.backgroundColor;
-                if (allToolsEnabled)
-                {
-                    GUI.backgroundColor = new Color(0.4f, 0.9f, 0.5f, 0.6f); // 绿色
-                }
-                else if (hasEnabledTools)
-                {
-                    GUI.backgroundColor = new Color(1f, 0.9f, 0.4f, 0.6f); // 黄色
-                }
-                else
-                {
-                    GUI.backgroundColor = new Color(0.9f, 0.4f, 0.4f, 0.6f); // 红色
-                }
-
-                Rect groupToggleRect = new Rect(groupRowRect.x, groupRowRect.y + (groupRowRect.height - 20) / 2, groupToggleWidth, 20);
-                bool newGroupToggleState = EditorGUI.Toggle(groupToggleRect, groupToggleState);
-
-                GUI.backgroundColor = originalBackgroundColor;
-
-                // 处理组开关状态变化
-                if (newGroupToggleState != groupToggleState)
-                {
-                    // 使用批量设置方法来提高效率
-                    var toolNames = methods.Select(m => m.methodName).ToList();
-                    McpService.GetLocalSettings().SetToolsEnabled(toolNames, newGroupToggleState);
-
-                    string statusText = newGroupToggleState ? L.T("enabled", "启用") : L.T("disabled", "禁用");
-                    Debug.Log($"[McpServiceGUI] {L.T("Tool group", "工具组")} '{groupName}' {L.T("all tools", "所有工具")}{statusText}");
-                }
-
-                groupIndex++;
-                
-                // 添加状态图标
-                string statusIcon = allToolsEnabled ? "✅" : (hasEnabledTools ? "⚠️" : "❌");
-                
-                // ========== 【一级标题点击展开区域 - 可手动修改】 ==========
-                // 计算foldout的位置（在toggle右边）
-                float groupFoldoutStartX = groupToggleRect.xMax + groupSpacing;  // ← 修改这里调整展开区域起始位置
-                float groupFoldoutWidth = groupRowRect.xMax - groupFoldoutStartX; // ← 修改这里调整展开区域宽度
-                
-                Rect groupFoldoutRect = new Rect(
-                    groupFoldoutStartX,      // ← 展开区域X坐标
-                    groupRowRect.y,          // ← 展开区域Y坐标
-                    groupFoldoutWidth,       // ← 展开区域宽度
-                    groupRowRect.height      // ← 展开区域高度
-                );
-                // ========== 【一级标题点击展开区域 - 可手动修改】 ==========
-                
-                // 绘制foldout，确保展开箭头可见
-                // 注意：foldoutRect定义了可点击展开的区域范围
-                // 组标题数量：全部开启显示总数，否则显示 开启数/总数（如 1/4）
-                string countText = allToolsEnabled ? $"{totalCountInGroup}" : $"{enabledCountInGroup}/{totalCountInGroup}";
-                groupFoldouts[groupName] = EditorGUI.Foldout(
-                    groupFoldoutRect,        // ← 这个Rect定义了可点击展开的区域
+                groupFoldouts[groupName] = EditorGUILayout.Foldout(
                     groupFoldouts[groupName],
-                    $"{statusIcon} {groupIndex}. {groupName} ({countText})",
-                    true,
-                    groupFoldoutStyle
-                );
+                    $"{groupStatusIcon} {groupIndex}. {groupName} ({groupCountText})",
+                    true, groupFoldoutStyle);
 
-                // 如果分组展开，显示其中的方法
+                EditorGUILayout.EndHorizontal();
+
                 if (groupFoldouts[groupName])
                 {
-                    EditorGUILayout.BeginVertical();
                     EditorGUI.indentLevel++;
-                    int methodIndex = 0;
-                    foreach (var (methodName, method, assemblyName) in methods)
+
+                    // 二级：按模块前缀分组
+                    var modules = groupSpecs.GroupBy(s => s.Prefix)
+                                            .OrderBy(m => m.Key, StringComparer.Ordinal)
+                                            .ToList();
+                    foreach (var module in modules)
                     {
-                        methodIndex++;
-                        // 确保该方法在字典中有一个条目
-                        if (!methodFoldouts.ContainsKey(methodName))
-                        {
-                            methodFoldouts[methodName] = false;
-                        }
-
-                        // 绘制方法折叠标题 - 不使用背景色，避免文字模糊
-                        EditorGUILayout.BeginVertical("box");
-                        
-                        // 获取工具启用状态
-                        bool toolEnabled = McpService.GetLocalSettings().IsToolEnabled(methodName);
-
-                        // 折叠标题栏样式
-                        GUIStyle foldoutStyle = new GUIStyle(EditorStyles.foldout)
-                        {
-                            fontStyle = FontStyle.Bold,
-                            fontSize = 11,
-                            padding = new RectOffset(0, 0, 1, 1), // 移除左padding，避免覆盖toggle
-                            contentOffset = new Vector2(0, 0) // 确保内容不偏移
-                        };
-
-                        // 根据启用状态设置文字颜色
-                        if (toolEnabled)
-                        {
-                            foldoutStyle.normal.textColor = new Color(0.7f, 0.9f, 0.7f);
-                            foldoutStyle.onNormal.textColor = new Color(0.7f, 0.9f, 0.7f);
-                        }
-                        else
-                        {
-                            foldoutStyle.normal.textColor = new Color(0.9f, 0.6f, 0.6f);
-                            foldoutStyle.onNormal.textColor = new Color(0.9f, 0.6f, 0.6f);
-                        }
-                        foldoutStyle.focused.textColor = foldoutStyle.normal.textColor;
-                        foldoutStyle.onFocused.textColor = foldoutStyle.normal.textColor;
-
-                        // 在一行中显示开关、折叠标题、程序集标签、问号按钮和调试按钮
-                        // 使用GetControlRect获取整行的Rect，然后手动绘制各个元素
-                        Rect rowRect = EditorGUILayout.GetControlRect(true, EditorGUIUtility.singleLineHeight, GUILayout.ExpandWidth(true));
-                        
-                        // 计算各个元素的宽度和位置
-                        float toggleWidth = 22f;
-                        float spacing = 4f;
-                        float buttonWidth = 20f;
-                        float buttonHeight = 18f;
-                        float padding = 6f;
-
-                        // 计算程序集标签宽度
-                        string assemblyLabel = $"({assemblyName})";
-                        GUIStyle assemblyLabelStyle = new GUIStyle(EditorStyles.miniLabel);
-                        float calculatedWidth = assemblyLabelStyle.CalcSize(new GUIContent(assemblyLabel)).x;
-                        float assemblyLabelWidth = Mathf.Max(calculatedWidth + padding * 2, 90f);
-
-                        // 从右到左计算各区域位置
-                        float rightEdge = rowRect.xMax;
-                        
-                        // 1. 调试按钮区域（最右侧）
-                        Rect debugButtonRect = new Rect(
-                            rightEdge - buttonWidth,
-                            rowRect.y + (rowRect.height - buttonHeight) / 2,
-                            buttonWidth,
-                            buttonHeight
-                        );
-                        rightEdge -= (buttonWidth + padding);
-
-                        // 2. 问号按钮区域
-                        Rect helpButtonRect = new Rect(
-                            rightEdge - buttonWidth,
-                            rowRect.y + (rowRect.height - buttonHeight) / 2,
-                            buttonWidth,
-                            buttonHeight
-                        );
-                        rightEdge -= (buttonWidth + padding);
-
-                        // 3. 程序集标签区域
-                        Rect assemblyLabelRect = new Rect(
-                            rightEdge - assemblyLabelWidth,
-                            rowRect.y,
-                            assemblyLabelWidth,
-                            rowRect.height
-                        );
-                        rightEdge -= (assemblyLabelWidth + padding * 2);
-
-                        // ========== 【二级标题点击展开区域 - 可手动修改】 ==========
-                        // 4. 折叠标题区域（剩余空间）
-                        float minFoldoutWidth = 100f;
-                        float foldoutStartX = rowRect.x + toggleWidth + spacing; // ← 修改这里调整展开区域起始位置（toggle宽度 + 间距）
-                        float foldoutAvailableWidth = rightEdge - foldoutStartX; // ← 修改这里调整展开区域可用宽度
-                        
-                        if (foldoutAvailableWidth < minFoldoutWidth)
-                        {
-                            // 如果空间不够，缩小程序集标签宽度
-                            float reduction = minFoldoutWidth - foldoutAvailableWidth;
-                            assemblyLabelWidth = Mathf.Max(assemblyLabelWidth - reduction, 60f);
-                            assemblyLabelRect.width = assemblyLabelWidth;
-                            assemblyLabelRect.x = rightEdge - assemblyLabelWidth;
-                            foldoutAvailableWidth = minFoldoutWidth;
-                        }
-
-                        Rect foldoutRect = new Rect(
-                            foldoutStartX,          // ← 展开区域X坐标
-                            rowRect.y,              // ← 展开区域Y坐标
-                            foldoutAvailableWidth,  // ← 展开区域宽度
-                            rowRect.height          // ← 展开区域高度
-                        );
-                        // ========== 【二级标题点击展开区域 - 可手动修改】 ==========
-
-                        // 绘制toggle（最左侧）
-                        Color toggleOriginalBg = GUI.backgroundColor;
-                        if (toolEnabled)
-                        {
-                            GUI.backgroundColor = new Color(0.4f, 0.9f, 0.5f, 0.5f);
-                        }
-                        else
-                        {
-                            GUI.backgroundColor = new Color(0.9f, 0.4f, 0.4f, 0.5f);
-                        }
-                        Rect toggleRect = new Rect(rowRect.x, rowRect.y + (rowRect.height - 18) / 2, toggleWidth + 10, 18);
-                        bool newToolEnabled = EditorGUI.Toggle(toggleRect, toolEnabled);
-                        GUI.backgroundColor = toggleOriginalBg;
-
-                        // 绘制foldout（在toggle右边）
-                        // 注意：foldoutRect定义了可点击展开的区域范围
-                        methodFoldouts[methodName] = EditorGUI.Foldout(
-                            foldoutRect,        // ← 这个Rect定义了可点击展开的区域
-                            methodFoldouts[methodName],
-                            $" {methodName}",
-                            true,
-                            groupFoldoutStyle);
-
-                        // 绘制程序集标签 - 美化样式
-                        Color originalColor = GUI.color;
-                        GUI.color = new Color(0.5f, 0.65f, 0.8f, 0.9f); // 淡蓝色
-
-                        // 设置右对齐的标签样式
-                        GUIStyle rightAlignedLabelStyle = new GUIStyle(EditorStyles.miniLabel)
-                        {
-                            alignment = TextAnchor.MiddleRight,
-                            fontStyle = FontStyle.Italic,
-                            fontSize = 9
-                        };
-
-                        EditorGUI.LabelField(assemblyLabelRect, assemblyLabel, rightAlignedLabelStyle);
-                        GUI.color = originalColor;
-
-                        // 处理工具开关状态变化
-                        if (newToolEnabled != toolEnabled)
-                        {
-                            McpService.GetLocalSettings().SetToolEnabled(methodName, newToolEnabled);
-
-                            // 如果工具状态发生变化，可以选择性地重新发现工具或更新工具列表
-                            // 这里我们只是记录变化，实际的过滤会在McpService中进行
-                            string statusText = newToolEnabled ? L.T("enabled", "启用") : L.T("disabled", "禁用");
-                            Debug.Log($"[McpServiceGUI] {L.T("Tool", "工具")} '{methodName}' {L.T("status changed to", "状态已更改为")}: {statusText}");
-                        }
-
-                        // 绘制问号按钮 - 美化样式
-                        GUIStyle helpButtonStyle = new GUIStyle(EditorStyles.miniButton)
-                        {
-                            fontSize = 12,
-                            fontStyle = FontStyle.Bold,
-                            padding = new RectOffset(0, 0, 0, 0)
-                        };
-                        Color helpButtonOriginalBg = GUI.backgroundColor;
-                        GUI.backgroundColor = new Color(0.6f, 0.8f, 1f, 0.7f); // 淡蓝色
-
-                        if (GUI.Button(helpButtonRect, "?", helpButtonStyle))
-                        {
-                            // 处理按钮点击事件
-                            HandleMethodHelpClick(methodName, method);
-                        }
-                        GUI.backgroundColor = helpButtonOriginalBg;
-
-                        // 绘制调试按钮 - 美化样式
-                        GUIStyle debugButtonStyle = new GUIStyle(EditorStyles.miniButton)
-                        {
-                            fontSize = 10,
-                            fontStyle = FontStyle.Bold,
-                            padding = new RectOffset(0, 0, 0, 0)
-                        };
-                        originalBackgroundColor = GUI.backgroundColor;
-                        GUI.backgroundColor = new Color(0.5f, 0.7f, 0.95f, 0.8f); // 更柔和的蓝色背景
-
-                        if (GUI.Button(debugButtonRect, "D", debugButtonStyle))
-                        {
-                            // 处理调试按钮点击事件
-                            HandleMethodDebugClick(methodName, method);
-                        }
-
-                        GUI.backgroundColor = originalBackgroundColor;
-
-                        // 如果展开，显示预览信息
-                        if (methodFoldouts[methodName])
-                        {
-                            EditorGUILayout.BeginVertical(EditorStyles.helpBox);
-                            EditorGUILayout.Space(4);
-
-                            // === 参数Keys信息部分 ===
-                            EditorGUILayout.LabelField(L.T("📋 Parameters", "📋 参数信息"), EditorStyles.boldLabel);
-                            EditorGUILayout.Space(2);
-                            
-                            Rect paramsBoxRect = EditorGUILayout.BeginVertical("box");
-                            Color paramsBgColor = new Color(0.2f, 0.25f, 0.3f, 0.2f);
-                            EditorGUI.DrawRect(paramsBoxRect, paramsBgColor);
-
-                            var keys = method.Keys;
-                            if (keys != null && keys.Length > 0)
-                            {
-                                foreach (var key in keys)
-                                {
-                                    // 创建参数行的样式
-                                    EditorGUILayout.BeginHorizontal();
-                                    
-                                    // 参数名称 - 美化样式
-                                    GUIStyle keyStyle = new GUIStyle(EditorStyles.miniBoldLabel)
-                                    {
-                                        fontSize = 10,
-                                        padding = new RectOffset(4, 4, 2, 2)
-                                    };
-                                    Color originalKeyColor = GUI.color;
-
-                                    // 必需参数用绿色标记，可选参数用橙色标记
-                                    if (key.Optional)
-                                    {
-                                        GUI.color = new Color(1f, 0.7f, 0.3f); // 橙色 - 可选
-                                        EditorGUILayout.LabelField("○", EditorStyles.miniLabel, GUILayout.Width(12));
-                                    }
-                                    else
-                                    {
-                                        GUI.color = new Color(0.3f, 0.8f, 0.4f); // 绿色 - 必需
-                                        EditorGUILayout.LabelField("●", EditorStyles.miniLabel, GUILayout.Width(12));
-                                    }
-                                    
-                                    // 参数名称
-                                    EditorGUILayout.SelectableLabel(key.Key, keyStyle, GUILayout.Width(100), GUILayout.Height(EditorGUIUtility.singleLineHeight));
-                                    GUI.color = originalKeyColor;
-
-                                    // 参数描述 - 美化样式
-                                    GUIStyle descStyle = new GUIStyle(EditorStyles.miniLabel)
-                                    {
-                                        fontSize = 9,
-                                        fontStyle = FontStyle.Italic,
-                                        normal = { textColor = new Color(0.7f, 0.7f, 0.7f) },
-                                        padding = new RectOffset(4, 4, 2, 2)
-                                    };
-                                    EditorGUILayout.SelectableLabel(key.Desc, descStyle, GUILayout.Width(180), GUILayout.Height(EditorGUIUtility.singleLineHeight));
-
-                                    var paramJson = new JsonClass();
-
-                                    var enumValues = key.EnumValues;
-                                    if (enumValues != null && enumValues.Count > 0)
-                                    {
-                                        var enumArray = new JsonArray();
-                                        foreach (var v in enumValues)
-                                        {
-                                            enumArray.Add(v);
-                                        }
-                                        paramJson["enum"] = enumArray;
-                                    }
-
-                                    var examples = key.Examples;
-                                    if (examples != null && examples.Count > 0)
-                                    {
-                                        var examplesArray = new JsonArray();
-                                        foreach (var ex in examples)
-                                        {
-                                            examplesArray.Add(ex);
-                                        }
-                                        paramJson["examples"] = examplesArray;
-                                    }
-
-                                    var type = key.Type ?? key.GetType().Name;
-                                    paramJson["type"] = type;
-
-                                    // Json字符串美化
-                                    string paramJsonStr = paramJson.ToString();
-
-                                    // 使用word wrap多行显示JSON - 美化样式
-                                    GUIStyle jsonStyle = new GUIStyle(EditorStyles.miniLabel)
-                                    {
-                                        fontSize = 9,
-                                        normal = { textColor = new Color(0.6f, 0.8f, 1f) },
-                                        wordWrap = true,
-                                        padding = new RectOffset(4, 4, 2, 2)
-                                    };
-                                    EditorGUILayout.SelectableLabel(paramJsonStr, jsonStyle, GUILayout.ExpandWidth(true), GUILayout.Height(EditorGUIUtility.singleLineHeight));
-                                    EditorGUILayout.EndHorizontal();
-                                    
-                                    EditorGUILayout.Space(2);
-
-                                }
-                            }
-                            else
-                            {
-                                GUIStyle noParamsStyle = new GUIStyle(EditorStyles.centeredGreyMiniLabel)
-                                {
-                                    fontSize = 10,
-                                    fontStyle = FontStyle.Italic
-                                };
-                                EditorGUILayout.LabelField(L.T("📭 No Parameters", "📭 无参数"), noParamsStyle);
-                            }
-
-                            EditorGUILayout.EndVertical();
-                            EditorGUILayout.Space(6);
-
-                            // === 状态树结构部分 ===
-                            EditorGUILayout.LabelField(L.T("📄 Preview", "📄 预览信息"), EditorStyles.boldLabel);
-                            EditorGUILayout.Space(2);
-                            
-                            Rect previewBoxRect = EditorGUILayout.BeginVertical("box");
-                            Color previewBgColor = new Color(0.2f, 0.25f, 0.3f, 0.2f);
-                            EditorGUI.DrawRect(previewBoxRect, previewBgColor);
-
-                            // 获取预览信息
-                            string preview = method.Preview();
-
-                            // 计算文本行数
-                            int lineCount = 1;
-                            if (!string.IsNullOrEmpty(preview))
-                            {
-                                lineCount = preview.Split('\n').Length;
-                            }
-
-                            // 显示预览信息 - 美化样式
-                            GUIStyle previewStyle = new GUIStyle(EditorStyles.wordWrappedLabel)
-                            {
-                                fontSize = 10,
-                                normal = { textColor = new Color(0.85f, 0.85f, 0.9f) },
-                                padding = new RectOffset(6, 6, 4, 4),
-                                wordWrap = true
-                            };
-                            EditorGUILayout.SelectableLabel(preview, previewStyle,
-                            GUILayout.ExpandWidth(true),
-                            GUILayout.Height(EditorGUIUtility.singleLineHeight * Mathf.Max(lineCount * 0.9f, 2f)));
-
-                            EditorGUILayout.EndVertical();
-                            EditorGUILayout.Space(4);
-                            EditorGUILayout.EndVertical();
-                        }
-
-                        EditorGUILayout.EndVertical();
+                        DrawModuleNode(module.Key, module.ToList(), localSettings);
                     }
 
                     EditorGUI.indentLevel--;
-                    EditorGUILayout.EndVertical();
                 }
 
                 EditorGUILayout.EndVertical();
                 EditorGUILayout.Space(8);
+            }
+
+            // 内置门面工具（async_call / get_prompt / search_tool）单独一组
+            if (builtins.Count > 0)
+            {
+                DrawBuiltinGroup(builtins, localSettings);
             }
 
             EditorGUILayout.EndScrollView();
@@ -916,266 +501,438 @@ namespace UniMcp.Gui
         }
 
         /// <summary>
-        /// 获取方法的分组名称
+        /// 绘制一个工具模块（前缀）节点：模块 → 内含子函数 → 各自参数。
         /// </summary>
-        /// <param name="method">方法实例</param>
-        /// <returns>分组名称</returns>
-        private static string GetMethodGroupName(IToolMethod method)
+        private static void DrawModuleNode(string prefix, List<ToolSpec> specs, McpLocalSettings localSettings)
         {
-            // 通过反射获取ToolNameAttribute
-            var methodType = method.GetType();
-            var toolNameAttribute = methodType.GetCustomAttributes(typeof(ToolNameAttribute), false)
-                                             .FirstOrDefault() as ToolNameAttribute;
+            string moduleKey = "module::" + prefix;
+            if (!groupFoldouts.ContainsKey(moduleKey)) groupFoldouts[moduleKey] = false;
 
-            if (toolNameAttribute != null)
+            bool allEnabled = specs.All(s => localSettings.IsToolEnabled(s.Name));
+            bool anyEnabled = specs.Any(s => localSettings.IsToolEnabled(s.Name));
+            string sourceClass = specs.Count > 0 ? specs[0].SourceClass : prefix;
+
+            EditorGUILayout.BeginVertical("helpBox");
+            EditorGUILayout.BeginHorizontal();
+
+            Color originalBackgroundColor = GUI.backgroundColor;
+            GUI.backgroundColor = allEnabled ? new Color(0.4f, 0.9f, 0.5f, 0.6f)
+                : (anyEnabled ? new Color(1f, 0.9f, 0.4f, 0.6f) : new Color(0.9f, 0.4f, 0.4f, 0.6f));
+            bool newToggle = EditorGUILayout.Toggle(allEnabled, GUILayout.Width(18));
+            GUI.backgroundColor = originalBackgroundColor;
+
+            if (newToggle != allEnabled)
             {
-                return toolNameAttribute.GroupName;
+                localSettings.SetToolsEnabled(specs.Select(s => s.Name), newToggle);
             }
 
-            // 如果没有ToolNameAttribute，返回默认分组
-            return L.T("Ungrouped", "未分组");
+            GUIStyle moduleStyle = new GUIStyle(EditorStyles.foldout)
+            {
+                fontStyle = FontStyle.Bold,
+                fontSize = 12
+            };
+            Color moduleColor = allEnabled ? new Color(0.6f, 0.85f, 0.65f)
+                : (anyEnabled ? new Color(0.9f, 0.8f, 0.45f) : new Color(0.9f, 0.55f, 0.55f));
+            moduleStyle.normal.textColor = moduleColor;
+            moduleStyle.onNormal.textColor = moduleColor;
+            moduleStyle.focused.textColor = moduleColor;
+            moduleStyle.onFocused.textColor = moduleColor;
+
+            groupFoldouts[moduleKey] = EditorGUILayout.Foldout(
+                groupFoldouts[moduleKey],
+                $"📦 {prefix}  ·  {sourceClass}  ({L.T("functions", "函数")}: {specs.Count})",
+                true, moduleStyle);
+
+            EditorGUILayout.EndHorizontal();
+
+            if (groupFoldouts[moduleKey])
+            {
+                EditorGUI.indentLevel++;
+                foreach (var spec in specs)
+                {
+                    DrawSpecNode(spec, localSettings);
+                }
+                EditorGUI.indentLevel--;
+            }
+
+            EditorGUILayout.EndVertical();
         }
 
         /// <summary>
-        /// 获取程序集的显示名称
+        /// 绘制单个子函数节点：名称 + 描述 + 参数（必填/可选、类型、枚举、示例、默认值）。
         /// </summary>
-        /// <param name="assembly">程序集</param>
-        /// <returns>程序集显示名称</returns>
-        private static string GetAssemblyDisplayName(System.Reflection.Assembly assembly)
+        private static void DrawSpecNode(ToolSpec spec, McpLocalSettings localSettings)
         {
-            string assemblyName = assembly.GetName().Name;
+            string key = "spec::" + spec.Name;
+            if (!methodFoldouts.ContainsKey(key)) methodFoldouts[key] = false;
 
-            // Return all names in English
-            if (assemblyName.StartsWith("Assembly-CSharp"))
+            bool enabled = localSettings.IsToolEnabled(spec.Name);
+
+            EditorGUILayout.BeginVertical("box");
+            EditorGUILayout.BeginHorizontal();
+
+            Color toggleOriginalBg = GUI.backgroundColor;
+            GUI.backgroundColor = enabled ? new Color(0.4f, 0.9f, 0.5f, 0.5f) : new Color(0.9f, 0.4f, 0.4f, 0.5f);
+            bool newEnabled = EditorGUILayout.Toggle(enabled, GUILayout.Width(18));
+            GUI.backgroundColor = toggleOriginalBg;
+
+            if (newEnabled != enabled)
             {
-                return "Main Project Assembly";
+                localSettings.SetToolEnabled(spec.Name, newEnabled);
+                string statusText = newEnabled ? L.T("enabled", "启用") : L.T("disabled", "禁用");
+                Debug.Log($"[McpServiceGUI] {L.T("Tool", "工具")} '{spec.Name}' {L.T("status changed to", "状态已更改为")}: {statusText}");
             }
-            else if (assemblyName.StartsWith("UniMcp"))
+
+            GUIStyle specStyle = new GUIStyle(EditorStyles.foldout)
             {
-                return "Unity MCP";
-            }
-            else if (assemblyName.StartsWith("Unity."))
+                fontStyle = FontStyle.Bold,
+                fontSize = 11
+            };
+            if (enabled)
             {
-                return $"Unity Built-in ({assemblyName.Replace("Unity.", "")})";
-            }
-            else if (assemblyName == "mscorlib" || assemblyName == "System" || assemblyName.StartsWith("System."))
-            {
-                return ".NET System Library";
+                specStyle.normal.textColor = new Color(0.7f, 0.9f, 0.7f);
+                specStyle.onNormal.textColor = new Color(0.7f, 0.9f, 0.7f);
             }
             else
             {
-                return assemblyName;
+                specStyle.normal.textColor = new Color(0.9f, 0.6f, 0.6f);
+                specStyle.onNormal.textColor = new Color(0.9f, 0.6f, 0.6f);
             }
-        }
+            specStyle.focused.textColor = specStyle.normal.textColor;
+            specStyle.onFocused.textColor = specStyle.normal.textColor;
 
-        /// <summary>
-        /// 处理方法帮助按钮的点击事件
-        /// </summary>
-        /// <param name="methodName">方法名称</param>
-        /// <param name="method">方法实例</param>
-        private static void HandleMethodHelpClick(string methodName, IToolMethod method)
-        {
-            // 获取当前时间
-            double currentTime = EditorApplication.timeSinceStartup;
+            string paramCount = spec.Parameters == null ? "0" : spec.Parameters.Length.ToString();
+            methodFoldouts[key] = EditorGUILayout.Foldout(
+                methodFoldouts[key],
+                $"⚙ {spec.Name}  ({L.T("params", "参数")}: {paramCount})",
+                true, specStyle);
 
-            // 检查是否存在上次点击时间记录
-            if (methodClickTimes.TryGetValue(methodName, out double lastClickTime))
+            GUILayout.FlexibleSpace();
+
+            GUIStyle helpButtonStyle = new GUIStyle(EditorStyles.miniButton)
             {
-                // 判断是否为双击（时间间隔小于doubleClickTime）
-                if (currentTime - lastClickTime < doubleClickTime)
+                fontSize = 12,
+                fontStyle = FontStyle.Bold,
+                padding = new RectOffset(0, 0, 0, 0)
+            };
+            Color helpButtonOriginalBg = GUI.backgroundColor;
+            GUI.backgroundColor = new Color(0.6f, 0.8f, 1f, 0.7f);
+            if (GUILayout.Button("?", helpButtonStyle, GUILayout.Width(20), GUILayout.Height(18)))
+            {
+                PingSourceScript(spec.SourceClass);
+            }
+            GUI.backgroundColor = helpButtonOriginalBg;
+
+            GUIStyle debugButtonStyle = new GUIStyle(EditorStyles.miniButton)
+            {
+                fontSize = 10,
+                fontStyle = FontStyle.Bold,
+                padding = new RectOffset(0, 0, 0, 0)
+            };
+            Color debugOriginalBg = GUI.backgroundColor;
+            GUI.backgroundColor = new Color(0.5f, 0.7f, 0.95f, 0.8f);
+            if (GUILayout.Button("D", debugButtonStyle, GUILayout.Width(20), GUILayout.Height(18)))
+            {
+                try
                 {
-                    // 双击：打开脚本文件
-                    OpenMethodScript(method);
-                    // 重置点击时间，防止连续多次点击被判定为多个双击
-                    methodClickTimes[methodName] = 0;
-                    return;
+                    McpDebugWindow.ShowWindowWithContent(GenerateSpecExampleJson(spec));
+                }
+                catch (Exception e)
+                {
+                    Debug.LogError($"[McpServiceGUI] {L.T("Error generating debug example", "生成调试示例时发生错误")}: {e}");
                 }
             }
+            GUI.backgroundColor = debugOriginalBg;
 
-            // 单击：定位到脚本文件
-            PingMethodScript(method);
-            // 记录本次点击时间
-            methodClickTimes[methodName] = currentTime;
-        }
+            EditorGUILayout.EndHorizontal();
 
-        /// <summary>
-        /// 在Project窗口中定位到方法所在的脚本文件
-        /// </summary>
-        /// <param name="method">方法实例</param>
-        private static void PingMethodScript(IToolMethod method)
-        {
-            // 获取方法类型
-            Type methodType = method.GetType();
-
-            // 查找脚本资源
-            string scriptName = methodType.Name + ".cs";
-            string[] guids = AssetDatabase.FindAssets(methodType.Name + " t:MonoScript");
-
-            foreach (string guid in guids)
+            if (methodFoldouts[key])
             {
-                string path = AssetDatabase.GUIDToAssetPath(guid);
-                if (path.EndsWith(scriptName))
+                EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+
+                GUIStyle descStyle = new GUIStyle(EditorStyles.wordWrappedMiniLabel)
                 {
-                    // 在Project窗口中高亮显示该资源
-                    UnityEngine.Object scriptObj = AssetDatabase.LoadAssetAtPath<UnityEngine.Object>(path);
-                    if (scriptObj != null)
-                    {
-                        EditorGUIUtility.PingObject(scriptObj);
-                        return;
-                    }
-                }
-            }
-
-            // 如果没有找到脚本，尝试直接使用类型名称查找
-            string[] allScriptGuids = AssetDatabase.FindAssets("t:MonoScript");
-            foreach (string guid in allScriptGuids)
-            {
-                string path = AssetDatabase.GUIDToAssetPath(guid);
-                if (path.EndsWith(scriptName))
-                {
-                    UnityEngine.Object scriptObj = AssetDatabase.LoadAssetAtPath<UnityEngine.Object>(path);
-                    if (scriptObj != null)
-                    {
-                        EditorGUIUtility.PingObject(scriptObj);
-                        return;
-                    }
-                }
-            }
-
-            Debug.LogWarning($"[McpServiceGUI] {L.T("Unable to find script in Project window", "无法在Project窗口中找到脚本")}: {scriptName}");
-        }
-
-        /// <summary>
-        /// 打开方法所在的脚本文件
-        /// </summary>
-        /// <param name="method">方法实例</param>
-        private static void OpenMethodScript(IToolMethod method)
-        {
-            // 获取方法类型
-            Type methodType = method.GetType();
-
-            // 查找脚本资源
-            string scriptName = methodType.Name + ".cs";
-            string[] guids = AssetDatabase.FindAssets(methodType.Name + " t:MonoScript");
-
-            foreach (string guid in guids)
-            {
-                string path = AssetDatabase.GUIDToAssetPath(guid);
-                if (path.EndsWith(scriptName))
-                {
-                    // 加载并打开脚本
-                    MonoScript script = AssetDatabase.LoadAssetAtPath<MonoScript>(path);
-                    if (script != null)
-                    {
-                        AssetDatabase.OpenAsset(script);
-                        return;
-                    }
-                }
-            }
-
-            // 如果没有找到脚本，尝试直接使用类型名称查找
-            string[] allScriptGuids = AssetDatabase.FindAssets("t:MonoScript");
-            foreach (string guid in allScriptGuids)
-            {
-                string path = AssetDatabase.GUIDToAssetPath(guid);
-                if (path.EndsWith(scriptName))
-                {
-                    MonoScript script = AssetDatabase.LoadAssetAtPath<MonoScript>(path);
-                    if (script != null)
-                    {
-                        AssetDatabase.OpenAsset(script);
-                        return;
-                    }
-                }
-            }
-
-            Debug.LogWarning($"[McpServiceGUI] {L.T("Unable to open script", "无法打开脚本")}: {scriptName}");
-        }
-
-        /// <summary>
-        /// 处理方法调试按钮的点击事件
-        /// </summary>
-        /// <param name="methodName">方法名称</param>
-        /// <param name="method">方法实例</param>
-        private static void HandleMethodDebugClick(string methodName, IToolMethod method)
-        {
-            try
-            {
-                // 生成方法调用的示例JSON
-                string exampleJson = GenerateMethodExampleJson(methodName, method);
-
-                // 打开McpDebugWindow并预填充示例
-                McpDebugWindow.ShowWindowWithContent(exampleJson);
-            }
-            catch (Exception e)
-            {
-                Debug.LogError($"[McpServiceGUI] {L.T("Error generating debug example", "生成调试示例时发生错误")}: {e}");
-                EditorUtility.DisplayDialog(
-                    L.T("Error", "错误"), 
-                    $"{L.T("Unable to generate debug example", "无法生成调试示例")}: {e.Message}", 
-                    L.T("OK", "确定"));
-            }
-        }
-
-        /// <summary>
-        /// 生成方法调用的示例JSON
-        /// </summary>
-        /// <param name="methodName">方法名称</param>
-        /// <param name="method">方法实例</param>
-        /// <returns>示例JSON字符串</returns>
-        private static string GenerateMethodExampleJson(string methodName, IToolMethod method)
-        {
-            try
-            {
-                // 生成普通的同步调用格式（不使用异步）
-                var exampleCall = new JsonClass
-                {
-                    { "func", new JsonData(methodName) },
-                    { "args", Json.Parse(Json.FromObject(GenerateExampleArgs(method))) }
+                    fontSize = 10,
+                    fontStyle = FontStyle.Italic,
+                    normal = { textColor = new Color(0.75f, 0.75f, 0.8f) },
+                    padding = new RectOffset(4, 4, 2, 2)
                 };
+                EditorGUILayout.LabelField(spec.Description ?? "", descStyle);
+                EditorGUILayout.Space(4);
 
-                return exampleCall.ToPrettyString();
+                EditorGUILayout.LabelField(L.T("📋 Parameters", "📋 参数信息"), EditorStyles.boldLabel);
+                DrawParameterTable(spec.Parameters, spec.Required);
+
+                EditorGUILayout.EndVertical();
+            }
+
+            EditorGUILayout.EndVertical();
+        }
+
+        /// <summary>
+        /// 绘制参数表：必填/可选标记、名称、类型、描述、枚举、示例、默认值。
+        /// </summary>
+        private static void DrawParameterTable(MethodKey[] keys, string[] required)
+        {
+            if (keys == null || keys.Length == 0)
+            {
+                GUIStyle noParamsStyle = new GUIStyle(EditorStyles.centeredGreyMiniLabel)
+                {
+                    fontSize = 10,
+                    fontStyle = FontStyle.Italic
+                };
+                EditorGUILayout.LabelField(L.T("📭 No Parameters", "📭 无参数"), noParamsStyle);
+                return;
+            }
+
+            var requiredSet = new HashSet<string>(required ?? new string[0], StringComparer.Ordinal);
+
+            foreach (var key in keys)
+            {
+                bool isRequired = requiredSet.Contains(key.Key);
+
+                EditorGUILayout.BeginVertical("box");
+                EditorGUILayout.BeginHorizontal();
+
+                Color originalKeyColor = GUI.color;
+                GUI.color = isRequired ? new Color(0.3f, 0.8f, 0.4f) : new Color(1f, 0.7f, 0.3f);
+                EditorGUILayout.LabelField(isRequired ? "●" : "○", EditorStyles.miniLabel, GUILayout.Width(12));
+                GUI.color = originalKeyColor;
+
+                GUIStyle keyStyle = new GUIStyle(EditorStyles.miniBoldLabel) { fontSize = 10 };
+                EditorGUILayout.SelectableLabel(key.Key, keyStyle, GUILayout.Width(130), GUILayout.Height(EditorGUIUtility.singleLineHeight));
+
+                string type = string.IsNullOrEmpty(key.Type) ? key.GetType().Name : key.Type;
+                GUIStyle typeStyle = new GUIStyle(EditorStyles.miniLabel) { fontSize = 9 };
+                EditorGUILayout.LabelField($"[{type}]", typeStyle, GUILayout.Width(70));
+
+                GUIStyle descStyle = new GUIStyle(EditorStyles.miniLabel)
+                {
+                    fontSize = 9,
+                    fontStyle = FontStyle.Italic,
+                    normal = { textColor = new Color(0.7f, 0.7f, 0.7f) }
+                };
+                EditorGUILayout.LabelField(key.Desc ?? "", descStyle, GUILayout.ExpandWidth(true));
+                EditorGUILayout.EndHorizontal();
+
+                // 枚举 / 示例 / 默认值
+                if (key.EnumValues != null && key.EnumValues.Count > 0)
+                {
+                    GUIStyle metaStyle = new GUIStyle(EditorStyles.miniLabel)
+                    {
+                        fontSize = 9,
+                        normal = { textColor = new Color(0.6f, 0.8f, 1f) },
+                        wordWrap = true
+                    };
+                    EditorGUILayout.LabelField("enum: " + string.Join(" | ", key.EnumValues), metaStyle);
+                }
+
+                if (key.Examples != null && key.Examples.Count > 0)
+                {
+                    GUIStyle metaStyle = new GUIStyle(EditorStyles.miniLabel)
+                    {
+                        fontSize = 9,
+                        normal = { textColor = new Color(0.7f, 0.9f, 0.7f) },
+                        wordWrap = true
+                    };
+                    EditorGUILayout.LabelField("examples: " + string.Join(", ", key.Examples), metaStyle);
+                }
+
+                if (key.DefaultValue != null)
+                {
+                    GUIStyle metaStyle = new GUIStyle(EditorStyles.miniLabel)
+                    {
+                        fontSize = 9,
+                        normal = { textColor = new Color(0.9f, 0.8f, 0.6f) },
+                        wordWrap = true
+                    };
+                    EditorGUILayout.LabelField("default: " + key.DefaultValue, metaStyle);
+                }
+
+                EditorGUILayout.EndVertical();
+            }
+        }
+
+        /// <summary>
+        /// 绘制内置门面工具分组（async_call / get_prompt / search_tool）。
+        /// </summary>
+        private static void DrawBuiltinGroup(IReadOnlyList<ToolInfo> builtins, McpLocalSettings localSettings)
+        {
+            const string groupName = "builtin";
+            if (!groupFoldouts.ContainsKey(groupName)) groupFoldouts[groupName] = false;
+
+            bool allEnabled = builtins.All(i => localSettings.IsToolEnabled(i.name));
+            bool anyEnabled = builtins.Any(i => localSettings.IsToolEnabled(i.name));
+
+            groupIndex++;
+            EditorGUILayout.BeginVertical("box");
+            EditorGUILayout.BeginHorizontal();
+
+            Color originalBackgroundColor = GUI.backgroundColor;
+            GUI.backgroundColor = allEnabled ? new Color(0.4f, 0.9f, 0.5f, 0.6f)
+                : (anyEnabled ? new Color(1f, 0.9f, 0.4f, 0.6f) : new Color(0.9f, 0.4f, 0.4f, 0.6f));
+            bool newToggle = EditorGUILayout.Toggle(allEnabled, GUILayout.Width(18));
+            GUI.backgroundColor = originalBackgroundColor;
+
+            if (newToggle != allEnabled)
+            {
+                localSettings.SetToolsEnabled(builtins.Select(i => i.name), newToggle);
+            }
+
+            GUIStyle style = new GUIStyle(EditorStyles.foldout) { fontStyle = FontStyle.Bold, fontSize = 13 };
+            Color color = allEnabled ? new Color(0.2f, 0.7f, 0.3f) : (anyEnabled ? new Color(0.8f, 0.7f, 0.2f) : new Color(0.9f, 0.3f, 0.3f));
+            style.normal.textColor = color;
+            style.onNormal.textColor = color;
+            style.focused.textColor = color;
+            style.onFocused.textColor = color;
+
+            string icon = allEnabled ? "✅" : (anyEnabled ? "⚠️" : "❌");
+            groupFoldouts[groupName] = EditorGUILayout.Foldout(
+                groupFoldouts[groupName],
+                $"{icon} {groupIndex}. {L.T("Built-in Facades", "内置门面工具")} ({builtins.Count})",
+                true, style);
+
+            EditorGUILayout.EndHorizontal();
+
+            if (groupFoldouts[groupName])
+            {
+                EditorGUI.indentLevel++;
+                foreach (var info in builtins)
+                {
+                    DrawBuiltinNode(info, localSettings);
+                }
+                EditorGUI.indentLevel--;
+            }
+
+            EditorGUILayout.EndVertical();
+            EditorGUILayout.Space(8);
+        }
+
+        /// <summary>
+        /// 绘制单个内置门面工具节点：描述 + 输入 schema 属性。
+        /// </summary>
+        private static void DrawBuiltinNode(ToolInfo info, McpLocalSettings localSettings)
+        {
+            string key = "builtin::" + info.name;
+            if (!methodFoldouts.ContainsKey(key)) methodFoldouts[key] = false;
+
+            bool enabled = localSettings.IsToolEnabled(info.name);
+
+            EditorGUILayout.BeginVertical("box");
+            EditorGUILayout.BeginHorizontal();
+
+            Color toggleOriginalBg = GUI.backgroundColor;
+            GUI.backgroundColor = enabled ? new Color(0.4f, 0.9f, 0.5f, 0.5f) : new Color(0.9f, 0.4f, 0.4f, 0.5f);
+            bool newEnabled = EditorGUILayout.Toggle(enabled, GUILayout.Width(18));
+            GUI.backgroundColor = toggleOriginalBg;
+
+            if (newEnabled != enabled)
+            {
+                localSettings.SetToolEnabled(info.name, newEnabled);
+            }
+
+            GUIStyle specStyle = new GUIStyle(EditorStyles.foldout) { fontStyle = FontStyle.Bold, fontSize = 11 };
+            Color specColor = enabled ? new Color(0.7f, 0.9f, 0.7f) : new Color(0.9f, 0.6f, 0.6f);
+            specStyle.normal.textColor = specColor;
+            specStyle.onNormal.textColor = specColor;
+            specStyle.focused.textColor = specColor;
+            specStyle.onFocused.textColor = specColor;
+
+            methodFoldouts[key] = EditorGUILayout.Foldout(methodFoldouts[key], $"⚙ {info.name}", true, specStyle);
+            EditorGUILayout.EndHorizontal();
+
+            if (methodFoldouts[key])
+            {
+                EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+
+                GUIStyle descStyle = new GUIStyle(EditorStyles.wordWrappedMiniLabel)
+                {
+                    fontSize = 10,
+                    fontStyle = FontStyle.Italic,
+                    normal = { textColor = new Color(0.75f, 0.75f, 0.8f) }
+                };
+                EditorGUILayout.LabelField(info.description ?? "", descStyle);
+                EditorGUILayout.Space(4);
+
+                EditorGUILayout.LabelField(L.T("📋 Input Schema", "📋 输入参数"), EditorStyles.boldLabel);
+                GUIStyle schemaStyle = new GUIStyle(EditorStyles.miniLabel)
+                {
+                    fontSize = 9,
+                    normal = { textColor = new Color(0.6f, 0.8f, 1f) },
+                    wordWrap = true
+                };
+                EditorGUILayout.SelectableLabel(info.inputSchema?.ToString() ?? "{}", schemaStyle,
+                    GUILayout.ExpandWidth(true), GUILayout.Height(EditorGUIUtility.singleLineHeight * 6));
+
+                EditorGUILayout.EndVertical();
+            }
+
+            EditorGUILayout.EndVertical();
+        }
+
+        /// <summary>
+        /// 由工具规格生成调试调用示例 JSON：{"func": "分组.动作", "args": {...}}。
+        /// </summary>
+        private static string GenerateSpecExampleJson(ToolSpec spec)
+        {
+            try
+            {
+                var args = new JsonClass();
+                foreach (var key in spec.Parameters ?? new MethodKey[0])
+                {
+                    JsonNode exampleValue = GenerateExampleValueFromKey(key);
+                    if (exampleValue != null) args[key.Key] = exampleValue;
+                }
+
+                var call = new JsonClass
+                {
+                    { "func", new JsonData(spec.Name) },
+                    { "args", args }
+                };
+                return call.ToPrettyString();
             }
             catch (Exception e)
             {
                 Debug.LogWarning($"[McpServiceGUI] {L.T("Failed to generate example JSON, using basic template", "生成示例JSON失败，使用基础模板")}: {e.Message}");
-
-                // 如果生成失败，返回基础模板
                 var basicCall = new JsonClass
                 {
-                    { "func", new JsonData(methodName) },
+                    { "func", new JsonData(spec.Name) },
                     { "args", new JsonClass() }
                 };
-
                 return basicCall.ToPrettyString();
             }
         }
 
         /// <summary>
-        /// 生成方法的示例参数
+        /// 在 Project 窗口中定位到指定类所在的脚本文件。
         /// </summary>
-        /// <param name="method">方法实例</param>
-        /// <returns>示例参数对象</returns>
-        private static object GenerateExampleArgs(IToolMethod method)
+        private static void PingSourceScript(string className)
         {
-            var exampleArgs = new JsonClass();
-            var keys = method.Keys;
+            if (string.IsNullOrEmpty(className)) return;
 
-            if (keys != null && keys.Length > 0)
+            var script = FindScriptByClassName(className);
+            if (script != null)
             {
-                foreach (var key in keys)
-                {
-                    // 生成全量参数，包括可选参数
-                    // 根据 MethodKey 的真实信息生成示例值
-                    JsonNode exampleValue = GenerateExampleValueFromKey(key);
-                    if (exampleValue != null)
-                    {
-                        exampleArgs[key.Key] = exampleValue;
-                    }
-                }
+                EditorGUIUtility.PingObject(script);
+                return;
             }
 
-            return exampleArgs;
+            Debug.LogWarning($"[McpServiceGUI] {L.T("Unable to find script in Project window", "无法在Project窗口中找到脚本")}: {className}.cs");
+        }
+
+        private static MonoScript FindScriptByClassName(string className)
+        {
+            string scriptName = className + ".cs";
+            foreach (string guid in AssetDatabase.FindAssets(className + " t:MonoScript"))
+            {
+                string path = AssetDatabase.GUIDToAssetPath(guid);
+                if (path.EndsWith(scriptName))
+                {
+                    var script = AssetDatabase.LoadAssetAtPath<MonoScript>(path);
+                    if (script != null) return script;
+                }
+            }
+            return null;
         }
 
         /// <summary>
@@ -1957,9 +1714,6 @@ namespace UniMcp.Gui
             groupFoldouts.Clear();
             resourceFoldouts.Clear();
             promptFoldouts.Clear();
-            
-            // 清除工具缓存，让工具实例重新创建（这样描述会重新获取）
-            ToolsCall.ClearRegisteredMethods();
             
             // 重新发现工具（这会同时刷新工具、资源和提示词）
             McpService.RediscoverTools();

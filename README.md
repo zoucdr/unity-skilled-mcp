@@ -36,6 +36,8 @@ Existing MCP clients ───────────────────�
 
 The Skill is the recommended path for agents that support local Skills. Do not have an agent bypass the Skill and construct MCP requests itself. The INI intentionally does **not** contain an MCP endpoint field.
 
+Tools are registered declaratively: one action equals one tool, named `prefix.action`, with an exact `inputSchema`. There is no state tree — `StateTree`, `StateTreeBuilder`, `StateTreeContext`, `StateMethodBase`, `DualStateMethodBase` and the selector system have all been removed, and tool classes are plain stateless classes marked with `[ToolModule]` / `[ToolAction]`.
+
 ## Quick start
 
 ### 1. Install the Unity package
@@ -95,7 +97,7 @@ The file contains local connection metadata and startup settings, but **does not
 1. **Verify the service:** read the INI and check the current service's discovery metadata.
 2. **Browse summaries:** read groups or a specific tools, prompts, or resources catalog.
 3. **Load only what is needed:** read one tool schema, fetch several tool schemas in one request, request a fixed tag group, or submit a task-specific list of members. `find QUERY` filters catalog summaries locally when the tool list grows.
-4. **Execute:** call the selected operation, read a listed prompt/resource body, or run an ordered batch of tool calls through the Skill client.
+4. **Execute:** call the selected operation or read a listed prompt/resource body. Multi-step work is scripted by the caller through the JS library API; the Skill ships no batch-call command.
 
 Typical commands, run from the Skill folder:
 
@@ -119,11 +121,10 @@ node scripts/unity_mcp.js schemas hierarchy_search hierarchy_apply
 node scripts/unity_mcp.js schemas --names-file names.json
 node scripts/unity_mcp.js call hierarchy_search --args-file args.json
 
-# Filter catalogs locally, use a listed prompt/resource, or run ordered calls
+# Filter catalogs locally, or use a listed prompt/resource
 node scripts/unity_mcp.js find camera --kind tools
 node scripts/unity_mcp.js prompt NAME
 node scripts/unity_mcp.js resource URI
-node scripts/unity_mcp.js calls --calls-file steps.json
 ```
 
 The tag in `details --tag` must come from the live group catalog. A `selection.json` file contains the members array itself, for example:
@@ -138,11 +139,11 @@ The tag in `details --tag` must come from the live group catalog. A `selection.j
 
 The client requires Node.js 18+ and no third-party packages. Consult [`SKILL.md`](unity-package/Skills/unity3d-skill/SKILL.md) for the complete command reference, argument formats, failure behavior, and safety rules.
 
-### Using prompts, resources and batches
+### Using prompts and resources
 
 `details` only returns **registered definitions**. To actually use them, `prompt NAME` and `resource URI` first verify the name/URI against the live `/prompts` or `/resources` catalog, then issue one `prompts/get` or `resources/read`. Unregistered URIs are rejected on purpose: the server's `resources/read` also accepts arbitrary `http://` and `file://` URIs, which would bypass the authorization boundary of `request`.
 
-`calls` accepts an array of `{ "name": "...", "arguments": {} }` (inline, from a file, or from stdin) and executes them in order, one `tools/call` each. It shares the `max_details` limit (default `32`, `0` means unlimited) and a 64 KiB request cap, and **stops at the first failure** without sending the remaining steps. The result still contains every completed step plus `stopped_at` and `exit_code`, since earlier writes may already have taken effect — inspect the editor state before replaying anything. `find` is a purely local, case-insensitive filter over catalog summaries (name, URI, description, tags); it never fetches definitions or content.
+`find` is a purely local, case-insensitive filter over catalog summaries (name, URI, description, tags); it never fetches definitions or content. There is no batch-call command: when several calls are needed, the agent writes ordinary JavaScript with the library API, taking each tool's schema before calling it. Every `call` still re-reads the INI and validates discovery, so sequence, failure handling and replay scope stay under the caller's control.
 
 ### Use the client as a library
 
@@ -167,7 +168,7 @@ On Windows Git Bash, MSYS rewrites `/ROUTE` arguments into local paths. The clie
 
 The Skill does **not** document any concrete Unity tool, action, parameter or mode. Which tools are registered depends on the Unity project, its version, installed packages and the service configuration, and it can change between sessions. A name seen in older docs, examples or source files is not a promise that it exists in the running service.
 
-Every task follows the same order: `discover` → `groups` / `list` / `find` → `details` / `schema` / `schemas` → `call` / `calls`. Names, URIs, tags, parameters and allowed values must all come from the live service response for that task. If a tool is missing, disabled, or reports that an optional package is not installed, report it and stop — do not guess a replacement name or retry with different arguments.
+Every task follows the same order: `discover` → `groups` / `list` / `find` → `details` / `schema` / `schemas` → `call`. Names, URIs, tags, parameters and allowed values must all come from the live service response for that task. If a tool is missing, disabled, or reports that an optional package is not installed, report it and stop — do not guess a replacement name or retry with different arguments.
 
 The package source contains tool categories for engine operations, animation, UI Toolkit, cameras, effects, Test Runner, modeling and C# execution, among others. That inventory is a description of the source tree, **not** a runtime guarantee; see [`SKILL.md`](unity-package/Skills/unity3d-skill/SKILL.md) for the full contract. Optional packages are resolved through reflection, so the package still compiles when they are absent and only the affected tool returns an explicit `not installed` error.
 
@@ -203,19 +204,67 @@ The Skill workflow is an additional access path, not a replacement for the exist
 
 The Skill's discovery requests do not change the behavior of those MCP operations. For the lower-context workflow, use the Skill client rather than asking an agent to connect directly to the MCP transport.
 
+## Tool framework
+
+Tools are declared with attributes and discovered purely by reflection — there is no state tree and no generated declaration file. One action equals one tool, named as `prefix.action` (for example `animator.create`, `hierarchy.create_cube`, `gameobject.modify`), each with its own exact `inputSchema`.
+
+The framework lives in `unity-package/Editor/ToolFramework/`:
+
+| File | Responsibility |
+| --- | --- |
+| `ToolAttributes.cs` | `ToolModuleAttribute` / `ToolActionAttribute` / `ToolParamAttribute` |
+| `ToolCatalog.cs` | Reflection scan of every `[ToolModule]` class; the single source of truth |
+| `ToolSpec.cs` | Per-tool metadata (name, group, parameters, injections, handler delegate) |
+| `ToolSchema.cs` | Builds each tool's exact `inputSchema` |
+| `ToolCall.cs` | Executes one tool (a fresh instance per call; no shared dispatcher state) |
+| `ToolContext.cs` | Per-call context (`JsonData` + `ObjectReferences`, indexer, `Complete` / `AsyncReturn`) |
+| `ToolModuleBase.cs` | Module base class, including the `ITargetedTool` contract |
+| `ToolTargetResolver.cs` | Target resolution (`TargetScope { Any, Hierarchy, Project }`) |
+
+A minimal module:
+
+```csharp
+[ToolModule("animator", GroupEn = "Animation", GroupZh = "动画", LegacyName = "edit_animator")]
+public class AnimatorTool : ToolModuleBase
+{
+    public override string Description => L.T("Manage Animator controllers", "管理动画控制器");
+
+    protected override MethodKey[] CreateKeys() => new MethodKey[]
+    {
+        new MethodStr("path", L.T("Controller asset path", "控制器资源路径"), false),
+    };
+
+    [ToolAction("create", Parameters = new[] { "path" },
+        Required = new[] { "path" }, Inject = new[] { "action=create" })]
+    private object CreateController(JsonClass args) { /* ... */ }
+}
+```
+
+Strongly typed handlers are also supported: `public object Create([ToolParam("path")] string path)`.
+
+A module whose handlers operate on an existing object can implement `ITargetedTool`; the framework resolves the target once before the handler runs and stores it under `_resolved_targets`:
+
+```csharp
+public object ResolveTarget(ToolContext ctx)
+    => ToolTargetResolver.Resolve<GameObject>(ctx, TargetScope.Hierarchy);
+```
+
 ## Extending the capability set
 
-The Unity package discovers registered tools, prompts, and resources and exposes their summaries and definitions through the discovery API. Tool grouping is represented by tags; prompts and resources can also be organized with capability tags. Keep descriptions concise so catalog summaries remain useful, and add or adjust tags when a capability should be discoverable as part of a group.
-
-Relevant implementation areas:
+Add a tool by creating one `XxxTool.cs` file: mark the class with `[ToolModule]`, extend `ToolModuleBase`, implement `Description` and `CreateKeys()`, and mark each handler with `[ToolAction]`. The catalog discovers it by reflection — no registration, no generation, no extra files. Keep descriptions concise so catalog summaries stay useful, and set the module's `GroupEn` / `GroupZh` to control how the tool appears in `groups`.
 
 ```text
 unity-package/Editor/Connect/       Unity service and discovery implementation
+unity-package/Editor/ToolFramework/ Attribute + reflection tool framework
+unity-package/Editor/Tools/         Tool modules (one [ToolModule] per real top-level class)
 unity-package/Editor/GUI/           MCP status window and controls
-unity-package/Editor/Model/         Local service settings
+unity-package/Editor/Model/         Data models and local service settings
+unity-runtime-package/Runtime/      Standalone trimmed runtime package (Player-side)
 unity-package/Skills/unity3d-skill/ Skill instructions and the JS client
 unity-package/Skills/unity3d-skill/tests/  Client regression tests
 ```
+
+> The runtime package is a separate assembly aimed at the Player side and keeps its own `IToolMethod` / `StateTreeContext`. It is not affected by the Editor-side removal of the state tree.
 
 ## Run the Skill client tests
 

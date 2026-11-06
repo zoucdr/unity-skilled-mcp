@@ -27,8 +27,8 @@ namespace UniMcp.Gui
                 lastLanguage = currentLanguage;
                 Debug.Log($"[McpSettingsProvider] Language changed to: {currentLanguage}");
                 
-                // 清除工具缓存，让工具实例重新创建
-                ToolsCall.ClearRegisteredMethods();
+                // 重新扫描目录，让参数描述切换到当前语言
+                ToolCatalog.Reload();
                 
                 // 刷新ProjectSettings窗口
                 EditorApplication.delayCall += () =>

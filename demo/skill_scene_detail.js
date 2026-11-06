@@ -1,5 +1,6 @@
 // 一次性验证脚本：按 SKILL.md「先发现、再取定义、后调用」实机丰富当前场景。
 // 已通过 discover / groups / list / find / schemas / schema 得到下列工具名与参数。
+// 重构后工具改为「分组.动作」二级名称，批量调用接口已移除：多步访问由本脚本逐次编排。
 // 运行：node skill_scene_detail.js   （工程根目录，Unity 不导入）
 const unity = require('../unity-package/Skills/unity3d-skill/scripts/unity_mcp.js');
 
@@ -56,13 +57,17 @@ push(PARENT_SKY, 'Mountain_3', 'Sphere', [13, 0.9, -15], [7, 2.6, 3]);
 [[6, 12, -8], [-4, 13, -10], [10, 11, -12]]
   .forEach((p, i) => push(PARENT_SKY, 'Cloud_Puff_' + (i + 1), 'Sphere', p, [1.4, 0.7, 1]));
 
+// 每个动作是独立工具：primitive / empty 由不同工具承担，source 已由服务端注入。
 function createStep(o) {
-  const args = { source: o.primitive_type ? 'primitive' : 'empty', name: o.name, parent: o.parent };
-  if (o.primitive_type) args.primitive_type = o.primitive_type;
+  const args = { name: o.name, parent: o.parent };
   if (o.position) args.position = o.position;
   if (o.rotation) args.rotation = o.rotation;
   if (o.scale) args.scale = o.scale;
-  return { name: 'hierarchy_create', arguments: args };
+  if (o.primitive_type) {
+    args.primitive_type = o.primitive_type;
+    return { name: 'hierarchy.create_primitive', arguments: args };
+  }
+  return { name: 'hierarchy.create_empty', arguments: args };
 }
 
 const CS_CODE = `
@@ -151,8 +156,8 @@ return string.Format("painted={0}, eyes={1}, lights={2}", painted, eyes, lights)
   const report = await unity.workflowContext('scene_detail', 'Enrich current scene via discovered tools', async wf => {
     const notes = [];
 
-    const all = await unity.callSkillJson('hierarchy_search', {
-      search_type: 'by_name', query: '*', select_many: true, include_hierarchy: false,
+    const all = await unity.callSkillJson('hierarchy.find_by_name', {
+      query: '*', select_many: true, include_hierarchy: false,
     });
     const paths = new Set((all.data || []).map(o => {
       const m = (o.yaml || '').match(/path: (.+)/);
@@ -162,16 +167,13 @@ return string.Format("painted={0}, eyes={1}, lights={2}", painted, eyes, lights)
     const missing = wanted.filter(o => !paths.has(o.parent + '/' + o.name));
     notes.push('现有对象=' + paths.size + '，计划新增=' + missing.length + '（跳过 ' + (wanted.length - missing.length) + '）');
 
-    for (let i = 0; i < missing.length; i += 20) {
-      const batch = missing.slice(i, i + 20).map(createStep);
-      const res = await unity.callMany(batch);
-      const parsed = res && Array.isArray(res.steps) ? res : unity.resultJson(res);
-      notes.push('批次 ' + (i / 20 + 1) + ': ' + parsed.executed + '/' + parsed.total + ', exit_code=' + parsed.exit_code);
-      if (parsed.exit_code !== 0) {
-        const bad = (parsed.steps || []).filter(x => !x.ok);
-        throw new Error('批量创建失败: ' + JSON.stringify(bad).slice(0, 600));
-      }
+    // 无批量接口：逐次调用，遇错即由 workflowContext 记录并抛出。
+    let created = 0;
+    for (const step of missing.map(createStep)) {
+      await unity.callSkillText(step.name, step.arguments);
+      created++;
     }
+    notes.push('逐次创建: ' + created + '/' + missing.length);
 
     // 视觉修正：把首轮落在相机视野外的远山、云团、靶子移入可见区；幂等。
     const tweaks = [
@@ -184,33 +186,29 @@ return string.Format("painted={0}, eyes={1}, lights={2}", painted, eyes, lights)
       { path: 'GroundDetails/Target_Post', position: [-1.5, 1, 7], scale: [0.12, 1, 0.12] },
       { path: 'GroundDetails/Target_Board', position: [-1.5, 2, 7], scale: [1.1, 0.06, 1.1], rotation: [90, 0, 0] },
     ];
-    const tweakRes = await unity.callMany(tweaks.map(t => ({
-      name: 'edit_gameobject',
-      arguments: {
-        action: 'modify', path: 'CannonScene/Details/' + t.path,
-        ...(t.position ? { position: t.position } : {}),
-        ...(t.scale ? { scale: t.scale } : {}),
-        ...(t.rotation ? { rotation: t.rotation } : {}),
-      },
-    })));
-    const adj = tweakRes && Array.isArray(tweakRes.steps) ? tweakRes : unity.resultJson(tweakRes);
-    notes.push('视觉修正: ' + adj.executed + '/' + adj.total + ', exit_code=' + adj.exit_code);
-    if (adj.exit_code !== 0) throw new Error('视觉修正失败: ' + JSON.stringify((adj.steps || []).filter(x => !x.ok)).slice(0, 600));
-
-    const cs = await unity.callSkillJson('code_runner', {
-      action: 'execute', mode: 'runtime', code: CS_CODE, capture_logs: true,
-    });
-    if (!cs.success || !cs.data || !cs.data.success) {
-      throw new Error('运行时代码失败: ' + JSON.stringify(cs).slice(0, 900));
+    let adjusted = 0;
+    for (const t of tweaks) {
+      const args = { path: 'CannonScene/Details/' + t.path };
+      if (t.position) args.position = t.position;
+      if (t.scale) args.scale = t.scale;
+      if (t.rotation) args.rotation = t.rotation;
+      await unity.callSkillText('gameobject.modify', args);
+      adjusted++;
     }
-    notes.push('runtime: ' + cs.data.return_value + ', compile=' + cs.data.compile_seconds + 's, refs=' + cs.data.reference_count);
+    notes.push('视觉修正: ' + adjusted + '/' + tweaks.length);
 
-    const save = await unity.callSkillText('edit_scene', { action: 'save' });
+    const cs = await unity.callSkillJson('code.execute', {
+      mode: 'runtime', code: CS_CODE, return_output: true,
+    });
+    if (cs && cs.success === false) throw new Error('运行时代码失败: ' + JSON.stringify(cs).slice(0, 900));
+    notes.push('runtime: ' + JSON.stringify(cs).slice(0, 300));
+
+    const save = await unity.callSkillText('scene.save', {});
     notes.push('save: ' + String(save).slice(0, 160).replace(/\s+/g, ' '));
 
     for (const [tool, args, label] of [
-      ['scene_view', { action: 'screenshot', save_path: 'Assets/CannonBirdDemo/Preview_Detailed.png' }, 'scene_view 截图'],
-      ['manage_camera', { action: 'screenshot', name: 'Main Camera', width: 1280, height: 720, save_path: 'Assets/CannonBirdDemo/Preview_Game.png' }, 'manage_camera 截图'],
+      ['scene_view.screenshot', { save_path: 'Assets/CannonBirdDemo/Preview_Detailed.png' }, 'scene_view 截图'],
+      ['camera.screenshot', { name: 'Main Camera', width: 1280, height: 720, save_path: 'Assets/CannonBirdDemo/Preview_Game.png' }, 'camera 截图'],
     ]) {
       try {
         const t = await unity.callSkillText(tool, args);

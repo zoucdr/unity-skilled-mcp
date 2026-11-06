@@ -17,7 +17,8 @@ namespace UniMcp.Tools
     /// 对应方法名: ui_rule_manage
     /// </summary>
     [ToolName("ui_rule_manage", "UI Management", "UI管理")]
-    public class UIRuleManage : StateMethodBase
+    [ToolModule("ui_rule", GroupEn = "UI Management", GroupZh = "UI管理", LegacyName = "ui_rule_manage")]
+    public class UIRuleManage : ToolModuleBase
     {
         /// <summary>
         /// 工具方法的描述，用于在状态树中引用
@@ -63,26 +64,9 @@ namespace UniMcp.Tools
         }
 
         /// <summary>
-        /// 创建状态树
-        /// </summary>
-        protected override StateTree CreateStateTree()
-        {
-            return StateTreeBuilder
-                .Create()
-                .Key("action")
-                    .Leaf("record_modify", RecordModify)
-                    .Leaf("record_renames", RecordNodeRenames)
-                    .Leaf("get_renames", GetNodeRenames)
-                    .Leaf("record_download_sprites", RecordDownloadedSprites)
-                    .Leaf("get_download_sprites", GetDownloadedSprites)
-                .Build();
-        }
-
-
-
-        /// <summary>
         /// 记录UI修改记录
         /// </summary>
+        [ToolAction("record_modify", "name=require", "modify_desc")]
         private object RecordModify(JsonClass args)
         {
             string uiName = args["name"]?.Value;
@@ -139,6 +123,7 @@ namespace UniMcp.Tools
 
 
 
+        [ToolAction("record_renames", "name=require", "names_data=require")]
         /// <summary>
         /// 批量记录节点重命名信息
         /// </summary>
@@ -253,6 +238,7 @@ namespace UniMcp.Tools
             }
         }
 
+        [ToolAction("get_renames", "name=require")]
         /// <summary>
         /// 获取节点重命名信息
         /// </summary>
@@ -296,6 +282,7 @@ namespace UniMcp.Tools
             }
         }
 
+        [ToolAction("record_download_sprites", "name=require", "sprites_data=require", "auto_load_sprites")]
         /// <summary>
         /// 批量记录已下载的节点Sprite信息
         /// </summary>
@@ -468,6 +455,7 @@ namespace UniMcp.Tools
             return null;
         }
 
+        [ToolAction("get_download_sprites", "name=require")]
         /// <summary>
         /// 获取已下载的节点Sprite信息
         /// </summary>

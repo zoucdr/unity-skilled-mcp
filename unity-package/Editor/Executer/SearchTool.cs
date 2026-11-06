@@ -52,27 +52,23 @@ namespace UniMcp.Executer
         /// </summary>
         private void HandleList(Action<JsonNode> callback)
         {
-            var allMethods = ToolsCall.GetAllRegisteredMethods();
             var list = new List<Dictionary<string, object>>();
-
-            foreach (var kvp in allMethods.OrderBy(k => k.Key))
+            foreach (var spec in ToolCatalog.All)
             {
-                if (!McpLocalSettings.Instance.IsToolEnabled(kvp.Key)) continue;
-                var entry = new Dictionary<string, object>
+                if (!McpLocalSettings.Instance.IsToolEnabled(spec.Name)) continue;
+                list.Add(new Dictionary<string, object>
                 {
-                    ["name"] = kvp.Key,
-                    ["description"] = kvp.Value.Description ?? ""
-                };
-                list.Add(entry);
+                    ["name"] = spec.Name,
+                    ["description"] = spec.Description ?? "",
+                    ["group"] = spec.GroupName,
+                    ["parameters"] = spec.Parameters.Select(k => k.Key).ToArray(),
+                });
             }
-
-            var data = new Dictionary<string, object>
+            callback(Response.Success("Found " + list.Count + " tools.", new Dictionary<string, object>
             {
                 ["tools"] = list,
                 ["count"] = list.Count
-            };
-
-            callback(Response.Success($"Found {list.Count} tools.", data));
+            }));
         }
 
         /// <summary>
@@ -94,61 +90,39 @@ namespace UniMcp.Executer
                 return;
             }
 
-            var method = ToolsCall.GetToolMethodStatic(name);
-            if (method == null)
+            var spec = ToolCatalog.Find(name);
+            if (spec == null)
             {
                 callback(Response.Error($"Tool '{name}' not found. Use type='list' to see all available tools."));
                 return;
             }
 
-            bool includePreview = ctx["preview"]?.AsBool ?? false;
-
             var detail = new Dictionary<string, object>
             {
-                ["name"] = name,
-                ["description"] = method.Description ?? ""
+                ["name"] = spec.Name,
+                ["description"] = spec.Description ?? "",
+                ["group"] = spec.GroupName,
+                ["owner"] = spec.SourceClass,
+                ["action"] = spec.Action,
+                ["schema"] = ToolSchema.Build(spec, true).ToString(),
             };
 
-            // 参数键列表
-            if (method.Keys != null && method.Keys.Length > 0)
+            var keysList = new List<Dictionary<string, object>>();
+            foreach (var key in spec.Parameters)
             {
-                var keysList = new List<Dictionary<string, object>>();
-                foreach (var key in method.Keys)
+                var k = new Dictionary<string, object>
                 {
-                    var k = new Dictionary<string, object>
-                    {
-                        ["key"] = key.Key,
-                        ["description"] = key.Desc ?? "",
-                        ["type"] = key.Type ?? "string",
-                        ["optional"] = key.Optional
-                    };
-
-                    if (key.DefaultValue != null)
-                        k["default"] = key.DefaultValue;
-
-                    if (key.Examples != null && key.Examples.Count > 0)
-                        k["examples"] = key.Examples.ToArray();
-
-                    if (key.EnumValues != null && key.EnumValues.Count > 0)
-                        k["enum"] = key.EnumValues.ToArray();
-
-                    keysList.Add(k);
-                }
-                detail["keys"] = keysList;
+                    ["key"] = key.Key,
+                    ["description"] = key.Desc ?? "",
+                    ["type"] = key.Type ?? "string",
+                    ["optional"] = !spec.Required.Contains(key.Key)
+                };
+                if (key.DefaultValue != null) k["default"] = key.DefaultValue;
+                if (key.Examples != null && key.Examples.Count > 0) k["examples"] = key.Examples.ToArray();
+                if (key.EnumValues != null && key.EnumValues.Count > 0) k["enum"] = key.EnumValues.ToArray();
+                keysList.Add(k);
             }
-
-            // 状态树预览（可选）
-            if (includePreview)
-            {
-                try
-                {
-                    detail["preview"] = method.Preview() ?? "";
-                }
-                catch (Exception ex)
-                {
-                    detail["preview"] = $"Preview generation failed: {ex.Message}";
-                }
-            }
+            detail["keys"] = keysList;
 
             callback(Response.Success($"Tool '{name}' detail retrieved.", detail));
         }

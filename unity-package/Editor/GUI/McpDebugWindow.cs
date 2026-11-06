@@ -100,7 +100,6 @@ namespace UniMcp.Gui
         private GUIStyle codeStyle;
         private GUIStyle inputStyle;  // 专门用于输入框的样式
         private GUIStyle resultStyle;
-        private ToolsCall methodsCall = new ToolsCall();
         private void InitializeStyles()
         {
             if (headerStyle == null)
@@ -1448,34 +1447,22 @@ namespace UniMcp.Gui
             if (inputObj == null)
                 return Response.Error(L.T("Cannot parse JSON input", "无法解析JSON输入"));
 
-            // 检查是否为批量调用
-            if (inputObj is JsonArray jArray)
+            // Batch calls were removed from the server; the Skill client scripts
+            // sequential calls itself.
+            if (inputObj is JsonArray)
             {
-                // 批量函数调用
-                var functionsCall = new BatchCall();
-                JsonNode callResult = null;
-                bool callbackExecuted = false;
-                functionsCall.HandleCommand(jArray, (result) =>
-                {
-                    callResult = result;
-                    callbackExecuted = true;
-
-                    // 如果是异步回调，更新UI
-                    if (isExecuting)
-                    {
-                        DateTime endTime = DateTime.Now;
-                        TimeSpan duration = endTime - startTime;
-                        onSingleComplete?.Invoke(result, duration);
-                    }
-                });
-                // 如果回调立即执行，返回结果；否则返回null表示异步执行
-                return callbackExecuted ? callResult : null;
+                return Response.Error(L.T(
+                    "Batch calls are no longer supported. Call tools one at a time.",
+                    "批量调用已移除，请逐个调用工具。"));
             }
             else if (inputObj is JsonClass inputObjClass && inputObjClass.ContainsKey("func") && (inputObjClass.ContainsKey("args")))
             {
-                // 单个函数调用 (兼容旧格式和新的异步格式)
-                var functionCall = new ToolsCall();
-                functionCall.SetToolName(inputObjClass["func"].Value);
+                // 单个函数调用：按声明式目录的"分组.动作"名执行
+                string funcName = inputObjClass["func"].Value;
+                var spec = ToolCatalog.Find(funcName);
+                if (spec == null)
+                    return Response.Error(L.T("Unknown tool: ", "未知工具: ") + funcName);
+                McpTool functionCall = new ToolCall(spec);
                 JsonNode callResult = null;
                 bool callbackExecuted = false;
                 functionCall.HandleCommand(inputObjClass["args"], (result) =>
@@ -1497,8 +1484,8 @@ namespace UniMcp.Gui
             else
             {
                 throw new ArgumentException(L.T(
-                    "Input JSON must contain 'id' field (async call), 'func' field (single call) or 'funcs' field (batch call)",
-                    "输入的JSON必须包含 'id' 字段（异步调用）、'func' 字段（单个调用）或 'funcs' 字段（批量调用）"));
+                    "Input JSON must contain 'func' (single call) or 'args' field",
+                    "输入的JSON必须包含 'func'（单个调用）或 'args' 字段"));
             }
         }
 
