@@ -2,7 +2,7 @@
 // 已通过 discover / groups / list / find / schemas / schema 得到下列工具名与参数。
 // 重构后工具改为「分组.动作」二级名称，批量调用接口已移除：多步访问由本脚本逐次编排。
 // 运行：node skill_scene_detail.js   （工程根目录，Unity 不导入）
-const unity = require('../unity-package/Skills/unity3d-skill/scripts/unity_mcp.js');
+const unity = require('../unity-package/Skills/unity-skilled-mcp/scripts/unity_mcp.js');
 
 unity.configure({ timeout: 60 });
 

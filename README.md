@@ -60,8 +60,8 @@ Recommended: in the MCP Status window, click **Copy skill install prompt** and p
 
 You can also install it manually:
 
-- Copy `unity-package/Skills/unity3d-skill/` into the agent's Skills directory, keeping the folder name `unity3d-skill`.
-- Or use the packaged archive at `dist/unity3d-skill.zip`.
+- Copy `unity-package/Skills/unity-skilled-mcp/` into the agent's Skills directory, keeping the folder name `unity-skilled-mcp`.
+- Or use the packaged archive at `dist/unity-skilled-mcp.zip`.
 
 ### 4. Use it from the agent
 
@@ -137,7 +137,7 @@ The tag in `details --tag` must come from the live group catalog. A `selection.j
 ]
 ```
 
-The client requires Node.js 18+ and no third-party packages. Consult [`SKILL.md`](unity-package/Skills/unity3d-skill/SKILL.md) for the complete command reference, argument formats, failure behavior, and safety rules.
+The client requires Node.js 18+ and no third-party packages. Consult [`SKILL.md`](unity-package/Skills/unity-skilled-mcp/SKILL.md) for the complete command reference, argument formats, failure behavior, and safety rules.
 
 ### Using prompts and resources
 
@@ -160,7 +160,7 @@ const summary = await unity.workflowContext('TASK', 'DESCRIPTION', async wf => {
 });
 ```
 
-`callSkill` returns the MCP `result`; `callTool` returns the full JSON-RPC envelope; `*Text` / `*Json` helpers extract and parse `content[*].text`. A workflow context only records calls (`wf.calls`, `wf.summary()`), never retries or rolls back — a failed call rejects as usual. `pickFrom` is pseudocode for choosing a tool and its arguments from the live catalog and schema, not a library function. Tool names must come from `find` / `list --kind tools`. `new Client({...})` allows multiple connections; all methods are async and errors are `ClientError` with a `.code`. See [`SKILL.md`](unity-package/Skills/unity3d-skill/SKILL.md) for the full API table and safety rules.
+`callSkill` returns the MCP `result`; `callTool` returns the full JSON-RPC envelope; `*Text` / `*Json` helpers extract and parse `content[*].text`. A workflow context only records calls (`wf.calls`, `wf.summary()`), never retries or rolls back — a failed call rejects as usual. `pickFrom` is pseudocode for choosing a tool and its arguments from the live catalog and schema, not a library function. Tool names must come from `find` / `list --kind tools`. `new Client({...})` allows multiple connections; all methods are async and errors are `ClientError` with a `.code`. See [`SKILL.md`](unity-package/Skills/unity-skilled-mcp/SKILL.md) for the full API table and safety rules.
 
 On Windows Git Bash, MSYS rewrites `/ROUTE` arguments into local paths. The client now restores those paths via `EXEPATH` and also accept bare routes (`request groups`); absolute URLs and CMD / PowerShell / POSIX shells are unchanged.
 
@@ -170,7 +170,7 @@ The Skill does **not** document any concrete Unity tool, action, parameter or mo
 
 Every task follows the same order: `discover` → `groups` / `list` / `find` → `details` / `schema` / `schemas` → `call`. Names, URIs, tags, parameters and allowed values must all come from the live service response for that task. If a tool is missing, disabled, or reports that an optional package is not installed, report it and stop — do not guess a replacement name or retry with different arguments.
 
-The package source contains tool categories for engine operations, animation, UI Toolkit, cameras, effects, Test Runner, modeling and C# execution, among others. That inventory is a description of the source tree, **not** a runtime guarantee; see [`SKILL.md`](unity-package/Skills/unity3d-skill/SKILL.md) for the full contract. Optional packages are resolved through reflection, so the package still compiles when they are absent and only the affected tool returns an explicit `not installed` error.
+The package source contains tool categories for engine operations, animation, UI Toolkit, cameras, effects, Test Runner, modeling and C# execution, among others. That inventory is a description of the source tree, **not** a runtime guarantee; see [`SKILL.md`](unity-package/Skills/unity-skilled-mcp/SKILL.md) for the full contract. Optional packages are resolved through reflection, so the package still compiles when they are absent and only the affected tool returns an explicit `not installed` error.
 
 ```sh
 node scripts/unity_mcp.js discover
@@ -259,15 +259,15 @@ unity-package/Editor/Tools/         Tool modules (one [ToolModule] per real top-
 unity-package/Editor/GUI/           MCP status window and controls
 unity-package/Editor/Model/         Data models and local service settings
 unity-runtime-package/Runtime/      Standalone trimmed runtime package (Player-side)
-unity-package/Skills/unity3d-skill/ Skill instructions and the JS client
-unity-package/Skills/unity3d-skill/tests/  Client regression tests
+unity-package/Skills/unity-skilled-mcp/ Skill instructions and the JS client
+unity-package/Skills/unity-skilled-mcp/tests/  Client regression tests
 ```
 
 > The runtime package is a separate assembly aimed at the Player side and keeps its own `IToolMethod` / `StateTreeContext`. It is not affected by the Editor-side removal of the state tree.
 
 ## Run the Skill client tests
 
-From `unity-package/Skills/unity3d-skill/`:
+From `unity-package/Skills/unity-skilled-mcp/`:
 
 ```sh
 node --test tests/test_unity_mcp.js
@@ -285,4 +285,4 @@ node --test tests/test_unity_mcp.js
 
 ---
 
-For additional project information and examples, see the [Chinese README](README.zh-CN.md), the [project website](docs/index.html), and the [Unity Skill](unity-package/Skills/unity3d-skill/SKILL.md).
+For additional project information and examples, see the [Chinese README](README.zh-CN.md), the [project website](docs/index.html), and the [Unity Skill](unity-package/Skills/unity-skilled-mcp/SKILL.md).

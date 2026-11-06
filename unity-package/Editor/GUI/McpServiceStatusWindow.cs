@@ -864,7 +864,7 @@ namespace UniMcp.Gui
         }
 
         // 技能目录的 .meta GUID：包放在 Assets、Packages 或 PackageCache 都能解析到实际路径。
-        private const string SkillFolderGuid = "a122fdfd26dd44eabd19bcabc70a561f";
+        private const string SkillFolderGuid = "9a81f0bf5599fdf418136c9e2621ca61";
 
         /// <summary>
         /// 通过 GUID 解析技能目录的绝对路径；找不到时返回 null。
@@ -879,11 +879,11 @@ namespace UniMcp.Gui
                 if (string.IsNullOrEmpty(assetPath))
                 {
                     // 兜底：GUID 失效（例如 meta 被重新生成）时按目录名定位。
-                    foreach (string guid in AssetDatabase.FindAssets("unity3d-skill"))
+                    foreach (string guid in AssetDatabase.FindAssets("unity-skilled-mcp"))
                     {
                         string candidate = AssetDatabase.GUIDToAssetPath(guid);
                         if (!string.IsNullOrEmpty(candidate)
-                            && candidate.Replace('\\', '/').EndsWith("/Skills/unity3d-skill", StringComparison.Ordinal))
+                            && candidate.Replace('\\', '/').EndsWith("/Skills/unity-skilled-mcp", StringComparison.Ordinal))
                         {
                             assetPath = candidate;
                             break;
@@ -914,18 +914,18 @@ namespace UniMcp.Gui
 
         internal static string BuildSkillInstallPrompt()
         {
-            string path = SkillFolderPath ?? "技能目录未找到（请在 Unity 中确认 unity-package/Skills/unity3d-skill 已导入）";
+            string path = SkillFolderPath ?? "技能目录未找到（请在 Unity 中确认 unity-package/Skills/unity-skilled-mcp 已导入）";
             string iniPath = Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".unity-mcp", "skill.ini");
             return string.Join("\n", new[] {
-                "请帮我安装 Unity MCP 轻量技能 unity3d-skill。",
+                "请帮我安装 Unity MCP 轻量技能 unity-skilled-mcp。",
                 "",
                 "技能目录（绝对路径）：",
                 path,
                 "",
                 "安装步骤：",
                 "1. 读取该目录下的 SKILL.md，严格按它的说明操作；不要凭猜测调用 Unity 接口。",
-                "2. 把整个 unity3d-skill 文件夹复制到你所在 agent 的技能目录（例如 WorkBuddy 的 ~/.workbuddy/skills/，其他 agent 用各自的 skills 目录），目录名保持不变。",
+                "2. 把整个 unity-skilled-mcp 文件夹复制到你所在 agent 的技能目录（例如 WorkBuddy 的 ~/.workbuddy/skills/，其他 agent 用各自的 skills 目录），目录名保持不变。",
                 "3. 复制后确认存在 SKILL.md 与 scripts/unity_mcp.js；脚本无第三方依赖，需要 Node.js 18+。",
                 "4. 使用前先在 Unity 中启动 MCP 服务：启动时会把连接信息写入 " + iniPath + "（即 ~/.unity-mcp/skill.ini），其中包含 max_details 等本次启动配置。",
                 "5. 按 SKILL.md 的流程执行：discover → groups / list → schema 或 details → call；不要一次拉取全部详情。",
@@ -955,8 +955,8 @@ namespace UniMcp.Gui
             EditorGUILayout.EndHorizontal();
             if (string.IsNullOrEmpty(path))
                 EditorGUILayout.HelpBox(
-                    L.T("Make sure unity-package/Skills/unity3d-skill is imported, then reopen this window.",
-                        "请确认 unity-package/Skills/unity3d-skill 已导入后重新打开本窗口。"),
+                    L.T("Make sure unity-package/Skills/unity-skilled-mcp is imported, then reopen this window.",
+                        "请确认 unity-package/Skills/unity-skilled-mcp 已导入后重新打开本窗口。"),
                     MessageType.Warning);
         }
 

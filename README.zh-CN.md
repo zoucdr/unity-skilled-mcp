@@ -45,7 +45,7 @@ Unity Skilled MCP 是一个 AI–Unity 集成系统：它在 Unity 编辑器内�
 - **内置 MCP Server** (C#)：Unity 编辑器内置的 MCP 协议服务器
 - **Unity Package** (C#)：完整的 Unity 编辑器插件（`unity-package`）
 - **Runtime Package** (C#)：独立精简运行时包（`unity-runtime-package`，供 Player 侧使用）
-- **Agent 技能**：`unity-package/Skills/unity3d-skill/`，Node.js 客户端 + 说明书
+- **Agent 技能**：`unity-package/Skills/unity-skilled-mcp/`，Node.js 客户端 + 说明书
 - **通信协议**：HTTP（可自定义端口，默认 8000）+ JSON-RPC 2.0
 
 ---
@@ -340,7 +340,7 @@ for (const step of await planFromCatalog(catalog)) {
 
 ## Agent 技能模块
 
-MCP 协议会向 AI 提供完整工具列表与 Schema，工具较多时**占用大量 Token**。为降低上下文消耗，项目提供 **Skill 模块**（`unity-package/Skills/unity3d-skill/`），实现「按需发现、按需取定义、用完即弃」。
+MCP 协议会向 AI 提供完整工具列表与 Schema，工具较多时**占用大量 Token**。为降低上下文消耗，项目提供 **Skill 模块**（`unity-package/Skills/unity-skilled-mcp/`），实现「按需发现、按需取定义、用完即弃」。
 
 ### 铁律：先发现，后使用
 
@@ -405,7 +405,7 @@ const summary = await unity.workflowContext('TASK', 'DESCRIPTION', async wf => {
 ### 文件结构
 
 ```
-unity-package/Skills/unity3d-skill/
+unity-package/Skills/unity-skilled-mcp/
 ├── SKILL.md                    # 连接、命令与安全说明
 ├── scripts/
 │   └── unity_mcp.js            # 唯一客户端，Node.js 18+，无依赖
@@ -497,7 +497,7 @@ public class MyTool : ToolModuleBase
 
 ## 相关文件
 
-- 技能契约与完整命令参考：[`unity-package/Skills/unity3d-skill/SKILL.md`](unity-package/Skills/unity3d-skill/SKILL.md)
+- 技能契约与完整命令参考：[`unity-package/Skills/unity-skilled-mcp/SKILL.md`](unity-package/Skills/unity-skilled-mcp/SKILL.md)
 - 英文说明：[English README](README.md)
 - 项目网站：[docs/index.html](docs/index.html)
 - 改动记录：[note.md](note.md)

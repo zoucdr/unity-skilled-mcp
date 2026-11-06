@@ -417,7 +417,7 @@
             </div>
             <div class="skills-content">
                 <div class="skills-intro">
-                    <p>技能目录位于 <code>unity-package/Skills/unity3d-skill/</code>，只说明「服务怎么连、先取什么、再取什么、参数怎么传」，不枚举任何工具的参数；工具参数始终按需从服务端读取，替代过去一次性灌入全部 Schema 的做法。</p>
+                    <p>技能目录位于 <code>unity-package/Skills/unity-skilled-mcp/</code>，只说明「服务怎么连、先取什么、再取什么、参数怎么传」，不枚举任何工具的参数；工具参数始终按需从服务端读取，替代过去一次性灌入全部 Schema 的做法。</p>
                 </div>
 
                 <div class="skills-mechanism">
@@ -425,7 +425,7 @@
                     <ul>
                         <li><strong>一键提示词</strong>：Unity 菜单 <code>Window/MCP/Status</code> → 点击「复制技能安装提示词」，把剪贴板内容粘贴到任意 Agent，即可按提示完成安装。</li>
                         <li><strong>技能路径自动解析</strong>：窗口按技能目录 .meta 的 GUID 反向查找真实磁盘路径，无论是工程内、嵌入式包还是 PackageCache 中的包都能定位。</li>
-                        <li><strong>手动安装</strong>：把整个 <code>unity3d-skill</code> 文件夹复制到目标 Agent 的 skills 目录（如 <code>~/.workbuddy/skills/</code>），目录名保持不变。</li>
+                        <li><strong>手动安装</strong>：把整个 <code>unity-skilled-mcp</code> 文件夹复制到目标 Agent 的 skills 目录（如 <code>~/.workbuddy/skills/</code>），目录名保持不变。</li>
                     </ul>
                 </div>
 

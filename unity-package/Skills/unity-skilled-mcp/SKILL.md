@@ -1,5 +1,5 @@
 ---
-name: unity3d-skill
+name: unity-skilled-mcp
 description: 无依赖 Node.js 客户端连 Unity Skilled MCP。只载「先发现、再取定义、后调用」之契约与安全边界，不述具体工具。可按 tag 或动态成员取详情、批量取 schema、检索目录、读提示词与资源、自定义 HTTP，亦可 require 作库，以代码编排多步访问。
 agent_created: true
 ---
