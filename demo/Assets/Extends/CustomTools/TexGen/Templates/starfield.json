@@ -1,0 +1,74 @@
+{
+  "name": "starfield",
+  "title": "星空：深空底 + 稀疏星点",
+  "tags": [
+    "nature",
+    "sky",
+    "fx"
+  ],
+  "spec": {
+    "width": 512,
+    "height": 512,
+    "tiling": true,
+    "supersample": 2,
+    "background": "#00000000",
+    "layers": [
+      {
+        "shape": "rect",
+        "center": [
+          256,
+          256
+        ],
+        "size": [
+          512,
+          512
+        ],
+        "fill": "solid",
+        "color": "#05050f"
+      },
+      {
+        "shape": "rect",
+        "center": [
+          256,
+          256
+        ],
+        "size": [
+          512,
+          512
+        ],
+        "fill": "pattern",
+        "pattern": "dot",
+        "cell": [
+          26,
+          26
+        ],
+        "color": "#ffffff",
+        "gap": 0,
+        "gapColor": "#05050f",
+        "stagger": 0.16,
+        "variation": 0.85,
+        "seed": 16
+      },
+      {
+        "shape": "rect",
+        "center": [
+          256,
+          256
+        ],
+        "size": [
+          512,
+          512
+        ],
+        "fill": "noise",
+        "noise": "fbm",
+        "scale": 90,
+        "color": "#00000000",
+        "edgeColor": "#1b2350",
+        "octaves": 4,
+        "seed": 63,
+        "opacity": 0.35,
+        "blend": "screen"
+      }
+    ]
+  }
+}

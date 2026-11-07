@@ -26,7 +26,48 @@ namespace UniMcp.TexGen
         Radial,
         Noise,
         Ripple,
-        Grid
+        Grid,
+
+        /// <summary>Tiled masonry / fabric / organic pattern; see <see cref="TgPattern"/>.</summary>
+        Pattern
+    }
+
+    /// <summary>
+    /// Periodic tiling pattern painted by <see cref="TgFill.Pattern"/>. Every pattern
+    /// repeats with period <c>cell</c>, so a full-canvas rect plus <c>tiling</c>
+    /// produces a seamlessly wrapping surface.
+    /// </summary>
+    public enum TgPattern
+    {
+        /// <summary>Running-bond masonry. Rows shift by <c>stagger</c> of a brick.</summary>
+        Brick,
+
+        /// <summary>Long staggered boards (wood floor / decking).</summary>
+        Plank,
+
+        /// <summary>Square tiles on an aligned grid.</summary>
+        Tile,
+
+        /// <summary>Alternating two-colour squares.</summary>
+        Checker,
+
+        /// <summary>Parallel stripes at <c>rotation</c> degrees.</summary>
+        Stripe,
+
+        /// <summary>Pointy-top honeycomb cells.</summary>
+        Hex,
+
+        /// <summary>Overlapping roof/fish scales.</summary>
+        Scale,
+
+        /// <summary>Plain weave: alternating over/under threads.</summary>
+        Weave,
+
+        /// <summary>Dot lattice, optionally staggered.</summary>
+        Dot,
+
+        /// <summary>Cobblestone: irregular rounded stones separated by mortar.</summary>
+        Cobble
     }
 
     /// <summary>Layer compositing operator.</summary>
@@ -37,6 +78,10 @@ namespace UniMcp.TexGen
         Multiply,
         Screen,
         Overlay,
+        Subtract,
+        Difference,
+        Darken,
+        Lighten,
 
         /// <summary>Keep the backdrop only inside this shape (clip to a stencil).</summary>
         Mask,
@@ -159,6 +204,27 @@ namespace UniMcp.TexGen
         public Vector2 GridCell = new Vector2(32f, 32f);
         public float GridLineWidth = 2f;
 
+        // Pattern fill (TgFill.Pattern).
+        public TgPattern Pattern = TgPattern.Brick;
+        /// <summary>Gap between pattern cells in pixels (mortar / thread / seam width).</summary>
+        public float PatternGap = 3f;
+        /// <summary>Colour painted inside the gap bands.</summary>
+        public Color PatternGapColor = new Color(0f, 0f, 0f, 0f);
+        /// <summary>Row offset as a fraction of one cell (0 = aligned, 0.5 = running bond).</summary>
+        public float PatternStagger = 0.5f;
+        /// <summary>Per-cell brightness jitter, so repeated cells do not look cloned.</summary>
+        public float PatternVariation = 0.12f;
+        /// <summary>Corner rounding 0..1 for cell shapes that support it (cobble, dot, scale).</summary>
+        public float PatternRoundness = 1f;
+
+        // Domain warp: displaces the fill lookup, which is what turns a straight
+        // stripe into wood grain or marble veining. Geometry is unaffected.
+        public bool WarpEnabled;
+        public TgNoiseKind WarpNoise = TgNoiseKind.Fbm;
+        public float WarpScale = 64f;
+        public float WarpAmount = 12f;
+        public int WarpOctaves = 4;
+
         // Compositing.
         public TgBlend Blend = TgBlend.Normal;
         public float Opacity = 1f;
@@ -182,6 +248,11 @@ namespace UniMcp.TexGen
         public int Supersample = 2;         // 1..4, internal SSAA factor
         public bool NormalMap;              // render as a normal map
         public float NormalStrength = 1f;
+        /// <summary>
+        /// Make every periodic fill wrap at the canvas borders, so the PNG tiles
+        /// seamlessly. Noise periods snap to whole lattice cells.
+        /// </summary>
+        public bool Tiling;
         public readonly List<TgLayer> Layers = new List<TgLayer>();
 
         public const int MaxDimension = 2048;

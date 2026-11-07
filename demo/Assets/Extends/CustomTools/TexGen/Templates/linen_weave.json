@@ -1,0 +1,41 @@
+{
+  "name": "linen_weave",
+  "title": "亚麻织物：平纹交织 + 米色",
+  "tags": [
+    "fabric",
+    "cloth",
+    "soft"
+  ],
+  "spec": {
+    "width": 512,
+    "height": 512,
+    "tiling": true,
+    "supersample": 2,
+    "background": "#00000000",
+    "layers": [
+      {
+        "shape": "rect",
+        "center": [
+          256,
+          256
+        ],
+        "size": [
+          512,
+          512
+        ],
+        "fill": "pattern",
+        "pattern": "weave",
+        "cell": [
+          12,
+          12
+        ],
+        "color": "#eae1cb",
+        "gap": 1.2,
+        "gapColor": "#cdbfa4",
+        "edgeColor": "#dccfb4",
+        "stagger": 0.58,
+        "seed": 10
+      }
+    ]
+  }
+}

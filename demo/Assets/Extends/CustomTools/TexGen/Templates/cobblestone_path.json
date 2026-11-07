@@ -1,0 +1,57 @@
+{
+  "name": "cobblestone_path",
+  "title": "鹅卵石路：大块圆石 + 深缝",
+  "tags": [
+    "ground",
+    "rock",
+    "path"
+  ],
+  "spec": {
+    "width": 512,
+    "height": 512,
+    "tiling": true,
+    "supersample": 2,
+    "background": "#00000000",
+    "layers": [
+      {
+        "shape": "rect",
+        "center": [
+          256,
+          256
+        ],
+        "size": [
+          512,
+          512
+        ],
+        "fill": "pattern",
+        "pattern": "cobble",
+        "cell": 96,
+        "color": "#7d7a72",
+        "gap": 7,
+        "gapColor": "#2a2a28",
+        "variation": 0.22,
+        "seed": 7
+      },
+      {
+        "shape": "rect",
+        "center": [
+          256,
+          256
+        ],
+        "size": [
+          512,
+          512
+        ],
+        "fill": "noise",
+        "noise": "fbm",
+        "scale": 16,
+        "color": "#00000000",
+        "edgeColor": "#4a4740",
+        "octaves": 3,
+        "seed": 91,
+        "opacity": 0.25,
+        "blend": "multiply"
+      }
+    ]
+  }
+}

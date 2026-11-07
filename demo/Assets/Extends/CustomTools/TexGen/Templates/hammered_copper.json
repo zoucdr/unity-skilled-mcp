@@ -1,0 +1,60 @@
+{
+  "name": "hammered_copper",
+  "title": "锤纹铜：暖铜底 + 圆形锤痕",
+  "tags": [
+    "metal",
+    "material"
+  ],
+  "spec": {
+    "width": 512,
+    "height": 512,
+    "tiling": true,
+    "supersample": 2,
+    "background": "#00000000",
+    "layers": [
+      {
+        "shape": "rect",
+        "center": [
+          256,
+          256
+        ],
+        "size": [
+          512,
+          512
+        ],
+        "fill": "noise",
+        "noise": "fbm",
+        "scale": 40,
+        "color": "#a8612f",
+        "edgeColor": "#c98247",
+        "octaves": 4,
+        "seed": 4
+      },
+      {
+        "shape": "rect",
+        "center": [
+          256,
+          256
+        ],
+        "size": [
+          512,
+          512
+        ],
+        "fill": "pattern",
+        "pattern": "dot",
+        "cell": [
+          34,
+          34
+        ],
+        "color": "#d99a63",
+        "gap": 3,
+        "gapColor": "#00000000",
+        "stagger": 0.46,
+        "variation": 0.3,
+        "seed": 22,
+        "opacity": 0.55,
+        "blend": "overlay"
+      }
+    ]
+  }
+}

@@ -1,0 +1,74 @@
+{
+  "name": "cloud_layer",
+  "title": "云层：多层分形白云（带透明）",
+  "tags": [
+    "nature",
+    "sky",
+    "fx"
+  ],
+  "spec": {
+    "width": 512,
+    "height": 512,
+    "tiling": true,
+    "supersample": 2,
+    "background": "#00000000",
+    "layers": [
+      {
+        "shape": "rect",
+        "center": [
+          256,
+          256
+        ],
+        "size": [
+          512,
+          512
+        ],
+        "fill": "noise",
+        "noise": "fbm",
+        "scale": 110,
+        "color": "#00000000",
+        "edgeColor": "#ffffff",
+        "octaves": 6,
+        "seed": 24
+      },
+      {
+        "shape": "rect",
+        "center": [
+          256,
+          256
+        ],
+        "size": [
+          512,
+          512
+        ],
+        "fill": "noise",
+        "noise": "fbm",
+        "scale": 46,
+        "color": "#00000000",
+        "edgeColor": "#ffffff",
+        "octaves": 5,
+        "seed": 39,
+        "opacity": 0.55
+      },
+      {
+        "shape": "rect",
+        "center": [
+          256,
+          256
+        ],
+        "size": [
+          512,
+          512
+        ],
+        "fill": "noise",
+        "noise": "fbm",
+        "scale": 18,
+        "color": "#00000000",
+        "edgeColor": "#c8d4e4",
+        "octaves": 4,
+        "seed": 57,
+        "opacity": 0.3
+      }
+    ]
+  }
+}

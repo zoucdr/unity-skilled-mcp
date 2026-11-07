@@ -74,6 +74,24 @@ namespace UniMcp.TexGen
             File.WriteAllBytes(absolutePath, png);
         }
 
+        /// <summary>Wrap a finished pixel buffer in a Texture2D (caller owns it).</summary>
+        public static Texture2D TextureFromColors(Color[] pixels, int w, int h)
+        {
+            var tex = new Texture2D(w, h, TextureFormat.RGBA32, false, false);
+            tex.SetPixels(pixels);
+            tex.Apply(false, false);
+            return tex;
+        }
+
+        /// <summary>Wrap a float RGBA buffer (0..1, straight alpha) in a Texture2D.</summary>
+        public static Texture2D TextureFromColors(float[] rgba, int w, int h)
+        {
+            var tex = new Texture2D(w, h, TextureFormat.RGBA32, false, false);
+            tex.LoadRawTextureData(ToBytes(rgba, w, h));
+            tex.Apply(false, false);
+            return tex;
+        }
+
         // ------------------------------------------------------------------
         // Layer pipeline
         // ------------------------------------------------------------------
@@ -181,6 +199,10 @@ namespace UniMcp.TexGen
                 case TgBlend.Screen: return 1f - (1f - b) * (1f - s);
                 case TgBlend.Overlay:
                     return b < 0.5f ? 2f * b * s : 1f - 2f * (1f - b) * (1f - s);
+                case TgBlend.Subtract: return Mathf.Clamp01(b - s);
+                case TgBlend.Difference: return Mathf.Abs(b - s);
+                case TgBlend.Darken: return Mathf.Min(b, s);
+                case TgBlend.Lighten: return Mathf.Max(b, s);
                 default: return s;
             }
         }
@@ -228,7 +250,7 @@ namespace UniMcp.TexGen
                         continue;
                     }
 
-                    Color c = EvaluateFill(layer, p, spec);
+                    Color c = EvaluateFill(layer, layer.WarpEnabled ? WarpPoint(layer, p, spec) : p, spec);
                     float a = cov * Mathf.Clamp01(c.a);
                     src[idx + 0] = c.r * a;
                     src[idx + 1] = c.g * a;
@@ -389,7 +411,7 @@ namespace UniMcp.TexGen
                 }
 
                 case TgFill.Noise:
-                    return Ramp(layer, SampleNoise(layer, p, Mathf.Max(layer.Scale, 0.5f)));
+                    return Ramp(layer, SampleNoise(layer, p, Mathf.Max(layer.Scale, 0.5f), spec));
 
                 case TgFill.Ripple:
                 {
@@ -411,22 +433,400 @@ namespace UniMcp.TexGen
                     return (mx <= lw * 0.5f || my <= lw * 0.5f) ? layer.ColorA : layer.ColorB;
                 }
 
+                case TgFill.Pattern:
+                    return EvaluatePattern(layer, p, spec);
+
                 default:
                     return layer.ColorA;
             }
         }
 
-        private static float SampleNoise(TgLayer layer, Vector2 p, float scale)
+        // ------------------------------------------------------------------
+        // Pattern fill
+        // ------------------------------------------------------------------
+
+        /// <summary>
+        /// Periodic masonry / fabric / organic patterns. Every branch works in a
+        /// local rotated frame, so <c>rotation</c> spins the whole pattern.
+        /// </summary>
+        private static Color EvaluatePattern(TgLayer layer, Vector2 p, TgSpec spec)
+        {
+            float cw = Mathf.Max(layer.GridCell.x, 2f);
+            float ch = Mathf.Max(layer.GridCell.y, 2f);
+            if (spec.Tiling)
+            {
+                // Only a whole number of cells per canvas can wrap cleanly, so snap
+                // the period to the nearest divisor instead of leaving a seam.
+                cw = SnapCell(cw, spec.Width);
+                ch = SnapCell(ch, spec.Height);
+            }
+
+            float ang = -layer.Rotation * Mathf.Deg2Rad;
+            // When tiling, the pattern grid is anchored to the canvas origin: the
+            // canvas then holds a whole number of cells and the borders line up.
+            // Otherwise it is centred on the layer, which is what looks right for
+            // an isolated patch.
+            Vector2 anchor = spec.Tiling ? Vector2.zero : layer.Center;
+            Vector2 rel = Rotate(p - anchor, ang);
+
+            // A cell that straddles the border is visited from both sides, so its
+            // jitter index has to wrap too — otherwise the same brick gets two
+            // different tints and the seam shows up as a colour step.
+            int cols = spec.Tiling ? Mathf.Max(1, Mathf.RoundToInt(spec.Width / cw)) : 0;
+            int rows = spec.Tiling ? Mathf.Max(1, Mathf.RoundToInt(spec.Height / ch)) : 0;
+
+            float gap = Mathf.Max(layer.PatternGap, 0f);
+            Color gapColor = layer.PatternGapColor;
+            Color baseColor = layer.ColorA;
+            Color accent = layer.ColorB;
+
+            switch (layer.Pattern)
+            {
+                case TgPattern.Checker:
+                {
+                    int cx = Mathf.FloorToInt((rel.x + cw * 0.5f) / cw);
+                    int cy = Mathf.FloorToInt((rel.y + ch * 0.5f) / ch);
+                    return ((cx + cy) & 1) == 0 ? baseColor : accent;
+                }
+
+                case TgPattern.Stripe:
+                {
+                    float duty = Mathf.Clamp(layer.PatternStagger, 0.02f, 0.98f);
+                    float t = Mathf.Repeat(rel.x + cw * 0.5f, cw) / cw;
+                    return t < duty ? baseColor : accent;
+                }
+
+                case TgPattern.Tile:
+                {
+                    float x = Mathf.Repeat(rel.x + cw * 0.5f, cw);
+                    float y = Mathf.Repeat(rel.y + ch * 0.5f, ch);
+                    float hx = Mathf.Min(x, cw - x);
+                    float hy = Mathf.Min(y, ch - y);
+                    if (hx < gap * 0.5f || hy < gap * 0.5f) return gapColor;
+
+                    int cx = Mathf.FloorToInt((rel.x + cw * 0.5f) / cw);
+                    int cy = Mathf.FloorToInt((rel.y + ch * 0.5f) / ch);
+                    return JitterWrapped(baseColor, layer, cx, cy, cols, rows);
+                }
+
+                case TgPattern.Brick:
+                case TgPattern.Plank:
+                {
+                    float rowH = ch;
+                    int rowCount = rows;
+                    if (spec.Tiling && layer.Pattern == TgPattern.Brick && (rowCount & 1) != 0)
+                    {
+                        // Running bond only repeats vertically with an even number of
+                        // rows, otherwise the stagger flips across the border.
+                        rowCount++;
+                        rowH = spec.Height / (float)rowCount;
+                    }
+                    int row = Mathf.FloorToInt(rel.y / rowH);
+                    float offset = layer.Pattern == TgPattern.Plank
+                        ? TexNoise.Hash01(row, 0, layer.Seed) * cw
+                        : (((row & 1) == 0) ? 0f : Mathf.Clamp01(layer.PatternStagger)) * cw;
+
+                    float sx = rel.x + offset;
+                    float x = Mathf.Repeat(sx, cw);
+                    float y = Mathf.Repeat(rel.y, rowH);
+                    if (x < gap || y < gap) return gapColor;
+
+                    int col = Mathf.FloorToInt(sx / cw);
+                    Color c = JitterWrapped(baseColor, layer, col, row, cols, rowCount);
+                    if (layer.Pattern == TgPattern.Plank)
+                    {
+                        // A soft lengthwise sheen keeps long boards from reading flat.
+                        float sheen = Mathf.Sin(y / rowH * Mathf.PI);
+                        c = Scale(c, 0.88f + 0.24f * sheen);
+                    }
+                    return c;
+                }
+
+                case TgPattern.Hex:
+                {
+                    // Flat-top honeycomb: columns sit 1.5R apart, rows sqrt(3)R apart,
+                    // and every other column is shifted half a row.
+                    float R = cw * 0.5f;
+                    float hw = 1.5f * R;
+                    float vh = Mathf.Sqrt(3f) * R;
+                    if (spec.Tiling)
+                    {
+                        // The stagger alternates per column, so a wrapping honeycomb
+                        // needs an even column count; whole rows close the other axis.
+                        // Snapping both axes stretches the cells a few percent, which
+                        // is invisible next to a torn seam.
+                        int nc = Mathf.Max(2, Mathf.RoundToInt(spec.Width / hw));
+                        if ((nc & 1) != 0) nc++;
+                        int nr = Mathf.Max(1, Mathf.RoundToInt(spec.Height / vh));
+                        hw = spec.Width / (float)nc;
+                        vh = spec.Height / (float)nr;
+                        R = hw / 1.5f;
+                    }
+
+                    // Everything below works in normalised units: 0 at a cell centre,
+                    // 1 on its edge, so an anisotropic cell still tests correctly.
+                    float rx = hw / 1.5f;
+                    float ryR = vh / Mathf.Sqrt(3f);
+
+                    int col0 = Mathf.FloorToInt(rel.x / hw);
+                    float best = float.MaxValue;
+                    int bestCol = 0, bestRow = 0;
+
+                    for (int dc = -1; dc <= 1; dc++)
+                    {
+                        int col = col0 + dc;
+                        float offY = (col & 1) != 0 ? vh * 0.5f : 0f;
+                        int row0 = Mathf.FloorToInt((rel.y - offY) / vh);
+                        for (int dr = -1; dr <= 1; dr++)
+                        {
+                            int row = row0 + dr;
+                            Vector2 centre = new Vector2(col * hw, row * vh + offY);
+                            float d = HexDistanceNorm(rel - centre, rx, ryR);
+                            if (d < best) { best = d; bestCol = col; bestRow = row; }
+                        }
+                    }
+
+                    if (best > 1f - Mathf.Clamp01(gap / rx)) return gapColor;
+                    int hexCols = spec.Tiling ? Mathf.Max(1, Mathf.RoundToInt(spec.Width / hw)) : 0;
+                    int hexRows = spec.Tiling ? Mathf.Max(1, Mathf.RoundToInt(spec.Height / vh)) : 0;
+                    return JitterWrapped(baseColor, layer, bestCol, bestRow, hexCols, hexRows);
+                }
+
+                case TgPattern.Scale:
+                {
+                    float rowH = Mathf.Max(ch * 0.55f, 2f);
+                    if (spec.Tiling)
+                        rowH = spec.Height / (float)Mathf.Max(1, Mathf.RoundToInt(spec.Height / rowH));
+
+                    float reach = 1f - Mathf.Clamp01(gap / Mathf.Max(cw * 0.5f, 1f));
+                    int baseRow = Mathf.FloorToInt(rel.y / rowH);
+
+                    // Rows overlap: a scale from the row above can reach down into
+                    // this one, which is what makes the tiles read as shingles
+                    // instead of half-discs floating on a dark background.
+                    float bestDist = float.MaxValue;
+                    int bestCol = 0, bestRow = 0;
+                    for (int dr = 0; dr <= 1; dr++)
+                    {
+                        int row = baseRow - dr;
+                        float offX = (row & 1) != 0 ? cw * 0.5f : 0f;
+                        float sx = rel.x + offX + cw * 0.5f;
+                        float u = Mathf.Repeat(sx, cw) / cw - 0.5f;
+                        float v = rel.y / rowH - row;
+                        if (v > 1.7f) continue;
+
+                        float rx = u * 1.7f;
+                        float ry = v * 0.75f;
+                        float dist = Mathf.Sqrt(rx * rx + ry * ry);
+                        if (dist < bestDist)
+                        {
+                            bestDist = dist;
+                            bestCol = Mathf.FloorToInt(sx / cw);
+                            bestRow = row;
+                        }
+                    }
+
+                    if (bestDist > reach) return gapColor;
+                    int scaleRows = spec.Tiling ? Mathf.Max(1, Mathf.RoundToInt(spec.Height / rowH)) : 0;
+                    return Scale(JitterWrapped(baseColor, layer, bestCol, bestRow, cols, scaleRows),
+                        0.88f + 0.22f * (1f - Mathf.Clamp01(bestDist)));
+                }
+
+                case TgPattern.Weave:
+                {
+                    int cx = Mathf.FloorToInt((rel.x + cw * 0.5f) / cw);
+                    int cy = Mathf.FloorToInt((rel.y + ch * 0.5f) / ch);
+                    bool horiz = ((cx + cy) & 1) == 0;
+                    float duty = Mathf.Clamp(0.5f + Mathf.Clamp01(layer.PatternStagger) * 0.5f, 0.2f, 0.98f);
+
+                    float across = horiz
+                        ? Mathf.Repeat(rel.y + ch * 0.5f, ch) / ch
+                        : Mathf.Repeat(rel.x + cw * 0.5f, cw) / cw;
+                    if (across > duty) return gapColor;
+
+                    // Cylindrical shading across the thread.
+                    float sheen = Mathf.Sin(Mathf.Clamp01(across / duty) * Mathf.PI);
+                    Color thread = horiz ? baseColor : accent;
+                    return Scale(thread, 0.72f + 0.42f * sheen);
+                }
+
+                case TgPattern.Dot:
+                {
+                    int row = Mathf.FloorToInt(rel.y / ch);
+                    float offX = (row & 1) != 0 ? Mathf.Clamp01(layer.PatternStagger) * cw : 0f;
+                    float x = Mathf.Repeat(rel.x + offX + cw * 0.5f, cw) / cw - 0.5f;
+                    float y = Mathf.Repeat(rel.y + ch * 0.5f, ch) / ch - 0.5f;
+
+                    float radius = Mathf.Clamp(layer.PatternStagger, 0.02f, 1f) * 0.5f;
+                    float gapRatio = Mathf.Clamp01(gap / Mathf.Max(cw, 1f));
+                    float d = Mathf.Sqrt(x * x + y * y);
+                    if (d > radius) return gapColor;
+                    return d > radius - gapRatio ? gapColor : baseColor;
+                }
+
+                case TgPattern.Cobble:
+                {
+                    float s = Mathf.Max(cw, 4f);
+                    float u = rel.x / s;
+                    float v = rel.y / s;
+                    int nx = 0, ny = 0;
+                    if (spec.Tiling)
+                    {
+                        // One whole number of cells per axis, so the stone lattice
+                        // closes at the border instead of being squeezed.
+                        nx = Mathf.Max(1, Mathf.RoundToInt(spec.Width / s));
+                        ny = Mathf.Max(1, Mathf.RoundToInt(spec.Height / s));
+                        u = rel.x / spec.Width * nx;
+                        v = rel.y / spec.Height * ny;
+                    }
+
+                    // F2-F1 is small on the seams between neighbouring cells, which
+                    // gives polygonal stones that pack the plane instead of islands.
+                    float edge = TexNoise.WorleyEdgeT(u, v, layer.Seed, nx, ny);
+                    // F2-F1 averages ~0.25 across a unit cell, so scale the pixel
+                    // value into that range or every stone shrinks to an island.
+                    float gapRatio = Mathf.Clamp01(gap / s) * 0.4f;
+                    if (edge < gapRatio) return gapColor;
+
+                    // F1 drives the domed shading: centres lit, rims in shadow.
+                    float n1 = TexNoise.WorleyT(u, v, layer.Seed, nx, ny);
+                    float k = 0.80f + 0.34f * (1f - Mathf.Clamp01(n1 * 1.5f));
+
+                    // Coarse per-stone tint so neighbours differ.
+                    int tx = Mathf.FloorToInt(u * 0.5f);
+                    int ty = Mathf.FloorToInt(v * 0.5f);
+                    if (nx > 0) tx = TexNoise.WrapIndex(tx, nx);
+                    if (ny > 0) ty = TexNoise.WrapIndex(ty, ny);
+                    float tint = TexNoise.Hash01(tx, ty, layer.Seed + 5);
+                    k *= 1f + (tint - 0.5f) * 2f * Mathf.Clamp01(layer.PatternVariation) * 0.6f;
+
+                    return Scale(baseColor, k);
+                }
+
+                default:
+                    return baseColor;
+            }
+        }
+
+        /// <summary>Rotate a vector by an angle in radians.</summary>
+        private static Vector2 Rotate(Vector2 v, float radians)
+        {
+            if (Mathf.Abs(radians) < 1e-6f) return v;
+            float c = Mathf.Cos(radians);
+            float s = Mathf.Sin(radians);
+            return new Vector2(v.x * c - v.y * s, v.x * s + v.y * c);
+        }
+
+        /// <summary>Snap a cell size so the canvas holds a whole number of cells.</summary>
+        private static float SnapCell(float cell, int canvas)
+        {
+            if (canvas <= 0) return Mathf.Max(cell, 1f);
+            int count = Mathf.Max(1, Mathf.RoundToInt(canvas / Mathf.Max(cell, 1f)));
+            return canvas / (float)count;
+        }
+
+        /// <summary>Multiply RGB, leave alpha alone.</summary>
+        private static Color Scale(Color c, float k)
+        {
+            return new Color(Mathf.Clamp01(c.r * k), Mathf.Clamp01(c.g * k), Mathf.Clamp01(c.b * k), c.a);
+        }
+
+        /// <summary>Jitter with the cell index wrapped, so a cell split by the border keeps one tint.</summary>
+        private static Color JitterWrapped(Color c, TgLayer layer, int col, int row, int cols, int rows)
+        {
+            if (cols > 0) col = TexNoise.WrapIndex(col, cols);
+            if (rows > 0) row = TexNoise.WrapIndex(row, rows);
+            return Jitter(c, layer, col, row);
+        }
+
+        /// <summary>Per-cell brightness jitter so repeated cells do not look cloned.</summary>
+        private static Color Jitter(Color c, TgLayer layer, int col, int row)
+        {
+            float amount = Mathf.Clamp(layer.PatternVariation, 0f, 1f);
+            if (amount <= 0f) return c;
+            float h = TexNoise.Hash01(col, row, layer.Seed);
+            return Scale(c, 1f + (h - 0.5f) * 2f * amount);
+        }
+
+        /// <summary>
+        /// Normalised distance to a flat-top hexagon edge: 0 at the centre, 1 on the
+        /// border. <paramref name="rx"/> / <paramref name="ry"/> let the cell be
+        /// stretched per axis while the test stays correct.
+        /// </summary>
+        private static float HexDistanceNorm(Vector2 d, float rx, float ry)
+        {
+            float px = Mathf.Abs(d.x) / Mathf.Max(rx, 1e-4f);
+            float py = Mathf.Abs(d.y) / Mathf.Max(ry, 1e-4f);
+            float k = Mathf.Max(px * 0.8660254f + py * 0.5f, py);
+            return k / 0.8660254f;
+        }
+
+        // ------------------------------------------------------------------
+        // Domain warp
+        // ------------------------------------------------------------------
+
+        /// <summary>
+        /// Push the fill lookup around with two noise fields. Straight stripes become
+        /// wood grain, cell noise becomes marble veining.
+        /// </summary>
+        private static Vector2 WarpPoint(TgLayer layer, Vector2 p, TgSpec spec)
+        {
+            float scale = Mathf.Max(layer.WarpScale, 1f);
+            float amount = layer.WarpAmount;
+            if (Mathf.Abs(amount) < 0.01f) return p;
+
+            int px = 0, py = 0;
+            float u = p.x / scale;
+            float v = p.y / scale;
+            if (spec.Tiling)
+            {
+                px = Mathf.Max(1, Mathf.RoundToInt(spec.Width / scale));
+                py = Mathf.Max(1, Mathf.RoundToInt(spec.Height / scale));
+                u = p.x / spec.Width * px;
+                v = p.y / spec.Height * py;
+            }
+
+            float w1 = WarpSample(layer, u, v, px, py, 0);
+            float w2 = WarpSample(layer, u, v, px, py, 1);
+            return p + new Vector2(w1 - 0.5f, w2 - 0.5f) * (2f * amount);
+        }
+
+        private static float WarpSample(TgLayer layer, float u, float v, int px, int py, int channel)
+        {
+            int seed = unchecked(layer.Seed + 911 + channel * 3571);
+            switch (layer.WarpNoise)
+            {
+                case TgNoiseKind.Value: return TexNoise.ValueT(u, v, seed, px, py);
+                case TgNoiseKind.Perlin: return TexNoise.PerlinT(u, v, seed, px, py);
+                case TgNoiseKind.Worley: return TexNoise.WorleyT(u, v, seed, px, py);
+                case TgNoiseKind.Ridged: return TexNoise.RidgedT(u, v, seed, layer.WarpOctaves, px, py);
+                default: return TexNoise.FbmT(u, v, seed, layer.WarpOctaves, px, py);
+            }
+        }
+
+        private static float SampleNoise(TgLayer layer, Vector2 p, float scale, TgSpec spec)
         {
             float u = p.x / scale;
             float v = p.y / scale;
+            int px = 0, py = 0;
+
+            if (spec.Tiling)
+            {
+                // Map the canvas onto a whole number of lattice cells, so the border
+                // repeats exactly rather than merely looking similar.
+                px = Mathf.Max(1, Mathf.RoundToInt(spec.Width / Mathf.Max(scale, 0.5f)));
+                py = Mathf.Max(1, Mathf.RoundToInt(spec.Height / Mathf.Max(scale, 0.5f)));
+                u = p.x / spec.Width * px;
+                v = p.y / spec.Height * py;
+            }
+
             switch (layer.Noise)
             {
-                case TgNoiseKind.Value: return TexNoise.Value(u, v, layer.Seed);
-                case TgNoiseKind.Perlin: return TexNoise.Perlin(u, v, layer.Seed);
-                case TgNoiseKind.Worley: return TexNoise.Worley(u, v, layer.Seed);
-                case TgNoiseKind.Ridged: return TexNoise.Ridged(u, v, layer.Seed, layer.Octaves);
-                default: return TexNoise.Fbm(u, v, layer.Seed, layer.Octaves);
+                case TgNoiseKind.Value: return TexNoise.ValueT(u, v, layer.Seed, px, py);
+                case TgNoiseKind.Perlin: return TexNoise.PerlinT(u, v, layer.Seed, px, py);
+                case TgNoiseKind.Worley: return TexNoise.WorleyT(u, v, layer.Seed, px, py);
+                case TgNoiseKind.Ridged: return TexNoise.RidgedT(u, v, layer.Seed, layer.Octaves, px, py);
+                default: return TexNoise.FbmT(u, v, layer.Seed, layer.Octaves, px, py);
             }
         }
 

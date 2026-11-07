@@ -1,0 +1,57 @@
+{
+  "name": "stone_wall",
+  "title": "石墙：不规则石块 + 深色灰缝",
+  "tags": [
+    "wall",
+    "masonry",
+    "rock"
+  ],
+  "spec": {
+    "width": 512,
+    "height": 512,
+    "tiling": true,
+    "supersample": 2,
+    "background": "#00000000",
+    "layers": [
+      {
+        "shape": "rect",
+        "center": [
+          256,
+          256
+        ],
+        "size": [
+          512,
+          512
+        ],
+        "fill": "pattern",
+        "pattern": "cobble",
+        "cell": 128,
+        "color": "#6b6b64",
+        "gap": 9,
+        "gapColor": "#33332f",
+        "variation": 0.24,
+        "seed": 12
+      },
+      {
+        "shape": "rect",
+        "center": [
+          256,
+          256
+        ],
+        "size": [
+          512,
+          512
+        ],
+        "fill": "noise",
+        "noise": "fbm",
+        "scale": 26,
+        "color": "#00000000",
+        "edgeColor": "#42423c",
+        "octaves": 4,
+        "seed": 88,
+        "opacity": 0.28,
+        "blend": "multiply"
+      }
+    ]
+  }
+}

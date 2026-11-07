@@ -52,6 +52,9 @@ namespace UniMcp.TexGen
             spec.NormalMap = TgJson.GetBool(obj, "normalMap", false) || TgJson.GetBool(obj, "normal_map", false);
             spec.NormalStrength = TgJson.GetFloat(obj, "normalStrength",
                 TgJson.GetFloat(obj, "normal_strength", spec.NormalStrength));
+            spec.Tiling = TgJson.GetBool(obj, "tiling", false)
+                || TgJson.GetBool(obj, "tileable", false)
+                || TgJson.GetBool(obj, "seamless", false);
 
             JsonNode layersNode = TgJson.Get(obj, "layers");
             if (!(layersNode is JsonArray layers))
@@ -158,6 +161,42 @@ namespace UniMcp.TexGen
             layer.GridLineWidth = TgJson.GetFloat(node, "lineWidth",
                 TgJson.GetFloat(node, "gridLineWidth", layer.GridLineWidth));
 
+            // Pattern fill. "cell" doubles as the pattern period, "lineWidth" as the
+            // seam width when no explicit gap is given.
+            layer.Pattern = ReadPattern(node);
+            layer.PatternGap = TgJson.GetFloat(node, "gap",
+                TgJson.GetFloat(node, "patternGap",
+                TgJson.GetFloat(node, "pattern_gap",
+                TgJson.GetFloat(node, "mortar", layer.GridLineWidth))));
+            layer.PatternGapColor = ReadPaint(node, "gapColor", "gap_color", "mortarColor", layer.PatternGapColor);
+            layer.PatternStagger = TgJson.GetFloat(node, "stagger",
+                TgJson.GetFloat(node, "offset", layer.PatternStagger));
+            layer.PatternVariation = TgJson.GetFloat(node, "variation",
+                TgJson.GetFloat(node, "jitter", layer.PatternVariation));
+            layer.PatternRoundness = TgJson.GetFloat(node, "roundness", layer.PatternRoundness);
+
+            // Domain warp: object form, or "warp": true with sibling keys.
+            JsonNode warpNode = TgJson.Get(node, "warp");
+            if (warpNode is JsonClass warpObj)
+            {
+                layer.WarpEnabled = TgJson.GetBool(warpObj, "enabled", true);
+                layer.WarpNoise = TgJson.GetEnum(warpObj, "noise",
+                    TgJson.GetEnum(warpObj, "kind", layer.WarpNoise));
+                layer.WarpScale = TgJson.GetFloat(warpObj, "scale", layer.WarpScale);
+                layer.WarpAmount = TgJson.GetFloat(warpObj, "amount",
+                    TgJson.GetFloat(warpObj, "strength", layer.WarpAmount));
+                layer.WarpOctaves = Mathf.Clamp(TgJson.GetInt(warpObj, "octaves", layer.WarpOctaves), 1, 10);
+            }
+            else if (warpNode != null && TgJson.GetBool(node, "warp", false))
+            {
+                layer.WarpEnabled = true;
+                layer.WarpScale = TgJson.GetFloat(node, "warpScale",
+                    TgJson.GetFloat(node, "warp_scale", layer.WarpScale));
+                layer.WarpAmount = TgJson.GetFloat(node, "warpAmount",
+                    TgJson.GetFloat(node, "warp_amount", layer.WarpAmount));
+                layer.WarpOctaves = Mathf.Clamp(TgJson.GetInt(node, "warpOctaves", layer.WarpOctaves), 1, 10);
+            }
+
             // Compositing.
             layer.Opacity = Mathf.Clamp01(TgJson.GetFloat(node, "opacity", layer.Opacity));
             layer.Feather = Mathf.Max(TgJson.GetFloat(node, "feather", layer.Feather), 0f);
@@ -181,6 +220,35 @@ namespace UniMcp.TexGen
                 result.Errors.Add($"Layer '{layer.Name}': ring \"innerRadius\" must be smaller than \"radius\".");
 
             return layer;
+        }
+
+        /// <summary>
+        /// Reads the pattern name, accepting the aliases an LLM is likely to emit
+        /// ("wood_floor", "honeycomb", "fishscale", ...) so a near-miss still draws.
+        /// </summary>
+        private static TgPattern ReadPattern(JsonClass node)
+        {
+            string raw = TgJson.GetString(node, "pattern");
+            if (string.IsNullOrEmpty(raw)) return TgJson.GetEnum(node, "pattern", TgPattern.Brick);
+
+            string key = raw.Replace("_", "").Replace("-", "").Replace(" ", "").ToLowerInvariant();
+            switch (key)
+            {
+                case "brick": case "bricks": case "masonry": case "runningbond": return TgPattern.Brick;
+                case "plank": case "planks": case "board": case "boards": case "woodfloor":
+                case "floorboard": return TgPattern.Plank;
+                case "tile": case "tiles": case "ceramic": case "grid": return TgPattern.Tile;
+                case "checker": case "chequer": case "chess": case "checkerboard": return TgPattern.Checker;
+                case "stripe": case "stripes": case "band": case "bands": case "pinstripe": return TgPattern.Stripe;
+                case "hex": case "hexagon": case "hexagons": case "honeycomb": return TgPattern.Hex;
+                case "scale": case "scales": case "fishscale": case "shingle": case "shingles":
+                case "roof": return TgPattern.Scale;
+                case "weave": case "woven": case "cloth": case "fabric": case "linen":
+                case "canvas": return TgPattern.Weave;
+                case "dot": case "dots": case "polka": case "poke": case "spot": case "spots": return TgPattern.Dot;
+                case "cobble": case "cobblestone": case "pebble": case "stone": case "gravel": return TgPattern.Cobble;
+                default: return TgJson.GetEnum(node, "pattern", TgPattern.Brick);
+            }
         }
 
         private static Color ReadPaint(JsonClass node, string primary, string aliasA, string aliasB, Color fallback)

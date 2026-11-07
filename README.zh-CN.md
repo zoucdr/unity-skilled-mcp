@@ -247,11 +247,13 @@ unity-runtime-package/Runtime/
 >
 > `capability` 为**内置自省模块**，把 MCP 三原语（tools / prompts / resources）的管理面暴露给 AI：`list` 发现、`get` 查详情、`set` 启停（工具支持整组前缀，如 `texgen`）、`save` / `remove` 增删可配置的提示词与资源、`settings` 读写通用设置。改动即时重发现并失效列表缓存；`capability.set` 为恢复通道，禁止自锁禁用。
 
-demo 工程另含 `demo/Assets/Extends/CustomTools/` 下的**自定义扩展工具示例**（不随包分发，演示如何扩展）：`cmd` (1)、`asset_index` (9)、`webpage` (7)、`figma` (4)、`ui_rule` (5)、`probuilder` (16，需 ProBuilder 包；含 `uv_atlas` / `uv_info` 两项 UV 图集工具，把合并后的网格按连通部件排成互不重叠的 UV 布局，并把重建后的 Mesh 持久化为 `.asset`)，以及 `texgen` (9)——**程序化贴图引擎**：矢量图元 + SDF 光栅化 + 渐变/噪波/混合，导出 PNG（纯 C#，零外部依赖）；另支持按 Mesh 的 UV 布局分区绘制。demo 合计 7 模块 / 51 动作。`docs/ra2_allied_build.js` 是这些扩展的端到端验证脚本（红警2 盟军坦克）。
+demo 工程另含 `demo/Assets/Extends/CustomTools/` 下的**自定义扩展工具示例**（不随包分发，演示如何扩展）：`cmd` (1)、`asset_index` (9)、`webpage` (7)、`figma` (4)、`ui_rule` (5)、`probuilder` (16，需 ProBuilder 包；含 `uv_atlas` / `uv_info` 两项 UV 图集工具，把合并后的网格按连通部件排成互不重叠的 UV 布局，并把重建后的 Mesh 持久化为 `.asset`)，以及 `texgen` (11)——**程序化贴图引擎**：矢量图元 + SDF 光栅化 + 渐变/噪波/图案/混合，导出 PNG（纯 C#，零外部依赖）；支持无缝平铺、域扭曲、整套 PBR 派生、按 Mesh 的 UV 布局分区绘制，并内置 33 个可检索的表面模板。demo 合计 7 模块 / 53 动作。`docs/ra2_allied_build.js` 是这些扩展的端到端验证脚本（红警2 盟军坦克）。
 
 > `probuilder.uv_atlas` 默认把重建后的 Mesh 存为 `.asset`（`save_mesh` / `mesh_path` 可配），返回每格与每个轴向面的矩形 `face_rects`；`uv_info` 可只读核实 `meshIsAsset`。贴图应按 `face_rects` 逐面绘制，否则盒式投影会把一整幅图案切成六块碎片。
 >
 > `texgen.uv_info` 返回 Mesh 的 UV 分区、像素矩形与覆盖率；`texgen.for_mesh` 按 submesh / UV 连通岛分区套用不同指令表，用 UV 覆盖遮罩裁切并在接缝处做颜色外扩（padding），可选直接把 PNG 挂到材质。`fill_mode=nearest` 把未覆盖像素填成最近 UV 区域颜色，避免图集出现一圈圈岛轮廓。原有 7 个动作行为不变。
+>
+> `texgen` 新增四项能力：① `tiling=true` 让噪波与图案在画布边界闭合，噪声格数吸附为整数，产出可直接平铺的 PNG；② `fill="pattern"` 提供 `brick` / `plank` / `tile` / `checker` / `stripe` / `hex` / `scale` / `weave` / `dot` / `cobble` 十种周期图案，配 `cell` / `gap` / `gapColor` / `stagger` / `variation`；③ 图层级 `warp`（域扭曲）把直线条纹弯成木纹、胞状噪波扭成大理石脉络；④ `texgen.pbr` 一次渲染派生 `BaseColor` / `Height` / `Normal` / `Roughness` / `AO` / `ORM` 六张图并按通道设置导入参数。`texgen.templates` 检索 `Templates/*.json` 模板库（33 个，覆盖地面/墙面/金属/织物/自然/UI/图标），按 `tag` 过滤或按 `name` 取单个 spec 直接投喂 `render` / `pbr`。
 
 > 扩展模块与内置模块共用同一套分组：`figma` / `ui_rule` 归 **界面**，`texgen` / `probuilder` 归 **资源资产**，`cmd` / `asset_index` / `webpage` 归 **系统工具**。接入后直接出现在对应 `groups` 标签下。
 

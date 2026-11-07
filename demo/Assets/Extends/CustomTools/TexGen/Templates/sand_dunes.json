@@ -1,0 +1,53 @@
+{
+  "name": "sand_dunes",
+  "title": "沙地：米黄细沙 + 风纹波纹",
+  "tags": [
+    "ground",
+    "nature"
+  ],
+  "spec": {
+    "width": 512,
+    "height": 512,
+    "tiling": true,
+    "supersample": 2,
+    "background": "#00000000",
+    "layers": [
+      {
+        "shape": "rect",
+        "center": [
+          256,
+          256
+        ],
+        "size": [
+          512,
+          512
+        ],
+        "fill": "noise",
+        "noise": "fbm",
+        "scale": 54,
+        "color": "#c9b483",
+        "edgeColor": "#e8dcbb",
+        "octaves": 4,
+        "seed": 5
+      },
+      {
+        "shape": "rect",
+        "center": [
+          256,
+          256
+        ],
+        "size": [
+          512,
+          512
+        ],
+        "fill": "ripple",
+        "frequency": 2.4,
+        "amplitude": 0.42,
+        "color": "#d8c79b",
+        "edgeColor": "#a89164",
+        "opacity": 0.45,
+        "rotation": 18
+      }
+    ]
+  }
+}

@@ -155,7 +155,7 @@
 | `TexGenModel.cs` | 指令模型（`TgSpec` / `TgLayer` / `TgGradient`）、枚举（`TgShape` / `TgFill` / `TgBlend` / `TgNoiseKind` / `TgOrigin`）、`TgJson` 读取器（hex / r,g,b / 命名色 / JSON 数组） |
 | `TexGenParser.cs` | `TgParser.Parse(JsonNode)` → `TgSpec`；校验（多边形≥3 点、ring 内径<外径、零长线告警、维度 clamp）；`blend` 关键字映射（`mask/clip/stencil`→保留内部、`erase/cutout/hole`→挖洞） |
 | `TexGenRasterizer.cs` | 核心：SDF 覆盖率光栅化 + SSAA 超采样（1–4×）+ W3C 预乘混合；填充（纯色/线性/径向/噪波/波纹/网格）；混合（正常/叠加/相乘/滤色/遮罩/擦除）；图层栈；可选法线贴图；PNG 导出 |
-| `TexGenTool.cs` | `[ToolModule("texgen", GroupEn="Texture Generation", GroupZh="程序化贴图")]`，7 个 action：`render` / `batch` / `validate` / `spec` / `examples` / `preview` / `normal_from_image` |
+| `TexGenTool.cs` | `[ToolModule("texgen", GroupEn="Texture Generation", GroupZh="程序化贴图")]`，11 个 action：`render` / `batch` / `validate` / `spec` / `examples` / `preview` / `normal_from_image` / `uv_info` / `for_mesh` / `pbr` / `templates` |
 | `TexGenPreviewWindow.cs` | `Window/MCP/TexGen Preview` 菜单；4 个内置样例（`MagicOrb` / `SkillIcon` / `Noise` / `Star`）、JSON 编辑区、棋盘格预览、导出 PNG |
 
 **指令式 API 与光栅化**
@@ -663,3 +663,84 @@ node scripts/unity_mcp.js call code_runner --args '{"action":"execute","mode":"d
 - 首次导入新 asset 时仍偶发丢响应（2/6），`status` 因账本随域重载清空返回 `unknown`；策略仍是「只读核实、不重放」，长耗时写建议走 `async_call` 门面。
 - `TgRasterizer` 每图层全画布遍历未改（保持既有渲染行为不变）；图层数需控制在几十量级，后续可做按包围盒裁剪。
 - 模型仍是图元组合低模，非 RA2 精灵级还原；装饰限量后贴图更素属预期，更高还原需按部件名/材质精确分组 + 3D 位置驱动图案。
+
+---
+
+## TexGen 表面引擎扩展（平铺 / 图案 / 域扭曲 / PBR / 模板库）
+
+### 一、需求与判断
+
+用户提问：「贴图生成框架 texgen 目前够强大了么，还能否继续完善实现更多应用场景，并提供更全面的内置模板」。
+
+读完全部源码（7 文件 3602 行）后的能力盘点：8 种 SDF 图元、6 种填充、7 种混合、5 种噪声都是够用的；真正的短板集中在四个「贴图域必答但当时答不了」的问题上：
+
+| 缺口 | 后果 |
+| --- | --- |
+| 噪声按绝对坐标采样，无周期 | 地面/墙面贴图左右边缘不连续，无法平铺 |
+| 没有图案填充 | 砖墙/瓦片/木地板/织物只能靠手工堆 polygon，实际做不出来 |
+| 没有 domain warp | 木纹、大理石、熔岩的纹理灵魂做不出来，只能出直线条纹 |
+| 只输出单张图 + 法线 | roughness / AO / 金属度要人再跑一遍或手搓 |
+
+### 二、实现
+
+**1. 无缝平铺（`tiling`）**
+
+`TexNoise` 新增全套 `*T` 周期化变体（`ValueT` / `PerlinT` / `FbmT` / `FbmPerlinT` / `RidgedT` / `WorleyT`），核心是 `WrapIndex(int, period)`：哈希取格点时按周期取模，边界两侧共享格点，因此左右上下严格连续而非「看起来接近」。`SampleNoise` 在 tiling 下把画布映射为整数格数（`u = x / width * nx`），即使 `width` 不能被 `scale` 整除也无缝。
+
+图案层同样处理：`SnapCell` 把 cell 吸附为 `canvas / round(canvas / cell)`；tiling 时图案锚点从图层中心改为画布原点（`anchor = tiling ? 0 : center`），否则画布尺寸不是格高整数倍时会切出半行砖。
+
+**2. 图案填充（`fill="pattern"`）**
+
+新增 `TgPattern` 十种：`brick`（错缝砌筑）、`plank`（长条随机错缝 + 纵向微光）、`tile`、`checker`、`stripe`（占空比由 `stagger` 控制）、`hex`（平顶蜂窝）、`scale`（叠瓦鱼鳞）、`weave`（平纹经纬 + 圆柱高光）、`dot`、`cobble`（石砌/龟裂）。共用参数：`cell` / `gap` / `gapColor` / `stagger` / `variation` / `roundness` / `rotation`。`variation` 按格子哈希做亮度抖动，避免重复格子雷同。
+
+三处需要定稿的取舍：
+
+- **hex**：初版把 pointy-top 的中心网格配 flat-top 的距离函数，六边形之间出现三角黑洞（图已复现）。改为 flat-top 排布（列距 `1.5R`、行距 `√3R`、隔列半行偏移）+ `max(dx·0.866+dy·0.5, dy)/0.866` 距离，蜂窝严丝合缝。
+- **scale**：单行半圆在行间留下大片黑三角。改为每像素同时比较「本行 + 上一行」两排鳞片，取最近圆心距离，`ry = v·0.75` 让圆弧探入下一行，形成真实叠压关系。
+- **cobble**：`F2-F1` 在随机点分布下均值约 0.25，按 `gap/s` 直接比较会把所有石头缩成孤岛；阈值乘 0.4 才得到「多边形石块铺满 + 细缝」。中途试过 `F1 < radius` 的圆石判定，结果是一片互不相连的圆点，已回退。
+
+**3. 域扭曲（图层级 `warp`）**
+
+`WarpPoint` 用两个独立 seed 的噪声场偏移填充采样坐标（几何不受影响）：`p' = p + (n1-0.5, n2-0.5)·2·amount`。`stripe + warp` = 木纹，`noise + warp` = 大理石脉络。tiling 下扭曲场本身也周期化，保证扭曲后仍可平铺。
+
+**4. PBR 派生（`texgen.pbr`）**
+
+一次渲染后用同一份像素派生六通道并分别设置导入参数：`BaseColor`（sRGB）、`Height`（linear）、`Normal`（NormalMap）、`Roughness`、`AO`、`ORM`（R=AO / G=Roughness / B=Metallic，glTF / URP 打包约定）。`AO` 用八方向、两档距离的邻域最高点比较（避免 13×13 全核采样在 1024² 上爆炸）；`Roughness = bias + (0.5 - height)·contrast`，即凸起更光滑、凹陷更粗糙。可选 `material_path` 直接把 albedo + normal 挂到材质的 `_MainTex`/`_BaseMap` + `_BumpMap`（自动判属性、启 `_NORMALMAP`）。
+
+**5. 模板库（`texgen.templates`）**
+
+原来 4 个模板是硬编码 C# 字符串常量，扩不动。改为 `Assets/Extends/CustomTools/TexGen/Templates/*.json`（Unity TextAsset），`texgen.templates` 用 `AssetDatabase.FindAssets("t:TextAsset", folder)` 枚举，支持 `tag` 过滤与 `name` 精确取，返回的 `spec` 可整体投喂 `render` / `pbr`。共 **33 个**：地面 7、墙面 6、金属 3、织物 4、自然 5、UI 4、图标/特效 4。新增模板只加 JSON，不需改代码、不需重编译。
+
+**6. 顺手修的既有缺陷**
+
+`texgen.batch` 一次写多张 PNG 时没有 `DisallowAutoRefresh`，资源监视器中途刷新会重载域、切断 JSON-RPC 响应（`for_mesh` 早已处理，batch 漏了）。已给批量循环套 `DisallowAutoRefresh` / `AllowAutoRefresh`。
+
+### 三、验证
+
+Unity 2022.3.62f3c1 实机逐张渲染核对（`demo/Assets/CannonBirdDemo/Textures/TexGenTests/`）：
+
+| 模板 | 结果 |
+| --- | --- |
+| `brick_wall` + `texgen.pbr` | 错缝砖行、砂浆缝、砖面色差正确；上下边缘为完整砖行；6 通道全部落盘，法线图呈砖面凸起 + 缝隙凹陷 |
+| `hex_panel` | 蜂窝严丝合缝、左右闭合 |
+| `cobblestone_path` / `stone_wall` | 多边形石块铺满、细缝 |
+| `fish_scale` | 叠瓦关系成立 |
+| `marble_stone` | 宽脉络 + 细纹交叉 |
+| `lava_flow` | 黑岩壳 + 橙色发光裂缝 |
+| `ui_panel` / `crosshair` / `linen_weave` | 圆角卡片、对称准星、平纹织物均正常 |
+
+编译 `error_count = 0`。模板 JSON 33/33 通过 `JSON.parse` 与必需键校验。
+
+**无缝性的客观验证**：把成品贴图按 2×2 拼回一张大图（`*_tiled2x2.png`），直接看中央十字接缝。`brick_wall` 与 `hex_panel` 拼接后砖行/蜂窝连续、无错位。两个必须同时满足的条件是：
+
+1. **格子索引也要按周期取模**（`JitterWrapped`）。跨边界的同一块砖从两侧各被访问一次，若 `col` 不 wrap（0 vs cols），同一块砖会拿到两个抖动颜色，接缝处就是一道色阶。这是「几何对齐但颜色不连续」的隐蔽坑。
+2. **错缝图案需要偶数周期**。`brick` 的交替错缝行数必须为偶数，`hex` 的隔列半行偏移要求列数为偶数，否则跨边界时 offset 翻转，接缝处直接错位半格。`hex` 还额外把行数取整并改用以 `hw/vh` 归一化的距离函数（`HexDistanceNorm`），这样两个方向都能闭合，代价是格子被拉伸几个百分点。
+
+早前用「首末列像素差 / 内部相邻列像素差」做量化，对噪波类有效（`grass_field` 0.77、`wood_grain` 0.97），但对砖缝/蜂窝这类本来就有硬边的图案会误判（18×），最终改用 2×2 拼接目视确认。
+
+### 四、仍存边界
+
+- `texgen.batch` 单次超过 ~15 秒（约 6 张 512² 以上）仍会被客户端默认超时打断；写操作已完成，**须只读核实产物、勿重放**。批量建议分批 ≤5 张，或用 `--timeout` 放在子命令之前。
+- `hex` 在 tiling 下靠「列数取偶 + 行数取整」闭合两轴，格子会有几个百分点的各向异性拉伸；带 `rotation` 的图案（含斜纹 `denim`）无法保证严格无缝，因为旋转后的周期不再与画布轴对齐。
+- `wood_grain` 与 `marble_stone` 本质是「条纹 + 强扭曲」，能出直纹木与脉络大理石，但做不出年轮、树节这类拓扑特征；要更真需引入外部位图采样（当前渲染器不支持读图）。
+- 图案仍走「每图层全画布遍历」，`hex` 每像素 9 次邻域查询，512² 约 2.3 秒；2048² 会明显变慢。

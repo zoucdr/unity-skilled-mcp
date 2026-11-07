@@ -1,0 +1,75 @@
+{
+  "name": "brushed_metal",
+  "title": "拉丝金属：横向细纹 + 冷灰底（配 pbr metallic=1）",
+  "tags": [
+    "metal",
+    "material"
+  ],
+  "spec": {
+    "width": 512,
+    "height": 512,
+    "tiling": true,
+    "supersample": 2,
+    "background": "#00000000",
+    "layers": [
+      {
+        "shape": "rect",
+        "center": [
+          256,
+          256
+        ],
+        "size": [
+          512,
+          512
+        ],
+        "fill": "linear",
+        "rotation": 90,
+        "color": "#9aa0a6",
+        "edgeColor": "#bcc2c7"
+      },
+      {
+        "shape": "rect",
+        "center": [
+          256,
+          256
+        ],
+        "size": [
+          512,
+          512
+        ],
+        "fill": "pattern",
+        "pattern": "stripe",
+        "cell": [
+          3,
+          3
+        ],
+        "color": "#ffffff",
+        "rotation": 90,
+        "gap": 0,
+        "edgeColor": "#00000000",
+        "stagger": 0.5,
+        "opacity": 0.16
+      },
+      {
+        "shape": "rect",
+        "center": [
+          256,
+          256
+        ],
+        "size": [
+          512,
+          512
+        ],
+        "fill": "noise",
+        "noise": "fbm",
+        "scale": 6,
+        "color": "#00000000",
+        "edgeColor": "#6f757a",
+        "octaves": 3,
+        "seed": 51,
+        "opacity": 0.18,
+        "blend": "multiply"
+      }
+    ]
+  }
+}

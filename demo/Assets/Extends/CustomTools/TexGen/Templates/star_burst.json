@@ -1,0 +1,64 @@
+{
+  "name": "star_burst",
+  "title": "星爆：六角星 + 光晕 + 高光点",
+  "tags": [
+    "fx",
+    "icon"
+  ],
+  "spec": {
+    "width": 200,
+    "height": 200,
+    "tiling": false,
+    "supersample": 3,
+    "background": "#00000000",
+    "layers": [
+      {
+        "shape": "circle",
+        "center": [
+          100,
+          100
+        ],
+        "radius": 70,
+        "fill": "radial",
+        "color": "#ffd35c",
+        "edgeColor": "#00000000",
+        "opacity": 0.5,
+        "blur": 10
+      },
+      {
+        "shape": "star",
+        "center": [
+          100,
+          100
+        ],
+        "radius": 78,
+        "innerRadius": 30,
+        "pointCount": 6,
+        "fill": "linear",
+        "rotation": 90,
+        "gradient": [
+          {
+            "offset": 0,
+            "color": "#fff6c2"
+          },
+          {
+            "offset": 1,
+            "color": "#ffab2e"
+          }
+        ]
+      },
+      {
+        "shape": "circle",
+        "center": [
+          86,
+          84
+        ],
+        "radius": 10,
+        "fill": "solid",
+        "color": "#ffffff",
+        "blend": "add",
+        "opacity": 0.8
+      }
+    ]
+  }
+}

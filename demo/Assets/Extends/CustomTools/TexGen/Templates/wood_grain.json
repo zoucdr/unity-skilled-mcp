@@ -1,0 +1,66 @@
+{
+  "name": "wood_grain",
+  "title": "木纹：扭曲细条纹（可作木料基础层）",
+  "tags": [
+    "wood",
+    "material"
+  ],
+  "spec": {
+    "width": 512,
+    "height": 512,
+    "tiling": true,
+    "supersample": 2,
+    "background": "#00000000",
+    "layers": [
+      {
+        "shape": "rect",
+        "center": [
+          256,
+          256
+        ],
+        "size": [
+          512,
+          512
+        ],
+        "fill": "pattern",
+        "pattern": "stripe",
+        "cell": [
+          14,
+          14
+        ],
+        "color": "#7f5230",
+        "gap": 0,
+        "edgeColor": "#6d4526",
+        "stagger": 0.4,
+        "warp": {
+          "noise": "fbm",
+          "scale": 70,
+          "amount": 30,
+          "octaves": 4
+        },
+        "seed": 8,
+        "opacity": 0.9
+      },
+      {
+        "shape": "rect",
+        "center": [
+          256,
+          256
+        ],
+        "size": [
+          512,
+          512
+        ],
+        "fill": "noise",
+        "noise": "fbm",
+        "scale": 130,
+        "color": "#00000000",
+        "edgeColor": "#3d2414",
+        "octaves": 4,
+        "seed": 64,
+        "opacity": 0.28,
+        "blend": "multiply"
+      }
+    ]
+  }
+}

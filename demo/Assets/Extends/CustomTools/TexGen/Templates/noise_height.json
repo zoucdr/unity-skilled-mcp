@@ -1,0 +1,35 @@
+{
+  "name": "noise_height",
+  "title": "噪波高度场：fbm 灰度（喂给 pbr 或 normal_map）",
+  "tags": [
+    "noise",
+    "height"
+  ],
+  "spec": {
+    "width": 512,
+    "height": 512,
+    "tiling": true,
+    "supersample": 1,
+    "background": "#000000ff",
+    "layers": [
+      {
+        "shape": "rect",
+        "center": [
+          256,
+          256
+        ],
+        "size": [
+          512,
+          512
+        ],
+        "fill": "noise",
+        "noise": "fbm",
+        "octaves": 5,
+        "scale": 42,
+        "seed": 7,
+        "color": "#000000",
+        "edgeColor": "#ffffff"
+      }
+    ]
+  }
+}

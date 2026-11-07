@@ -1,0 +1,57 @@
+{
+  "name": "gravel_path",
+  "title": "碎石路：细碎石子 + 灰缝",
+  "tags": [
+    "ground",
+    "rock",
+    "path"
+  ],
+  "spec": {
+    "width": 512,
+    "height": 512,
+    "tiling": true,
+    "supersample": 2,
+    "background": "#00000000",
+    "layers": [
+      {
+        "shape": "rect",
+        "center": [
+          256,
+          256
+        ],
+        "size": [
+          512,
+          512
+        ],
+        "fill": "pattern",
+        "pattern": "cobble",
+        "cell": 22,
+        "color": "#8b8578",
+        "gap": 2,
+        "gapColor": "#33312c",
+        "variation": 0.34,
+        "seed": 19
+      },
+      {
+        "shape": "rect",
+        "center": [
+          256,
+          256
+        ],
+        "size": [
+          512,
+          512
+        ],
+        "fill": "noise",
+        "noise": "fbm",
+        "scale": 10,
+        "color": "#00000000",
+        "edgeColor": "#5c574c",
+        "octaves": 4,
+        "seed": 44,
+        "opacity": 0.3,
+        "blend": "multiply"
+      }
+    ]
+  }
+}

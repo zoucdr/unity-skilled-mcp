@@ -1,0 +1,74 @@
+{
+  "name": "rusty_iron",
+  "title": "锈铁：铁灰底 + 橙锈斑 + 蚀坑",
+  "tags": [
+    "metal",
+    "material",
+    "worn"
+  ],
+  "spec": {
+    "width": 512,
+    "height": 512,
+    "tiling": true,
+    "supersample": 2,
+    "background": "#00000000",
+    "layers": [
+      {
+        "shape": "rect",
+        "center": [
+          256,
+          256
+        ],
+        "size": [
+          512,
+          512
+        ],
+        "fill": "noise",
+        "noise": "fbm",
+        "scale": 44,
+        "color": "#4f4842",
+        "edgeColor": "#6e6459",
+        "octaves": 5,
+        "seed": 17
+      },
+      {
+        "shape": "rect",
+        "center": [
+          256,
+          256
+        ],
+        "size": [
+          512,
+          512
+        ],
+        "fill": "noise",
+        "noise": "worley",
+        "scale": 20,
+        "color": "#b4551f",
+        "edgeColor": "#7a3410",
+        "seed": 29,
+        "opacity": 0.55,
+        "blend": "overlay"
+      },
+      {
+        "shape": "rect",
+        "center": [
+          256,
+          256
+        ],
+        "size": [
+          512,
+          512
+        ],
+        "fill": "noise",
+        "noise": "worley",
+        "scale": 60,
+        "color": "#2b241e",
+        "edgeColor": "#00000000",
+        "seed": 83,
+        "opacity": 0.32,
+        "blend": "multiply"
+      }
+    ]
+  }
+}

@@ -1,0 +1,110 @@
+{
+  "name": "magic_orb",
+  "title": "魔法球：外发光 + 径向球体 + 十字光效 + 高光",
+  "tags": [
+    "icon",
+    "fx"
+  ],
+  "spec": {
+    "width": 256,
+    "height": 256,
+    "tiling": false,
+    "supersample": 3,
+    "background": "#00000000",
+    "layers": [
+      {
+        "shape": "circle",
+        "center": [
+          128,
+          128
+        ],
+        "radius": 92,
+        "fill": "solid",
+        "color": "#44aaff",
+        "opacity": 0.55,
+        "blur": 18
+      },
+      {
+        "shape": "circle",
+        "center": [
+          128,
+          128
+        ],
+        "radius": 90,
+        "fill": "radial",
+        "gradient": [
+          {
+            "offset": 0,
+            "color": "#ffffff"
+          },
+          {
+            "offset": 0.45,
+            "color": "#88ccff"
+          },
+          {
+            "offset": 1,
+            "color": "#1a5fd0"
+          }
+        ]
+      },
+      {
+        "shape": "ring",
+        "center": [
+          128,
+          128
+        ],
+        "radius": 95,
+        "innerRadius": 90,
+        "fill": "solid",
+        "color": "#2288ff",
+        "blend": "screen",
+        "opacity": 0.9
+      },
+      {
+        "shape": "line",
+        "from": [
+          40,
+          128
+        ],
+        "to": [
+          216,
+          128
+        ],
+        "width": 3,
+        "fill": "solid",
+        "color": "#ffffff",
+        "opacity": 0.55,
+        "blur": 2
+      },
+      {
+        "shape": "line",
+        "from": [
+          128,
+          40
+        ],
+        "to": [
+          128,
+          216
+        ],
+        "width": 3,
+        "fill": "solid",
+        "color": "#ffffff",
+        "opacity": 0.55,
+        "blur": 2
+      },
+      {
+        "shape": "circle",
+        "center": [
+          118,
+          116
+        ],
+        "radius": 26,
+        "fill": "radial",
+        "color": "#ffffff",
+        "edgeColor": "#00000000",
+        "blend": "add",
+        "opacity": 0.85
+      }
+    ]
+  }
+}

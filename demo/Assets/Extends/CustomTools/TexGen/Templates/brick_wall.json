@@ -1,0 +1,61 @@
+{
+  "name": "brick_wall",
+  "title": "红砖墙：错缝砌筑 + 砂浆缝 + 砖面色差",
+  "tags": [
+    "wall",
+    "masonry",
+    "brick"
+  ],
+  "spec": {
+    "width": 512,
+    "height": 512,
+    "tiling": true,
+    "supersample": 2,
+    "background": "#00000000",
+    "layers": [
+      {
+        "shape": "rect",
+        "center": [
+          256,
+          256
+        ],
+        "size": [
+          512,
+          512
+        ],
+        "fill": "pattern",
+        "pattern": "brick",
+        "cell": [
+          102,
+          39
+        ],
+        "color": "#9d452c",
+        "gap": 5,
+        "gapColor": "#b6ad9c",
+        "stagger": 0.5,
+        "variation": 0.2,
+        "seed": 23
+      },
+      {
+        "shape": "rect",
+        "center": [
+          256,
+          256
+        ],
+        "size": [
+          512,
+          512
+        ],
+        "fill": "noise",
+        "noise": "fbm",
+        "scale": 14,
+        "color": "#00000000",
+        "edgeColor": "#3a1d12",
+        "octaves": 4,
+        "seed": 55,
+        "opacity": 0.3,
+        "blend": "multiply"
+      }
+    ]
+  }
+}

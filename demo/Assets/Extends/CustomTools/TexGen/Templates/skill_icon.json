@@ -1,0 +1,101 @@
+{
+  "name": "skill_icon",
+  "title": "技能图标：渐变底板 + 镂空边框 + 折角图形",
+  "tags": [
+    "icon",
+    "ui"
+  ],
+  "spec": {
+    "width": 128,
+    "height": 128,
+    "tiling": false,
+    "supersample": 3,
+    "background": "#00000000",
+    "layers": [
+      {
+        "shape": "roundRect",
+        "center": [
+          64,
+          64
+        ],
+        "size": [
+          112,
+          112
+        ],
+        "cornerRadius": 24,
+        "fill": "linear",
+        "rotation": 90,
+        "gradient": [
+          {
+            "offset": 0,
+            "color": "#2b3a67"
+          },
+          {
+            "offset": 1,
+            "color": "#141c33"
+          }
+        ]
+      },
+      {
+        "shape": "roundRect",
+        "center": [
+          64,
+          64
+        ],
+        "size": [
+          96,
+          96
+        ],
+        "cornerRadius": 18,
+        "blend": "erase"
+      },
+      {
+        "shape": "ring",
+        "center": [
+          64,
+          64
+        ],
+        "radius": 50,
+        "thickness": 4,
+        "fill": "solid",
+        "color": "#5ad1ff",
+        "opacity": 0.95
+      },
+      {
+        "shape": "polygon",
+        "center": [
+          64,
+          64
+        ],
+        "points": [
+          [
+            -22,
+            10
+          ],
+          [
+            -2,
+            -14
+          ],
+          [
+            18,
+            10
+          ],
+          [
+            18,
+            22
+          ],
+          [
+            -2,
+            -2
+          ],
+          [
+            -22,
+            22
+          ]
+        ],
+        "fill": "solid",
+        "color": "#eaf7ff"
+      }
+    ]
+  }
+}

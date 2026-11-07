@@ -1,0 +1,57 @@
+{
+  "name": "ceramic_tile",
+  "title": "白瓷砖：规则方格 + 细缝 + 釉面光泽",
+  "tags": [
+    "wall",
+    "tile",
+    "interior"
+  ],
+  "spec": {
+    "width": 512,
+    "height": 512,
+    "tiling": true,
+    "supersample": 2,
+    "background": "#00000000",
+    "layers": [
+      {
+        "shape": "rect",
+        "center": [
+          256,
+          256
+        ],
+        "size": [
+          512,
+          512
+        ],
+        "fill": "pattern",
+        "pattern": "tile",
+        "cell": [
+          128,
+          128
+        ],
+        "color": "#eef2f4",
+        "gap": 4,
+        "gapColor": "#cfd4d6",
+        "variation": 0.05,
+        "seed": 2
+      },
+      {
+        "shape": "rect",
+        "center": [
+          256,
+          256
+        ],
+        "size": [
+          512,
+          512
+        ],
+        "fill": "linear",
+        "rotation": 135,
+        "color": "#ffffff",
+        "edgeColor": "#00000000",
+        "opacity": 0.22,
+        "blend": "overlay"
+      }
+    ]
+  }
+}

@@ -1,0 +1,55 @@
+{
+  "name": "plaster_wall",
+  "title": "灰泥墙：暖白墙面 + 细微斑驳",
+  "tags": [
+    "wall",
+    "interior"
+  ],
+  "spec": {
+    "width": 512,
+    "height": 512,
+    "tiling": true,
+    "supersample": 2,
+    "background": "#00000000",
+    "layers": [
+      {
+        "shape": "rect",
+        "center": [
+          256,
+          256
+        ],
+        "size": [
+          512,
+          512
+        ],
+        "fill": "noise",
+        "noise": "fbm",
+        "scale": 96,
+        "color": "#d9d2c4",
+        "edgeColor": "#f0eade",
+        "octaves": 4,
+        "seed": 6
+      },
+      {
+        "shape": "rect",
+        "center": [
+          256,
+          256
+        ],
+        "size": [
+          512,
+          512
+        ],
+        "fill": "noise",
+        "noise": "fbm",
+        "scale": 12,
+        "color": "#00000000",
+        "edgeColor": "#b9b09c",
+        "octaves": 3,
+        "seed": 72,
+        "opacity": 0.18,
+        "blend": "multiply"
+      }
+    ]
+  }
+}

@@ -1,0 +1,53 @@
+{
+  "name": "dirt_ground",
+  "title": "泥地：棕褐噪波 + 细碎土粒",
+  "tags": [
+    "ground",
+    "nature"
+  ],
+  "spec": {
+    "width": 512,
+    "height": 512,
+    "tiling": true,
+    "supersample": 2,
+    "background": "#00000000",
+    "layers": [
+      {
+        "shape": "rect",
+        "center": [
+          256,
+          256
+        ],
+        "size": [
+          512,
+          512
+        ],
+        "fill": "noise",
+        "noise": "fbm",
+        "scale": 42,
+        "color": "#40311f",
+        "edgeColor": "#6b5540",
+        "octaves": 5,
+        "seed": 3
+      },
+      {
+        "shape": "rect",
+        "center": [
+          256,
+          256
+        ],
+        "size": [
+          512,
+          512
+        ],
+        "fill": "noise",
+        "noise": "worley",
+        "scale": 14,
+        "color": "#2a2114",
+        "edgeColor": "#00000000",
+        "seed": 9,
+        "opacity": 0.32
+      }
+    ]
+  }
+}

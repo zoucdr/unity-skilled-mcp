@@ -1,0 +1,95 @@
+{
+  "name": "crosshair",
+  "title": "准星：圆环 + 四向刻度 + 中心点",
+  "tags": [
+    "ui",
+    "icon",
+    "hud"
+  ],
+  "spec": {
+    "width": 512,
+    "height": 512,
+    "tiling": false,
+    "supersample": 2,
+    "background": "#00000000",
+    "layers": [
+      {
+        "shape": "ring",
+        "center": [
+          256,
+          256
+        ],
+        "radius": 132,
+        "thickness": 6,
+        "fill": "solid",
+        "color": "#e8f6ff"
+      },
+      {
+        "shape": "line",
+        "from": [
+          66,
+          256
+        ],
+        "to": [
+          172,
+          256
+        ],
+        "width": 7,
+        "fill": "solid",
+        "color": "#e8f6ff"
+      },
+      {
+        "shape": "line",
+        "from": [
+          340,
+          256
+        ],
+        "to": [
+          446,
+          256
+        ],
+        "width": 7,
+        "fill": "solid",
+        "color": "#e8f6ff"
+      },
+      {
+        "shape": "line",
+        "from": [
+          256,
+          66
+        ],
+        "to": [
+          256,
+          172
+        ],
+        "width": 7,
+        "fill": "solid",
+        "color": "#e8f6ff"
+      },
+      {
+        "shape": "line",
+        "from": [
+          256,
+          340
+        ],
+        "to": [
+          256,
+          446
+        ],
+        "width": 7,
+        "fill": "solid",
+        "color": "#e8f6ff"
+      },
+      {
+        "shape": "circle",
+        "center": [
+          256,
+          256
+        ],
+        "radius": 7,
+        "fill": "solid",
+        "color": "#ff5a4a"
+      }
+    ]
+  }
+}

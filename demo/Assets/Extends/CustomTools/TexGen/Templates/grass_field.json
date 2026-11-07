@@ -1,0 +1,75 @@
+{
+  "name": "grass_field",
+  "title": "草地：深浅绿分形噪波 + 草簇暗斑",
+  "tags": [
+    "ground",
+    "nature",
+    "grass"
+  ],
+  "spec": {
+    "width": 512,
+    "height": 512,
+    "tiling": true,
+    "supersample": 2,
+    "background": "#00000000",
+    "layers": [
+      {
+        "shape": "rect",
+        "center": [
+          256,
+          256
+        ],
+        "size": [
+          512,
+          512
+        ],
+        "fill": "noise",
+        "noise": "fbm",
+        "scale": 64,
+        "color": "#2c4a1c",
+        "edgeColor": "#4f7d2c",
+        "octaves": 5,
+        "seed": 11
+      },
+      {
+        "shape": "rect",
+        "center": [
+          256,
+          256
+        ],
+        "size": [
+          512,
+          512
+        ],
+        "fill": "noise",
+        "noise": "fbm",
+        "scale": 18,
+        "color": "#00000000",
+        "edgeColor": "#79a844",
+        "octaves": 3,
+        "seed": 27,
+        "opacity": 0.34,
+        "blend": "overlay"
+      },
+      {
+        "shape": "rect",
+        "center": [
+          256,
+          256
+        ],
+        "size": [
+          512,
+          512
+        ],
+        "fill": "noise",
+        "noise": "worley",
+        "scale": 26,
+        "color": "#16260f",
+        "edgeColor": "#00000000",
+        "seed": 41,
+        "opacity": 0.3,
+        "blend": "multiply"
+      }
+    ]
+  }
+}

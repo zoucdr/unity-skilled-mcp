@@ -1,0 +1,75 @@
+{
+  "name": "rock_cliff",
+  "title": "岩石：灰岩分形 + 脊状裂纹",
+  "tags": [
+    "ground",
+    "nature",
+    "rock"
+  ],
+  "spec": {
+    "width": 512,
+    "height": 512,
+    "tiling": true,
+    "supersample": 2,
+    "background": "#00000000",
+    "layers": [
+      {
+        "shape": "rect",
+        "center": [
+          256,
+          256
+        ],
+        "size": [
+          512,
+          512
+        ],
+        "fill": "noise",
+        "noise": "fbm",
+        "scale": 70,
+        "color": "#45464a",
+        "edgeColor": "#72727a",
+        "octaves": 6,
+        "seed": 13
+      },
+      {
+        "shape": "rect",
+        "center": [
+          256,
+          256
+        ],
+        "size": [
+          512,
+          512
+        ],
+        "fill": "noise",
+        "noise": "ridged",
+        "scale": 34,
+        "color": "#20212a",
+        "edgeColor": "#00000000",
+        "octaves": 5,
+        "seed": 61,
+        "opacity": 0.45,
+        "blend": "multiply"
+      },
+      {
+        "shape": "rect",
+        "center": [
+          256,
+          256
+        ],
+        "size": [
+          512,
+          512
+        ],
+        "fill": "noise",
+        "noise": "worley",
+        "scale": 46,
+        "color": "#5c5d63",
+        "edgeColor": "#00000000",
+        "seed": 77,
+        "opacity": 0.22,
+        "blend": "overlay"
+      }
+    ]
+  }
+}

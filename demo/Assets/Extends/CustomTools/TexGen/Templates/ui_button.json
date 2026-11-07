@@ -1,0 +1,66 @@
+{
+  "name": "ui_button",
+  "title": "UI 按钮：圆角渐变 + 顶部高光 + 底部压边",
+  "tags": [
+    "ui",
+    "interface"
+  ],
+  "spec": {
+    "width": 512,
+    "height": 512,
+    "tiling": false,
+    "supersample": 2,
+    "background": "#00000000",
+    "layers": [
+      {
+        "shape": "roundRect",
+        "center": [
+          256,
+          256
+        ],
+        "size": [
+          400,
+          160
+        ],
+        "cornerRadius": 36,
+        "fill": "linear",
+        "rotation": 90,
+        "color": "#3f7ad6",
+        "edgeColor": "#1e4a92"
+      },
+      {
+        "shape": "roundRect",
+        "center": [
+          256,
+          200
+        ],
+        "size": [
+          368,
+          80
+        ],
+        "cornerRadius": 30,
+        "fill": "linear",
+        "rotation": 90,
+        "color": "#ffffff",
+        "edgeColor": "#00000000",
+        "opacity": 0.28
+      },
+      {
+        "shape": "roundRect",
+        "center": [
+          256,
+          320
+        ],
+        "size": [
+          368,
+          40
+        ],
+        "cornerRadius": 18,
+        "fill": "solid",
+        "color": "#0b1f42",
+        "opacity": 0.35,
+        "blur": 6
+      }
+    ]
+  }
+}

@@ -1,0 +1,54 @@
+{
+  "name": "snow_field",
+  "title": "雪地：冷白分形 + 淡蓝凹陷",
+  "tags": [
+    "ground",
+    "nature",
+    "snow"
+  ],
+  "spec": {
+    "width": 512,
+    "height": 512,
+    "tiling": true,
+    "supersample": 2,
+    "background": "#00000000",
+    "layers": [
+      {
+        "shape": "rect",
+        "center": [
+          256,
+          256
+        ],
+        "size": [
+          512,
+          512
+        ],
+        "fill": "noise",
+        "noise": "fbm",
+        "scale": 82,
+        "color": "#dbe6f2",
+        "edgeColor": "#ffffff",
+        "octaves": 3,
+        "seed": 21
+      },
+      {
+        "shape": "rect",
+        "center": [
+          256,
+          256
+        ],
+        "size": [
+          512,
+          512
+        ],
+        "fill": "noise",
+        "noise": "worley",
+        "scale": 34,
+        "color": "#a9c2dc",
+        "edgeColor": "#00000000",
+        "seed": 33,
+        "opacity": 0.22
+      }
+    ]
+  }
+}

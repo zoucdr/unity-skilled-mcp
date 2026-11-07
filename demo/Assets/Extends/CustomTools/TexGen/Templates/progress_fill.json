@@ -1,0 +1,65 @@
+{
+  "name": "progress_fill",
+  "title": "进度条填充：蓝色能量条 + 扫描高光",
+  "tags": [
+    "ui",
+    "interface"
+  ],
+  "spec": {
+    "width": 512,
+    "height": 512,
+    "tiling": false,
+    "supersample": 2,
+    "background": "#00000000",
+    "layers": [
+      {
+        "shape": "roundRect",
+        "center": [
+          256,
+          256
+        ],
+        "size": [
+          480,
+          56
+        ],
+        "cornerRadius": 28,
+        "fill": "linear",
+        "rotation": 0,
+        "color": "#1b6fbf",
+        "edgeColor": "#54c2ff"
+      },
+      {
+        "shape": "roundRect",
+        "center": [
+          256,
+          248
+        ],
+        "size": [
+          440,
+          16
+        ],
+        "cornerRadius": 8,
+        "fill": "linear",
+        "rotation": 0,
+        "color": "#ffffff",
+        "edgeColor": "#00000000",
+        "opacity": 0.35
+      },
+      {
+        "shape": "rect",
+        "center": [
+          256,
+          276
+        ],
+        "size": [
+          480,
+          8
+        ],
+        "fill": "solid",
+        "color": "#06172b",
+        "opacity": 0.4,
+        "blur": 4
+      }
+    ]
+  }
+}

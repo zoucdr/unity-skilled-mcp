@@ -1,0 +1,92 @@
+{
+  "name": "lava_flow",
+  "title": "熔岩：黑岩壳 + 橙色裂缝辉光",
+  "tags": [
+    "nature",
+    "fx",
+    "hazard"
+  ],
+  "spec": {
+    "width": 512,
+    "height": 512,
+    "tiling": true,
+    "supersample": 2,
+    "background": "#00000000",
+    "layers": [
+      {
+        "shape": "rect",
+        "center": [
+          256,
+          256
+        ],
+        "size": [
+          512,
+          512
+        ],
+        "fill": "solid",
+        "color": "#1a0a06"
+      },
+      {
+        "shape": "rect",
+        "center": [
+          256,
+          256
+        ],
+        "size": [
+          512,
+          512
+        ],
+        "fill": "pattern",
+        "pattern": "cobble",
+        "cell": 90,
+        "color": "#241009",
+        "gap": 11,
+        "gapColor": "#ff7a22",
+        "variation": 0.2,
+        "seed": 35,
+        "blur": 1.2
+      },
+      {
+        "shape": "rect",
+        "center": [
+          256,
+          256
+        ],
+        "size": [
+          512,
+          512
+        ],
+        "fill": "pattern",
+        "pattern": "cobble",
+        "cell": 90,
+        "color": "#00000000",
+        "gap": 6,
+        "gapColor": "#ffd08a",
+        "variation": 0,
+        "seed": 35,
+        "opacity": 0.6,
+        "blend": "add"
+      },
+      {
+        "shape": "rect",
+        "center": [
+          256,
+          256
+        ],
+        "size": [
+          512,
+          512
+        ],
+        "fill": "noise",
+        "noise": "fbm",
+        "scale": 20,
+        "color": "#00000000",
+        "edgeColor": "#3a1a0c",
+        "octaves": 4,
+        "seed": 70,
+        "opacity": 0.5,
+        "blend": "multiply"
+      }
+    ]
+  }
+}

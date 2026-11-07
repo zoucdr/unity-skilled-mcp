@@ -1,0 +1,61 @@
+{
+  "name": "denim",
+  "title": "牛仔布：细密斜纹 + 靛蓝",
+  "tags": [
+    "fabric",
+    "cloth"
+  ],
+  "spec": {
+    "width": 512,
+    "height": 512,
+    "tiling": true,
+    "supersample": 2,
+    "background": "#00000000",
+    "layers": [
+      {
+        "shape": "rect",
+        "center": [
+          256,
+          256
+        ],
+        "size": [
+          512,
+          512
+        ],
+        "fill": "pattern",
+        "pattern": "weave",
+        "cell": [
+          9,
+          9
+        ],
+        "color": "#35558c",
+        "gap": 1,
+        "gapColor": "#1d2f52",
+        "edgeColor": "#2a4472",
+        "stagger": 0.72,
+        "rotation": 45,
+        "seed": 26
+      },
+      {
+        "shape": "rect",
+        "center": [
+          256,
+          256
+        ],
+        "size": [
+          512,
+          512
+        ],
+        "fill": "noise",
+        "noise": "fbm",
+        "scale": 8,
+        "color": "#00000000",
+        "edgeColor": "#16233d",
+        "octaves": 3,
+        "seed": 58,
+        "opacity": 0.22,
+        "blend": "multiply"
+      }
+    ]
+  }
+}

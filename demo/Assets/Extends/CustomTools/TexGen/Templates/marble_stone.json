@@ -1,0 +1,111 @@
+{
+  "name": "marble_stone",
+  "title": "大理石：强扭曲纹路 + 灰白基底",
+  "tags": [
+    "nature",
+    "rock",
+    "material"
+  ],
+  "spec": {
+    "width": 512,
+    "height": 512,
+    "tiling": true,
+    "supersample": 2,
+    "background": "#00000000",
+    "layers": [
+      {
+        "shape": "rect",
+        "center": [
+          256,
+          256
+        ],
+        "size": [
+          512,
+          512
+        ],
+        "fill": "linear",
+        "rotation": 60,
+        "color": "#eceae5",
+        "edgeColor": "#fbfaf8"
+      },
+      {
+        "shape": "rect",
+        "center": [
+          256,
+          256
+        ],
+        "size": [
+          512,
+          512
+        ],
+        "fill": "pattern",
+        "pattern": "stripe",
+        "cell": [
+          118,
+          118
+        ],
+        "gap": 0,
+        "color": "#b3aea3",
+        "edgeColor": "#f2f0eb",
+        "stagger": 0.34,
+        "opacity": 0.8,
+        "seed": 12,
+        "warp": {
+          "noise": "fbm",
+          "scale": 200,
+          "amount": 92,
+          "octaves": 5
+        }
+      },
+      {
+        "shape": "rect",
+        "center": [
+          256,
+          256
+        ],
+        "size": [
+          512,
+          512
+        ],
+        "fill": "pattern",
+        "pattern": "stripe",
+        "cell": [
+          62,
+          62
+        ],
+        "gap": 0,
+        "color": "#c4bfb4",
+        "edgeColor": "#00000000",
+        "stagger": 0.22,
+        "opacity": 0.3,
+        "rotation": 115,
+        "seed": 37,
+        "warp": {
+          "noise": "fbm",
+          "scale": 130,
+          "amount": 60,
+          "octaves": 4
+        }
+      },
+      {
+        "shape": "rect",
+        "center": [
+          256,
+          256
+        ],
+        "size": [
+          512,
+          512
+        ],
+        "fill": "noise",
+        "noise": "fbm",
+        "scale": 70,
+        "octaves": 3,
+        "seed": 48,
+        "color": "#00000000",
+        "edgeColor": "#dcd8d0",
+        "opacity": 0.35
+      }
+    ]
+  }
+}

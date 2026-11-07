@@ -1,0 +1,60 @@
+{
+  "name": "hex_panel",
+  "title": "六角面板：蜂窝格 + 科技蓝",
+  "tags": [
+    "fabric",
+    "sci-fi",
+    "panel"
+  ],
+  "spec": {
+    "width": 512,
+    "height": 512,
+    "tiling": true,
+    "supersample": 2,
+    "background": "#00000000",
+    "layers": [
+      {
+        "shape": "rect",
+        "center": [
+          256,
+          256
+        ],
+        "size": [
+          512,
+          512
+        ],
+        "fill": "pattern",
+        "pattern": "hex",
+        "cell": [
+          72,
+          72
+        ],
+        "color": "#1d3b52",
+        "gap": 3,
+        "gapColor": "#0b1620",
+        "variation": 0.14,
+        "seed": 30
+      },
+      {
+        "shape": "rect",
+        "center": [
+          256,
+          256
+        ],
+        "size": [
+          512,
+          512
+        ],
+        "fill": "noise",
+        "noise": "fbm",
+        "scale": 30,
+        "color": "#00000000",
+        "edgeColor": "#2f6f9a",
+        "octaves": 3,
+        "seed": 66,
+        "opacity": 0.25,
+        "blend": "screen"
+      }
+    ]
+  }
+}

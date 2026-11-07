@@ -1,0 +1,72 @@
+{
+  "name": "water_surface",
+  "title": "水面：蓝底 + 波纹 + 高光",
+  "tags": [
+    "nature",
+    "water"
+  ],
+  "spec": {
+    "width": 512,
+    "height": 512,
+    "tiling": true,
+    "supersample": 2,
+    "background": "#00000000",
+    "layers": [
+      {
+        "shape": "rect",
+        "center": [
+          256,
+          256
+        ],
+        "size": [
+          512,
+          512
+        ],
+        "fill": "noise",
+        "noise": "fbm",
+        "scale": 70,
+        "color": "#1f4f6b",
+        "edgeColor": "#2e7a9a",
+        "octaves": 4,
+        "seed": 9
+      },
+      {
+        "shape": "rect",
+        "center": [
+          256,
+          256
+        ],
+        "size": [
+          512,
+          512
+        ],
+        "fill": "ripple",
+        "frequency": 3.2,
+        "amplitude": 0.5,
+        "color": "#8fd6ee",
+        "edgeColor": "#12303f",
+        "opacity": 0.5,
+        "blend": "screen"
+      },
+      {
+        "shape": "rect",
+        "center": [
+          256,
+          256
+        ],
+        "size": [
+          512,
+          512
+        ],
+        "fill": "noise",
+        "noise": "fbm",
+        "scale": 14,
+        "color": "#00000000",
+        "edgeColor": "#0d2430",
+        "octaves": 3,
+        "seed": 52,
+        "opacity": 0.2
+      }
+    ]
+  }
+}

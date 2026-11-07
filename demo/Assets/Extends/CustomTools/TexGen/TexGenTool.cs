@@ -58,6 +58,9 @@ namespace UniMcp.Tools.TexGen
                     "Antialiasing factor 1-4 (internal supersampling). Default 2.",
                     "抗锯齿倍数 1-4（内部超采样）。默认 2。"))
                     .SetRange(1, 4).SetDefault(2),
+                new MethodBool("tiling", L.T(
+                    "Make periodic fills wrap at the canvas border so the PNG tiles seamlessly. Aliases: tileable, seamless.",
+                    "让周期性填充在画布边界闭合，使 PNG 可无缝平铺。别名：tileable、seamless。")),
 
                 // --- Normal map ---
                 new MethodBool("normal_map", L.T(
@@ -140,7 +143,42 @@ namespace UniMcp.Tools.TexGen
                     "用渲染结果打开 TexGen 预览窗口。")),
                 new MethodBool("select_asset", L.T(
                     "Ping the written asset in the Project window.",
-                    "在 Project 窗口中定位写出的资源。"))
+                    "在 Project 窗口中定位写出的资源。")),
+
+                // --- PBR derivation ---
+                new MethodFloat("roughness_bias", L.T(
+                    "Mid-point of the derived roughness map (0 = mirror, 1 = fully rough). Default 0.55.",
+                    "派生粗糙度的中值（0 = 镜面，1 = 全粗糙）。默认 0.55。"))
+                    .SetRange(0f, 1f).SetDefault(0.55f),
+                new MethodFloat("roughness_contrast", L.T(
+                    "How strongly height drives roughness: high spots polish, crevices roughen. Default 0.6.",
+                    "高度对粗糙度的影响强度：凸起更光滑、凹陷更粗糙。默认 0.6。"))
+                    .SetRange(0f, 4f).SetDefault(0.6f),
+                new MethodFloat("ao_strength", L.T(
+                    "Ambient-occlusion darkening strength for the derived AO/ORM map. Default 0.7.",
+                    "派生 AO/ORM 的环境光遮蔽强度，默认 0.7。"))
+                    .SetRange(0f, 4f).SetDefault(0.7f),
+                new MethodInt("ao_radius", L.T(
+                    "Occlusion search radius in pixels. Default 6.",
+                    "遮蔽采样半径（像素），默认 6。"))
+                    .SetRange(1, 64).SetDefault(6),
+                new MethodFloat("metallic", L.T(
+                    "Constant metalness written into the ORM map's blue channel. Default 0.",
+                    "写入 ORM 蓝通道的常量金属度，默认 0。"))
+                    .SetRange(0f, 1f).SetDefault(0f),
+
+                // --- Template library ---
+                new MethodStr("tag", L.T(
+                    "Filter the built-in template library by tag (ground, wall, fabric, metal, nature, ui, ...).",
+                    "按标签筛选内置模板库（ground、wall、fabric、metal、nature、ui 等）。"))
+                    .AddExamples("ground", "wall", "metal", "ui"),
+                new MethodStr("name", L.T(
+                    "Exact template name to return, e.g. brick_wall.",
+                    "要返回的模板名，如 brick_wall。"))
+                    .AddExample("brick_wall"),
+                new MethodBool("include_spec", L.T(
+                    "Attach each template's render spec. Defaults to true only when 'name' is given.",
+                    "附带每个模板的渲染 spec。仅在指定 name 时默认为 true。"))
             };
         }
 
@@ -193,53 +231,65 @@ namespace UniMcp.Tools.TexGen
             var written = new JsonArray();
             var failed = new JsonArray();
 
-            for (int i = 0; i < specs.Count; i++)
+            // Writing many PNGs in one call lets Unity's asset watcher refresh the
+            // database mid-loop, reload the domain and cut the JSON-RPC response short.
+            // Hold the refresh until every file is on disk.
+            AssetDatabase.DisallowAutoRefresh();
+            try
             {
-                JsonClass item = specs[i] as JsonClass;
-                string label = item != null ? TgJson.GetString(item, "name", "specs[" + i + "]") : "specs[" + i + "]";
-                if (item == null)
+                for (int i = 0; i < specs.Count; i++)
                 {
-                    failed.Add(new JsonData(label + " is not an object"));
-                    continue;
-                }
+                    JsonClass item = specs[i] as JsonClass;
+                    string label = item != null ? TgJson.GetString(item, "name", "specs[" + i + "]") : "specs[" + i + "]";
+                    if (item == null)
+                    {
+                        failed.Add(new JsonData(label + " is not an object"));
+                        continue;
+                    }
 
-                // Field-wise merge: item wins, args act as defaults.
-                var merged = new JsonClass();
-                CopyIfPresent(args, merged, "width", "height", "background", "origin", "supersample",
-                    "texture_type", "filter_mode", "wrap_mode", "pixels_per_unit", "max_size",
-                    "normal_map", "normal_strength");
-                foreach (var kv in item.AsEnumerable()) merged[kv.Key] = kv.Value;
+                    // Field-wise merge: item wins, args act as defaults.
+                    var merged = new JsonClass();
+                    CopyIfPresent(args, merged, "width", "height", "background", "origin", "supersample",
+                        "texture_type", "filter_mode", "wrap_mode", "pixels_per_unit", "max_size",
+                        "normal_map", "normal_strength");
+                    foreach (var kv in item.AsEnumerable()) merged[kv.Key] = kv.Value;
 
-                var parse = ParseArguments(merged);
-                if (!parse.Ok)
-                {
-                    failed.Add(new JsonData(label + ": " + string.Join("; ", parse.Errors.ToArray())));
-                    continue;
-                }
+                    var parse = ParseArguments(merged);
+                    if (!parse.Ok)
+                    {
+                        failed.Add(new JsonData(label + ": " + string.Join("; ", parse.Errors.ToArray())));
+                        continue;
+                    }
 
-                string name = TgJson.GetString(item, "name", "tex_" + i);
-                string filePath = outputDir.TrimEnd('/', '\\') + "/" + prefix + name + ".png";
+                    string name = TgJson.GetString(item, "name", "tex_" + i);
+                    string filePath = outputDir.TrimEnd('/', '\\') + "/" + prefix + name + ".png";
 
-                var result = RenderAndWrite(parse.Spec, filePath, merged, false) as JsonClass;
-                bool ok = result != null && result.TryGetValue("success", out JsonNode okNode) && okNode.AsBoolDefault(false);
+                    var result = RenderAndWrite(parse.Spec, filePath, merged, false) as JsonClass;
+                    bool ok = result != null && result.TryGetValue("success", out JsonNode okNode) && okNode.AsBoolDefault(false);
 
-                if (ok)
-                {
-                    var entry = new JsonClass();
-                    entry["name"] = name;
-                    entry["path"] = filePath;
-                    entry["width"] = parse.Spec.Width;
-                    entry["height"] = parse.Spec.Height;
-                    written.Add(entry);
-                }
-                else
-                {
-                    string err = "render failed";
-                    if (result != null && result.TryGetValue("error", out JsonNode errNode) && errNode != null)
-                        err = errNode.Value;
-                    failed.Add(new JsonData(label + ": " + err));
+                    if (ok)
+                    {
+                        var entry = new JsonClass();
+                        entry["name"] = name;
+                        entry["path"] = filePath;
+                        entry["width"] = parse.Spec.Width;
+                        entry["height"] = parse.Spec.Height;
+                        written.Add(entry);
+                    }
+                    else
+                    {
+                        string err = "render failed";
+                        if (result != null && result.TryGetValue("error", out JsonNode errNode) && errNode != null)
+                            err = errNode.Value;
+                        failed.Add(new JsonData(label + ": " + err));
+                    }
                 }
             }
+            finally
+            {
+                AssetDatabase.AllowAutoRefresh();
+            }
+
 
             if (written.Count == 0)
                 return Response.Error(L.T("No spec rendered successfully.", "没有任何 spec 渲染成功。"), failed);
@@ -332,7 +382,17 @@ namespace UniMcp.Tools.TexGen
                 L.T("Everything is deterministic: the same instructions plus the same seed always produce identical pixels.",
                     "完全确定性：相同指令加相同 seed 永远产生相同像素。"),
                 L.T("For a normal map, draw a greyscale/alpha height field and set normal_map=true (or call normal_from_image).",
-                    "做法线贴图时，先绘制灰度/Alpha 高度场，再设 normal_map=true（或调用 normal_from_image）。")
+                    "做法线贴图时，先绘制灰度/Alpha 高度场，再设 normal_map=true（或调用 normal_from_image）。"),
+                L.T("Set tiling=true and the noise/pattern fills wrap at the border, so the PNG repeats without a seam. Draw the pattern layer as a full-canvas rect.",
+                    "设 tiling=true 后噪波/图案填充会在边界闭合，PNG 可无缝重复。图案图层画成覆盖全画布的 rect 即可。"),
+                L.T("fill \"pattern\" draws masonry/fabric: brick, plank, tile, checker, stripe, hex, scale, weave, dot, cobble. Give it cell, gap, gapColor, stagger, variation.",
+                    "fill \"pattern\" 画砖石/织物：brick、plank、tile、checker、stripe、hex、scale、weave、dot、cobble。配 cell、gap、gapColor、stagger、variation 使用。"),
+                L.T("Add \"warp\" to any layer to bend its fill: stripe + warp = wood grain, noise + warp = marble. Syntax: {\"noise\":\"fbm\",\"scale\":70,\"amount\":26}.",
+                    "给任意图层加 \"warp\" 可弯折填充：stripe + warp = 木纹，noise + warp = 大理石纹。写法：{\"noise\":\"fbm\",\"scale\":70,\"amount\":26}。"),
+                L.T("texgen.pbr turns one instruction list into BaseColor/Normal/Height/Roughness/AO/ORM in a single call — use it for any material rather than exporting channels one by one.",
+                    "texgen.pbr 一次把指令表转成 BaseColor/Normal/Height/Roughness/AO/ORM，做材质时用它而不是逐张导出。"),
+                L.T("texgen.templates lists 24+ ready surface recipes (grass, brick, wood, marble, metal, UI panels); pass a template's spec straight into render or pbr.",
+                    "texgen.templates 列出 24+ 个现成表面配方（草地、砖墙、木纹、大理石、金属、UI 面板）；把模板的 spec 直接传给 render 或 pbr 即可。")
             });
 
             return Response.Success(L.T("Texture generation instruction grammar.", "程序化贴图指令语法。"), data);
@@ -471,6 +531,393 @@ namespace UniMcp.Tools.TexGen
 
             return Response.Success(
                 L.T($"Normal map written to '{outputPath}'.", $"法线贴图已写入 '{outputPath}'。"), data);
+        }
+
+        // ------------------------------------------------------------------
+        // PBR derivation
+        // ------------------------------------------------------------------
+
+        [ToolAction("pbr",
+            DescriptionEn = "Render one instruction list once and derive a full PBR set from it: BaseColor, Normal, Height, Roughness, AO and a packed ORM map (R=AO, G=Roughness, B=Metallic).",
+            DescriptionZh = "一次渲染指令表，派生整套 PBR 贴图：BaseColor、Normal、Height、Roughness、AO 与打包 ORM（R=AO, G=粗糙度, B=金属度）。",
+            Parameters = new[]
+            {
+                "layers", "layers_json", "width", "height", "background", "origin", "supersample", "tiling",
+                "output_path", "output_dir", "prefix", "overwrite", "select_asset",
+                "normal_strength", "roughness_bias", "roughness_contrast", "ao_strength", "ao_radius",
+                "metallic", "material_path"
+            },
+            Inject = new[] { "action=pbr" })]
+        private object ActionPbr(JsonClass args)
+        {
+            var parse = ParseArguments(args);
+            if (!parse.Ok) return ValidationError(parse);
+
+            TgSpec spec = parse.Spec;
+            // The source pass must be the albedo/height image, never a normal map.
+            spec.NormalMap = false;
+            spec.Tiling = spec.Tiling || TgJson.GetBool(args, "tiling", false);
+
+            Texture2D source;
+            int ss;
+            try { source = TgRasterizer.Render(spec, out ss); }
+            catch (Exception e) { return Response.Error(L.T("Render failed: ", "渲染失败：") + e.Message); }
+
+            int w = source.width;
+            int h = source.height;
+            Color[] pixels = source.GetPixels();
+            UnityEngine.Object.DestroyImmediate(source);
+
+            // Height: luminance with alpha folded in, so transparent areas read as low.
+            var height = new float[w * h];
+            for (int i = 0; i < height.Length; i++)
+            {
+                Color c = pixels[i];
+                height[i] = Mathf.Clamp01((0.299f * c.r + 0.587f * c.g + 0.114f * c.b) * c.a);
+            }
+
+            float bias = TgJson.GetFloat(args, "roughness_bias", 0.55f);
+            float contrast = TgJson.GetFloat(args, "roughness_contrast", 0.6f);
+            float aoStrength = TgJson.GetFloat(args, "ao_strength", 0.7f);
+            int aoRadius = Mathf.Clamp(TgJson.GetInt(args, "ao_radius", 6), 1, 64);
+            float metallic = Mathf.Clamp01(TgJson.GetFloat(args, "metallic", 0f));
+            float normalStrength = TgJson.GetFloat(args, "normal_strength", 4f);
+
+            float[] ao = BuildOcclusion(height, w, h, aoRadius, aoStrength);
+            float[] rough = new float[w * h];
+            for (int i = 0; i < rough.Length; i++)
+                rough[i] = Mathf.Clamp01(bias + (0.5f - height[i]) * contrast);
+
+            // Output paths: honour output_path as the base name when given.
+            string basePath = TgJson.GetString(args, "output_path");
+            string baseName;
+            string outputDir;
+            if (!string.IsNullOrEmpty(basePath))
+            {
+                baseName = Path.GetFileNameWithoutExtension(basePath);
+                outputDir = Path.GetDirectoryName(basePath)?.Replace('\\', '/') ?? "Assets/TexGen";
+            }
+            else
+            {
+                outputDir = (TgJson.GetString(args, "output_dir", "Assets/TexGen")).TrimEnd('/', '\\');
+                baseName = TgJson.GetString(args, "prefix", "");
+                if (string.IsNullOrEmpty(baseName)) baseName = "texgen";
+                if (baseName.EndsWith("_")) baseName = baseName.TrimEnd('_');
+            }
+
+            bool overwrite = TgJson.GetBool(args, "overwrite", true);
+            var channels = new JsonArray();
+
+            AssetDatabase.DisallowAutoRefresh();
+            try
+            {
+                var baseTex = TgRasterizer.TextureFromColors(pixels, w, h);
+                string baseFile = WriteChannel(outputDir, baseName + "_BaseColor", baseTex, overwrite,
+                    TextureImporterType.Default, false, true);
+                UnityEngine.Object.DestroyImmediate(baseTex);
+                if (baseFile == null) return Response.Error(L.T("Cannot write the BaseColor channel.",
+                    "无法写出 BaseColor 通道。"));
+                channels.Add(ChannelEntry("BaseColor", baseFile, "albedo, sRGB"));
+
+                float[] heightRgba = PackGrey(height);
+                var heightTex = TgRasterizer.TextureFromColors(heightRgba, w, h);
+                string heightFile = WriteChannel(outputDir, baseName + "_Height", heightTex, overwrite,
+                    TextureImporterType.Default, true, true);
+                UnityEngine.Object.DestroyImmediate(heightTex);
+                if (heightFile != null) { channels.Add(ChannelEntry("Height", heightFile, "linear height field")); }
+
+                var normalTex = TgRasterizer.NormalMapFromRgba(heightRgba, w, h, normalStrength);
+                string normalFile = WriteChannel(outputDir, baseName + "_Normal", normalTex, overwrite,
+                    TextureImporterType.NormalMap, true, true);
+                UnityEngine.Object.DestroyImmediate(normalTex);
+                if (normalFile != null) { channels.Add(ChannelEntry("Normal", normalFile, "tangent space, linear")); }
+
+                var roughTex = TgRasterizer.TextureFromColors(PackGrey(rough), w, h);
+                string roughFile = WriteChannel(outputDir, baseName + "_Roughness", roughTex, overwrite,
+                    TextureImporterType.Default, true, true);
+                UnityEngine.Object.DestroyImmediate(roughTex);
+                if (roughFile != null) { channels.Add(ChannelEntry("Roughness", roughFile, "linear greyscale")); }
+
+                var aoTex = TgRasterizer.TextureFromColors(PackGrey(ao), w, h);
+                string aoFile = WriteChannel(outputDir, baseName + "_AO", aoTex, overwrite,
+                    TextureImporterType.Default, true, true);
+                UnityEngine.Object.DestroyImmediate(aoTex);
+                if (aoFile != null) { channels.Add(ChannelEntry("AO", aoFile, "linear greyscale")); }
+
+                var orm = new float[w * h * 4];
+                for (int i = 0; i < w * h; i++)
+                {
+                    orm[i * 4 + 0] = ao[i];
+                    orm[i * 4 + 1] = rough[i];
+                    orm[i * 4 + 2] = metallic;
+                    orm[i * 4 + 3] = 1f;
+                }
+                var ormTex = TgRasterizer.TextureFromColors(orm, w, h);
+                string ormFile = WriteChannel(outputDir, baseName + "_ORM", ormTex, overwrite,
+                    TextureImporterType.Default, true, true);
+                UnityEngine.Object.DestroyImmediate(ormTex);
+                if (ormFile != null) { channels.Add(ChannelEntry("ORM", ormFile, "R=AO G=Roughness B=Metallic")); }
+
+                // Optional: bind the albedo + normal straight onto a material.
+                string materialPath = TgJson.GetString(args, "material_path");
+                string boundMaterial = null;
+                if (!string.IsNullOrEmpty(materialPath))
+                {
+                    boundMaterial = BindMaterial(materialPath, baseFile, normalFile);
+                }
+
+                var data = new JsonClass();
+                data["width"] = w;
+                data["height"] = h;
+                data["supersample"] = ss;
+                data["tiling"] = spec.Tiling;
+                data["layers"] = spec.Layers.Count;
+                data["channels"] = channels;
+                data["count"] = channels.Count;
+                if (boundMaterial != null) data["material"] = boundMaterial;
+                if (TgJson.GetBool(args, "select_asset", true))
+                    SelectAsset(baseFile);
+
+                return Response.Success(
+                    L.T($"Derived {channels.Count} PBR maps into '{outputDir}'.",
+                        $"已在 '{outputDir}' 派生 {channels.Count} 张 PBR 贴图。"), data);
+            }
+            finally
+            {
+                AssetDatabase.AllowAutoRefresh();
+            }
+        }
+
+        private static JsonClass ChannelEntry(string channel, string path, string note)
+        {
+            var entry = new JsonClass();
+            entry["channel"] = channel;
+            entry["path"] = path;
+            entry["note"] = note;
+            return entry;
+        }
+
+        /// <summary>Pack a scalar field into an opaque greyscale RGBA buffer.</summary>
+        private static float[] PackGrey(float[] values)
+        {
+            var rgba = new float[values.Length * 4];
+            for (int i = 0; i < values.Length; i++)
+            {
+                float v = Mathf.Clamp01(values[i]);
+                rgba[i * 4 + 0] = v;
+                rgba[i * 4 + 1] = v;
+                rgba[i * 4 + 2] = v;
+                rgba[i * 4 + 3] = 1f;
+            }
+            return rgba;
+        }
+
+        /// <summary>
+        /// Cheap crevice occlusion: for each pixel, compare its height against the
+        /// tallest neighbour sampled along eight directions.
+        /// </summary>
+        private static float[] BuildOcclusion(float[] height, int w, int h, int radius, float strength)
+        {
+            var ao = new float[height.Length];
+            int[] dirX = { 1, -1, 0, 0, 1, 1, -1, -1 };
+            int[] dirY = { 0, 0, 1, -1, 1, -1, 1, -1 };
+            int near = Mathf.Max(1, radius / 2);
+
+            for (int y = 0; y < h; y++)
+            {
+                for (int x = 0; x < w; x++)
+                {
+                    int i = y * w + x;
+                    float self = height[i];
+                    float tallest = self;
+
+                    for (int d = 0; d < 8; d++)
+                    {
+                        for (int step = 0; step < 2; step++)
+                        {
+                            int dist = step == 0 ? near : radius;
+                            int sx = x + dirX[d] * dist;
+                            int sy = y + dirY[d] * dist;
+                            if (sx < 0 || sy < 0 || sx >= w || sy >= h) continue;
+                            float s = height[sy * w + sx];
+                            if (s > tallest) tallest = s;
+                        }
+                    }
+
+                    ao[i] = Mathf.Clamp01(1f - (tallest - self) * strength);
+                }
+            }
+
+            return ao;
+        }
+
+        /// <summary>Write one derived map, import it and give it the right importer settings.</summary>
+        private string WriteChannel(string outputDir, string fileName, Texture2D tex, bool overwrite,
+            TextureImporterType type, bool linear, bool repeat)
+        {
+            string assetPath = (outputDir + "/" + SafeFileName(fileName) + ".png").Replace('\\', '/');
+            string absolute = ResolvePath(assetPath, true);
+            if (!overwrite && File.Exists(absolute)) return null;
+
+            try { TgRasterizer.WritePng(absolute, TgRasterizer.EncodePng(tex)); }
+            catch (Exception e)
+            {
+                Debug.LogWarning("[TexGen] failed to write " + absolute + ": " + e.Message);
+                return null;
+            }
+
+            if (!IsUnderAssets(absolute)) return assetPath;
+
+            ImportSingleAsset(absolute);
+
+            string unityPath = "Assets" + absolute.Substring(Application.dataPath.Length).Replace('\\', '/');
+            var importer = AssetImporter.GetAtPath(unityPath) as TextureImporter;
+            if (importer != null)
+            {
+                importer.textureType = type;
+                if (type != TextureImporterType.NormalMap) importer.sRGBTexture = !linear;
+                importer.wrapMode = repeat ? TextureWrapMode.Repeat : TextureWrapMode.Clamp;
+                importer.filterMode = FilterMode.Bilinear;
+                EditorUtility.SetDirty(importer);
+                importer.SaveAndReimport();
+            }
+
+            return assetPath;
+        }
+
+        /// <summary>Attach albedo and normal to a material, matching whichever shader it uses.</summary>
+        private string BindMaterial(string materialPath, string baseColorPath, string normalPath)
+        {
+            var mat = AssetDatabase.LoadAssetAtPath<Material>(materialPath);
+            if (mat == null) return null;
+
+            var baseTex = AssetDatabase.LoadAssetAtPath<Texture2D>(baseColorPath);
+            var normalTex = string.IsNullOrEmpty(normalPath) ? null : AssetDatabase.LoadAssetAtPath<Texture2D>(normalPath);
+
+            if (baseTex != null)
+            {
+                if (mat.HasProperty("_MainTex")) mat.SetTexture("_MainTex", baseTex);
+                if (mat.HasProperty("_BaseMap")) mat.SetTexture("_BaseMap", baseTex);
+            }
+            if (normalTex != null && mat.HasProperty("_BumpMap"))
+            {
+                mat.SetTexture("_BumpMap", normalTex);
+                mat.EnableKeyword("_NORMALMAP");
+            }
+
+            EditorUtility.SetDirty(mat);
+            AssetDatabase.SaveAssets();
+            return materialPath;
+        }
+
+        // ------------------------------------------------------------------
+        // Template library
+        // ------------------------------------------------------------------
+
+        [ToolAction("templates",
+            DescriptionEn = "List the built-in template library (materials, patterns, nature, UI). Filter by tag, or fetch one template's ready-to-render spec by name.",
+            DescriptionZh = "列出内置模板库（材质、图案、自然、UI）。可按标签筛选，或按名称取单个模板的现成 spec。",
+            Parameters = new[] { "tag", "name", "include_spec" },
+            Inject = new[] { "action=templates" })]
+        private object ActionTemplates(JsonClass args)
+        {
+            string tag = TgJson.GetString(args, "tag");
+            string wanted = TgJson.GetString(args, "name");
+            // A full listing would blow past the response size cap, so specs are
+            // only attached when one template is asked for by name.
+            bool includeSpec = TgJson.GetBool(args, "include_spec", !string.IsNullOrEmpty(wanted));
+            var loaded = LoadTemplates();
+
+            if (loaded.Count == 0)
+                return Response.Error(L.T(
+                    "Template folder not found: Assets/Extends/CustomTools/TexGen/Templates",
+                    "未找到模板目录：Assets/Extends/CustomTools/TexGen/Templates"));
+
+            var result = new JsonArray();
+            foreach (JsonClass tpl in loaded)
+            {
+                string name = TgJson.GetString(tpl, "name");
+                if (!string.IsNullOrEmpty(wanted) && !string.Equals(name, wanted, StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                if (!string.IsNullOrEmpty(tag) && !HasTag(tpl, tag)) continue;
+
+                var entry = new JsonClass();
+                entry["name"] = name;
+                entry["title"] = TgJson.GetString(tpl, "title", name);
+                entry["tags"] = TgJson.Get(tpl, "tags") ?? new JsonArray();
+                JsonNode spec = TgJson.Get(tpl, "spec");
+                if (includeSpec)
+                {
+                    entry["spec"] = spec;
+                }
+                else
+                {
+                    var specObj = spec as JsonClass;
+                    int w = specObj != null ? TgJson.GetInt(specObj, "width", 0) : 0;
+                    int h = specObj != null ? TgJson.GetInt(specObj, "height", 0) : 0;
+                    bool tiles = specObj != null && TgJson.GetBool(specObj, "tiling", false);
+                    entry["size"] = w + "x" + h;
+                    entry["tiling"] = tiles;
+                }
+                result.Add(entry);
+            }
+
+            if (result.Count == 0)
+                return Response.Error(L.T(
+                    $"No template matched tag='{tag}' name='{wanted}'.",
+                    $"没有匹配 tag='{tag}' name='{wanted}' 的模板。"));
+
+            var data = new JsonClass();
+            data["count"] = result.Count;
+            data["templates"] = result;
+            if (!string.IsNullOrEmpty(wanted))
+                data["usage"] = new JsonData(L.T(
+                    "Pass the template's spec object straight into texgen.render (it already contains width/height/tiling/layers).",
+                    "把模板的 spec 对象整体传给 texgen.render 即可（其中已含 width/height/tiling/layers）。"));
+
+            return Response.Success(
+                L.T($"{result.Count} template(s).", $"{result.Count} 个模板。"), data);
+        }
+
+        private static bool HasTag(JsonClass template, string tag)
+        {
+            var tags = TgJson.Get(template, "tags") as JsonArray;
+            if (tags == null) return false;
+            foreach (JsonNode t in tags)
+            {
+                if (t != null && string.Equals(t.Value, tag, StringComparison.OrdinalIgnoreCase)) return true;
+            }
+            return false;
+        }
+
+        private static List<JsonClass> LoadTemplates()
+        {
+            var list = new List<JsonClass>();
+            const string folder = "Assets/Extends/CustomTools/TexGen/Templates";
+            string[] guids = AssetDatabase.FindAssets("t:TextAsset", new[] { folder });
+            foreach (string guid in guids)
+            {
+                string path = AssetDatabase.GUIDToAssetPath(guid);
+                if (!path.EndsWith(".json", StringComparison.OrdinalIgnoreCase)) continue;
+
+                var asset = AssetDatabase.LoadAssetAtPath<TextAsset>(path);
+                if (asset == null) continue;
+
+                try
+                {
+                    var node = Json.Parse(asset.text) as JsonClass;
+                    if (node != null && TgJson.Get(node, "spec") != null) list.Add(node);
+                }
+                catch (Exception e)
+                {
+                    Debug.LogWarning("[TexGen] template " + path + " is not valid JSON: " + e.Message);
+                }
+            }
+
+            list.Sort((a, b) => string.CompareOrdinal(
+                TgJson.GetString(a, "name", ""), TgJson.GetString(b, "name", "")));
+            return list;
         }
 
         // ------------------------------------------------------------------
@@ -1169,7 +1616,7 @@ namespace UniMcp.Tools.TexGen
             if (layers != null) root["layers"] = layers;
 
             CopyIfPresent(args, root, "width", "height", "background", "origin", "supersample",
-                "normal_map", "normal_strength");
+                "normal_map", "normal_strength", "tiling", "tileable", "seamless");
 
             var parse = TgParser.Parse(root);
 
@@ -1219,6 +1666,9 @@ namespace UniMcp.Tools.TexGen
             canvas["supersample"] = new JsonData("integer 1-4 (default 2)");
             canvas["normal_map"] = new JsonData("boolean (default false)");
             canvas["normal_strength"] = new JsonData("number >= 0 (default 4)");
+            canvas["tiling"] = new JsonData(L.T(
+                "boolean (default false). Makes noise/pattern fills wrap at the canvas border so the PNG tiles seamlessly. Aliases: tileable, seamless.",
+                "布尔（默认 false）。让噪波/图案填充在画布边界闭合，使 PNG 可无缝平铺。别名：tileable、seamless。"));
             return canvas;
         }
 
@@ -1258,9 +1708,35 @@ namespace UniMcp.Tools.TexGen
             paint["frequency"] = new JsonData("number: ripple cycles per 100 px");
             paint["phase"] = new JsonData("number: ripple phase in turns");
             paint["amplitude"] = new JsonData("number 0-1: ripple contrast");
-            paint["cell"] = new JsonData("array [w, h]: grid cell size");
+            paint["cell"] = new JsonData("array [w, h]: grid cell size (also the pattern period)");
             paint["lineWidth"] = new JsonData("number: grid line thickness");
+            paint["pattern"] = new JsonData(L.T(
+                "pattern name when fill=\"pattern\": brick | plank | tile | checker | stripe | hex | scale | weave | dot | cobble",
+                "fill=\"pattern\" 时的图案名：brick | plank | tile | checker | stripe | hex | scale | weave | dot | cobble"));
+            paint["gap"] = new JsonData(L.T(
+                "number: pattern seam width in pixels (mortar joint, thread gap). Aliases: mortar",
+                "数字：图案缝宽（像素），砖缝/织线间隙。别名：mortar"));
+            paint["gapColor"] = new JsonData(L.T(
+                "colour inside pattern seams (alias: mortarColor). Use #00000000 to cut through",
+                "图案缝隙内的颜色（别名 mortarColor）。用 #00000000 可镂空"));
+            paint["stagger"] = new JsonData(L.T(
+                "number 0-1: row offset (brick, plank, dot) or duty cycle (stripe, weave). Default 0.5",
+                "数字 0-1：行错位（brick/plank/dot）或占空比（stripe/weave）。默认 0.5"));
+            paint["variation"] = new JsonData(L.T(
+                "number 0-1: per-cell brightness jitter so repeated cells do not look cloned (alias: jitter). Default 0.12",
+                "数字 0-1：单格亮度抖动，避免重复格子雷同（别名 jitter）。默认 0.12"));
             layer["paint"] = paint;
+
+            var warp = new JsonClass();
+            warp["warp"] = new JsonData(L.T(
+                "boolean or {enabled, noise, scale, amount, octaves}. Domain warp displaces the fill lookup: straight stripes become wood grain, cell noise becomes marble veining. Geometry is not affected.",
+                "布尔或 {enabled, noise, scale, amount, octaves}。域扭曲偏移填充采样坐标：直线条纹变木纹，胞状噪波变大理石纹。不影响几何形状。"));
+            warp["warp.scale"] = new JsonData("number: noise cell size of the warp field in px (default 64)");
+            warp["warp.amount"] = new JsonData("number: peak displacement in px (default 12); 30+ gives heavy marble veining");
+            warp["example"] = new JsonData(L.T(
+                "\"warp\":{\"noise\":\"fbm\",\"scale\":70,\"amount\":26} on a stripe fill = wood grain",
+                "在 stripe 填充上加 \"warp\":{\"noise\":\"fbm\",\"scale\":70,\"amount\":26} = 木纹"));
+            layer["warp"] = warp;
 
             var compositing = new JsonClass();
             compositing["blend"] = EnumGrammar(typeof(TgBlend), "normal");

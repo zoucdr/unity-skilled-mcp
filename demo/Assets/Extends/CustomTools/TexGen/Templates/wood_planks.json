@@ -1,0 +1,66 @@
+{
+  "name": "wood_planks",
+  "title": "木地板：长条错缝 + 木纹",
+  "tags": [
+    "wall",
+    "wood",
+    "floor"
+  ],
+  "spec": {
+    "width": 512,
+    "height": 512,
+    "tiling": true,
+    "supersample": 2,
+    "background": "#00000000",
+    "layers": [
+      {
+        "shape": "rect",
+        "center": [
+          256,
+          256
+        ],
+        "size": [
+          512,
+          512
+        ],
+        "fill": "pattern",
+        "pattern": "plank",
+        "cell": [
+          256,
+          48
+        ],
+        "color": "#8a5a32",
+        "gap": 3,
+        "gapColor": "#2a1a10",
+        "variation": 0.18,
+        "seed": 15
+      },
+      {
+        "shape": "rect",
+        "center": [
+          256,
+          256
+        ],
+        "size": [
+          512,
+          512
+        ],
+        "fill": "noise",
+        "noise": "fbm",
+        "scale": 7,
+        "color": "#00000000",
+        "edgeColor": "#4a2b14",
+        "octaves": 3,
+        "seed": 31,
+        "opacity": 0.32,
+        "blend": "multiply",
+        "warp": {
+          "noise": "fbm",
+          "scale": 60,
+          "amount": 14,
+          "octaves": 3
+        }
+      }
+    ]
+  }
+}
