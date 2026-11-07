@@ -102,6 +102,38 @@ namespace UniMcp.Tools.TexGen
                     .SetEnumValues("32", "64", "128", "256", "512", "1024", "2048", "4096", "8192"),
                 new MethodBool("sprite_pivot_center", L.T("Keep the sprite pivot centred.", "精灵轴心保持居中。")).SetDefault(true),
 
+                // --- Mesh-aware rendering (texgen.uv_info / texgen.for_mesh) ---
+                new MethodStr("mesh_path", L.T(
+                    "Mesh asset (Assets/... .fbx/.obj/.asset) or a scene GameObject hierarchy path to read UVs from.",
+                    "要读取 UV 的 Mesh 资源路径（Assets/... .fbx/.obj/.asset），或场景中 GameObject 的层级路径。"))
+                    .AddExamples("Assets/Models/Desk.fbx", "Props/Desk"),
+                new MethodStr("group_by", L.T(
+                    "How to split UV space into regions: submesh (default), island (UV-connected), all.",
+                    "UV 空间分区方式：submesh（默认）、island（UV 连通岛）、all（不分区）。"))
+                    .SetEnumValues("submesh", "island", "all").SetDefault("submesh"),
+                new MethodArr("regions", L.T(
+                    "Per-region instruction lists: [{id, layers:[...]}]. Regions without an entry use the global layers.",
+                    "各分区的指令表：[{id, layers:[...]}]。未列出的分区使用全局 layers。"), true, "object"),
+                new MethodStr("regions_json", L.T(
+                    "Same region list as a JSON string, for clients that cannot nest arrays.",
+                    "与 regions 等价的 JSON 字符串，供不便嵌套数组的客户端使用。")),
+                new MethodInt("padding", L.T(
+                    "Dilate edge colours outward by N pixels so mipmaps never sample empty space at UV seams. Default 4.",
+                    "把边缘颜色向外扩张 N 像素，避免 mipmap 在 UV 接缝处采样到空白。默认 4。"))
+                    .SetRange(0, 64).SetDefault(4),
+                new MethodStr("fill_mode", L.T(
+                    "How to treat pixels no UV triangle covers: 'background' (flat colour, default) or 'nearest' (extend the nearest UV region colour, producing a solid atlas without island silhouettes).",
+                    "未被任何 UV 三角形覆盖的像素如何填充：'background'（纯底色，默认）或 'nearest'（用最近的 UV 分区颜色填满，图集不再出现一圈圈岛轮廓）。"))
+                    .SetEnumValues("background", "nearest").SetDefault("background"),
+                new MethodStr("material_path", L.T(
+                    "Optional: assign the written PNG to this material's texture property.",
+                    "可选：把写出的 PNG 挂到该材质的贴图属性上。"))
+                    .AddExample("Assets/Materials/Desk.mat"),
+                new MethodStr("texture_property", L.T(
+                    "Shader property written when material_path is set. Default _MainTex.",
+                    "设置 material_path 时要写入的着色器属性，默认 _MainTex。"))
+                    .SetDefault("_MainTex").AddExamples("_MainTex", "_BaseMap"),
+
                 // --- Misc ---
                 new MethodBool("open_preview", L.T(
                     "Open the TexGen preview window with the rendered result.",
@@ -427,8 +459,9 @@ namespace UniMcp.Tools.TexGen
             TgRasterizer.WritePng(absolute, TgRasterizer.EncodePng(normal));
             UnityEngine.Object.DestroyImmediate(normal);
 
+            ImportSingleAsset(absolute);
             ApplyImporterSettings(absolute, args, true);
-            SelectAsset(absolute);
+            if (TgJson.GetBool(args, "select_asset", true)) SelectAsset(absolute);
 
             var data = new JsonClass();
             data["path"] = outputPath;
@@ -438,6 +471,495 @@ namespace UniMcp.Tools.TexGen
 
             return Response.Success(
                 L.T($"Normal map written to '{outputPath}'.", $"法线贴图已写入 '{outputPath}'。"), data);
+        }
+
+        // ------------------------------------------------------------------
+        // Mesh-aware actions
+        // ------------------------------------------------------------------
+
+        [ToolAction("uv_info",
+            DescriptionEn = "Inspect a mesh's UV layout: regions, pixel rectangles, coverage and warnings, before drawing.",
+            DescriptionZh = "查看 Mesh 的 UV 布局：分区、像素矩形、覆盖率与警告，供绘制前参考。",
+            Parameters = new[] { "mesh_path", "width", "height", "group_by" },
+            Required = new[] { "mesh_path" },
+            Inject = new[] { "action=uv_info" })]
+        private object ActionUvInfo(JsonClass args)
+        {
+            string meshPath = TgJson.GetString(args, "mesh_path");
+            Mesh mesh;
+            string loadError = TryLoadMesh(meshPath, out mesh);
+            if (loadError != null) return Response.Error(loadError);
+
+            int width = Mathf.Clamp(TgJson.GetInt(args, "width", 512), 1, TgSpec.MaxDimension);
+            int height = Mathf.Clamp(TgJson.GetInt(args, "height", 512), 1, TgSpec.MaxDimension);
+            string groupBy = TgJson.GetString(args, "group_by", "submesh");
+
+            TgUvLayout layout;
+            try { layout = TgMeshUv.Analyze(mesh, width, height, groupBy); }
+            catch (Exception e)
+            {
+                return Response.Error(L.T("Cannot analyse mesh UVs: ", "无法分析 Mesh UV：") + e.Message);
+            }
+
+            var data = BuildLayoutData(layout, groupBy);
+            data["path"] = meshPath;
+            data["mesh"] = mesh.name;
+
+            return Response.Success(
+                L.T($"UV layout of '{mesh.name}': {layout.Regions.Count} region(s), {layout.CoverageRatio:P1} covered.",
+                    $"'{mesh.name}' 的 UV 布局：{layout.Regions.Count} 个分区，覆盖率 {layout.CoverageRatio:P1}。"), data);
+        }
+
+        [ToolAction("for_mesh",
+            DescriptionEn = "Draw instruction lists into a mesh's UV space: per-submesh/island regions, UV coverage mask and seam padding. Optionally assign the PNG to a material.",
+            DescriptionZh = "把指令表按 Mesh 的 UV 空间绘制：支持 submesh/UV 岛分区、UV 覆盖遮罩与接缝外扩，可选自动挂到材质。",
+            Parameters = new[]
+            {
+                "mesh_path", "layers", "layers_json", "regions", "regions_json", "group_by", "padding", "fill_mode",
+                "width", "height", "background", "origin", "supersample", "output_path", "overwrite",
+                "texture_type", "filter_mode", "wrap_mode", "max_size", "select_asset",
+                "material_path", "texture_property"
+            },
+            Required = new[] { "mesh_path" },
+            Inject = new[] { "action=for_mesh" })]
+        private object ActionForMesh(JsonClass args)
+        {
+            string meshPath = TgJson.GetString(args, "mesh_path");
+            Mesh mesh;
+            string loadError = TryLoadMesh(meshPath, out mesh);
+            if (loadError != null) return Response.Error(loadError);
+
+            int width = Mathf.Clamp(TgJson.GetInt(args, "width", 512), 1, TgSpec.MaxDimension);
+            int height = Mathf.Clamp(TgJson.GetInt(args, "height", 512), 1, TgSpec.MaxDimension);
+            string groupBy = TgJson.GetString(args, "group_by", "submesh");
+            int padding = Mathf.Clamp(TgJson.GetInt(args, "padding", 4), 0, 64);
+
+            TgUvLayout layout;
+            try { layout = TgMeshUv.Analyze(mesh, width, height, groupBy); }
+            catch (Exception e)
+            {
+                return Response.Error(L.T("Cannot analyse mesh UVs: ", "无法分析 Mesh UV：") + e.Message);
+            }
+
+            // Global instruction list + optional per-region overrides.
+            JsonNode globalLayers;
+            try { globalLayers = ResolveLayers(args); }
+            catch (Exception e) { return Response.Error(L.T("Invalid layers_json: ", "layers_json 无效：") + e.Message); }
+
+            JsonNode regionsNode = TgJson.Get(args, "regions");
+            if (regionsNode == null)
+            {
+                string regionsJson = TgJson.GetString(args, "regions_json");
+                if (!string.IsNullOrEmpty(regionsJson))
+                {
+                    try { regionsNode = Json.Parse(regionsJson); }
+                    catch (Exception e) { return Response.Error(L.T("Invalid regions_json: ", "regions_json 无效：") + e.Message); }
+                }
+            }
+            JsonArray regionArray = regionsNode as JsonArray;
+            if (regionsNode != null && regionArray == null)
+                return Response.Error(L.T("'regions' must be an array of {id, layers:[...]}.", "'regions' 必须是 [{id, layers:[...]}] 数组。"));
+
+            var overrides = new Dictionary<int, JsonNode>();
+            if (regionArray != null)
+            {
+                for (int i = 0; i < regionArray.Count; i++)
+                {
+                    JsonClass item = regionArray[i] as JsonClass;
+                    if (item == null)
+                        return Response.Error(L.T("Every region entry must be an object.", "regions 的每项必须是对象。"));
+                    int id = TgJson.GetInt(item, "id", i);
+                    JsonNode layers;
+                    try { layers = ResolveLayers(item); }
+                    catch (Exception e) { return Response.Error("region " + id + ": " + e.Message); }
+                    if (layers != null) overrides[id] = layers;
+                }
+            }
+
+            TgSpec baseSpec = null;
+            if (globalLayers != null)
+            {
+                var parsed = ParseSpecWithLayers(args, globalLayers, width, height);
+                if (!parsed.Ok) return ValidationError(parsed);
+                baseSpec = parsed.Spec;
+            }
+
+            var specs = new Dictionary<int, TgSpec>();
+            var problems = new List<string>();
+            foreach (TgUvRegion region in layout.Regions)
+            {
+                JsonNode layers;
+                if (overrides.TryGetValue(region.Id, out layers) && layers != null)
+                {
+                    var parsed = ParseSpecWithLayers(args, layers, width, height);
+                    if (!parsed.Ok) problems.Add(region.Name + ": " + string.Join("; ", parsed.Errors.ToArray()));
+                    else specs[region.Id] = parsed.Spec;
+                }
+                else if (baseSpec != null)
+                {
+                    specs[region.Id] = baseSpec;
+                }
+                else
+                {
+                    problems.Add(region.Name + L.T(" has no layers; pass global layers or a regions entry.",
+                        " 没有指令表；请传全局 layers 或 regions 中的对应项。"));
+                }
+            }
+            if (problems.Count > 0)
+            {
+                var problemData = new JsonClass();
+                problemData["errors"] = ToJsonArray(problems);
+                return Response.Error(L.T("Some regions have no valid instruction list.", "部分分区没有有效指令表。"),
+                    problemData);
+            }
+
+            if (baseSpec == null) baseSpec = specs[layout.Regions[0].Id];
+
+            // Render one canvas per distinct spec (the global one is shared).
+            var pixels = new Dictionary<int, Color32[]>();
+            var canvasCache = new Dictionary<TgSpec, Color32[]>();
+            int renderedCanvases = 0;
+            foreach (var pair in specs)
+            {
+                Color32[] buffer;
+                if (!canvasCache.TryGetValue(pair.Value, out buffer))
+                {
+                    Texture2D rendered;
+                    int ss;
+                    try { rendered = TgRasterizer.Render(pair.Value, out ss); }
+                    catch (Exception e)
+                    {
+                        return Response.Error(L.T("Render failed: ", "渲染失败：") + e.Message);
+                    }
+                    buffer = rendered.GetPixels32();
+                    UnityEngine.Object.DestroyImmediate(rendered);
+                    if (buffer.Length != width * height)
+                        return Response.Error(L.T("Rendered canvas size does not match the UV mask.",
+                            "渲染画布尺寸与 UV 遮罩不一致。"));
+                    canvasCache[pair.Value] = buffer;
+                    renderedCanvases++;
+                }
+                pixels[pair.Key] = buffer;
+            }
+
+            string fillMode = TgJson.GetString(args, "fill_mode", "background");
+            bool fillNearest = fillMode.Equals("nearest", StringComparison.OrdinalIgnoreCase);
+            Texture2D composed = TgMeshUv.Compose(layout, pixels, baseSpec.Background, padding, fillNearest);
+            byte[] png = TgRasterizer.EncodePng(composed);
+
+            string outputPath = TgJson.GetString(args, "output_path");
+            if (string.IsNullOrEmpty(outputPath))
+                outputPath = "Assets/Textures/" + SafeFileName(mesh.name) + "_uv.png";
+
+            // Unity's file watcher refreshes the whole AssetDatabase the moment a PNG
+            // under Assets/ is overwritten. That refresh can reload the domain on the
+            // very main thread that writes the MCP response, which is why clients used
+            // to see "invalid JSON-RPC response" although every side effect succeeded.
+            AssetDatabase.DisallowAutoRefresh();
+            try
+            {
+                string absolute = ResolvePath(outputPath, true);
+                if (!TgJson.GetBool(args, "overwrite", true) && File.Exists(absolute))
+                {
+                    UnityEngine.Object.DestroyImmediate(composed);
+                    return Response.Error(L.T($"File already exists: {absolute}", $"文件已存在：{absolute}"));
+                }
+
+                try { TgRasterizer.WritePng(absolute, png); }
+                catch (Exception e)
+                {
+                    UnityEngine.Object.DestroyImmediate(composed);
+                    return Response.Error(L.T($"Failed to write '{absolute}': {e.Message}",
+                        $"写入 '{absolute}' 失败：{e.Message}"));
+                }
+                UnityEngine.Object.DestroyImmediate(composed);
+
+                bool underAssets = IsUnderAssets(absolute);
+                if (underAssets)
+                {
+                    // Import only this file (no project-wide Refresh).
+                    ImportSingleAsset(absolute);
+                    ApplyImporterSettings(absolute, args, false);
+                    if (TgJson.GetBool(args, "select_asset", false)) SelectAsset(absolute);
+                }
+
+                var data = BuildLayoutData(layout, groupBy);
+                data["path"] = outputPath;
+                data["mesh"] = mesh.name;
+                data["padding"] = padding;
+                data["fill_mode"] = fillNearest ? "nearest" : "background";
+                data["rendered_canvases"] = renderedCanvases;
+                data["bytes"] = png.Length;
+                data["written"] = true;
+
+                var regionInfo = data["regions"] as JsonArray;
+                if (regionInfo != null)
+                {
+                    for (int i = 0; i < regionInfo.Count; i++)
+                    {
+                        var entry = regionInfo[i] as JsonClass;
+                        if (entry == null) continue;
+                        entry["custom_layers"] = overrides.ContainsKey(layout.Regions[i].Id);
+                    }
+                }
+
+                string materialPath = TgJson.GetString(args, "material_path");
+                if (!string.IsNullOrEmpty(materialPath))
+                {
+                    string assignError = AssignTextureToMaterial(absolute, materialPath,
+                        TgJson.GetString(args, "texture_property", "_MainTex"));
+                    if (assignError != null)
+                    {
+                        // The PNG is already written; report the assignment failure without losing it.
+                        data["material_error"] = assignError;
+                        layout.Warnings.Add(assignError);
+                        data["warnings"] = ToJsonArray(layout.Warnings);
+                    }
+                    else
+                    {
+                        data["material_assigned"] = materialPath + "." +
+                            TgJson.GetString(args, "texture_property", "_MainTex");
+                    }
+                }
+                else
+                {
+                    data["material_assigned"] = false;
+                }
+
+                if (!underAssets)
+                    layout.Warnings.Add(L.T("PNG is outside Assets/, it was not imported and cannot be assigned to a material.",
+                        "PNG 位于 Assets/ 之外，未导入为资源，也无法挂到材质。"));
+                if (layout.Warnings.Count > 0) data["warnings"] = ToJsonArray(layout.Warnings);
+
+                return Response.Success(
+                    L.T($"Painted {layout.Regions.Count} UV region(s) of '{mesh.name}' into '{outputPath}' ({layout.CoverageRatio:P1} covered).",
+                        $"已把 '{mesh.name}' 的 {layout.Regions.Count} 个 UV 分区绘制到 '{outputPath}'（覆盖率 {layout.CoverageRatio:P1}）。"), data);
+            }
+            finally
+            {
+                // Restore on the NEXT editor update, after this HTTP response has
+                // been written. AllowAutoRefresh() applies pending refreshes at
+                // once, so calling it synchronously here would still reload the
+                // domain before the client receives the reply. Each registration
+                // pairs one DisallowAutoRefresh() call; a domain reload resets the
+                // flag itself, so no state can leak.
+                EditorApplication.delayCall += () => AssetDatabase.AllowAutoRefresh();
+            }
+        }
+
+        // ------------------------------------------------------------------
+        // Mesh-aware helpers
+        // ------------------------------------------------------------------
+
+        private static JsonClass BuildLayoutData(TgUvLayout layout, string groupBy)
+        {
+            var data = new JsonClass();
+            data["width"] = layout.Width;
+            data["height"] = layout.Height;
+            data["group_by"] = groupBy;
+            data["vertex_count"] = layout.VertexCount;
+            data["triangle_count"] = layout.TriangleCount;
+            data["submesh_count"] = layout.SubmeshCount;
+            data["coverage"] = layout.CoverageRatio;
+            data["covered_pixels"] = layout.CoveredPixels;
+            data["out_of_range"] = layout.OutOfRange;
+            data["coordinate_system"] = new JsonData(L.T(
+                "Pixel (x,y) maps from UV (u,v) as x=u*width, y=v*height; the first canvas row is v=0. Use rect_px directly in layer geometry — no V flip needed.",
+                "像素 (x,y) 与 UV (u,v) 对应 x=u*width、y=v*height，画布第一行为 v=0。直接用 rect_px 写图层几何即可，无需翻转 V。"));
+
+            var min = new JsonArray();
+            min.Add(new JsonData(layout.UvMin.x));
+            min.Add(new JsonData(layout.UvMin.y));
+            data["uv_min"] = min;
+            var max = new JsonArray();
+            max.Add(new JsonData(layout.UvMax.x));
+            max.Add(new JsonData(layout.UvMax.y));
+            data["uv_max"] = max;
+
+            var regions = new JsonArray();
+            foreach (TgUvRegion region in layout.Regions)
+            {
+                var entry = new JsonClass();
+                entry["id"] = region.Id;
+                entry["name"] = region.Name;
+                entry["triangles"] = region.Triangles;
+                entry["covered_pixels"] = region.CoveredPixels;
+                var rect = new JsonClass();
+                rect["x"] = region.PxX;
+                rect["y"] = region.PxY;
+                rect["w"] = region.PxW;
+                rect["h"] = region.PxH;
+                entry["rect_px"] = rect;
+                var rmin = new JsonArray();
+                rmin.Add(new JsonData(region.UvMin.x));
+                rmin.Add(new JsonData(region.UvMin.y));
+                entry["uv_min"] = rmin;
+                var rmax = new JsonArray();
+                rmax.Add(new JsonData(region.UvMax.x));
+                rmax.Add(new JsonData(region.UvMax.y));
+                entry["uv_max"] = rmax;
+                regions.Add(entry);
+            }
+            data["regions"] = regions;
+            data["region_count"] = layout.Regions.Count;
+            if (layout.Warnings.Count > 0) data["warnings"] = ToJsonArray(layout.Warnings);
+            return data;
+        }
+
+        private static JsonNode ResolveLayers(JsonClass node)
+        {
+            JsonNode layers = TgJson.Get(node, "layers");
+            if (layers != null) return layers;
+            string json = TgJson.GetString(node, "layers_json");
+            if (string.IsNullOrEmpty(json)) return null;
+            return Json.Parse(json);
+        }
+
+        private static TgParseResult ParseSpecWithLayers(JsonClass args, JsonNode layers, int width, int height)
+        {
+            var root = new JsonClass();
+            root["layers"] = layers;
+            CopyIfPresent(args, root, "background", "origin", "supersample");
+            // Pin the canvas to the UV mask size. TgParser defaults to 256 while
+            // the UV layout defaults to 512; leaving them independent would make
+            // the rendered Color32[] and the mask index different pixels.
+            root["width"] = width;
+            root["height"] = height;
+            return TgParser.Parse(root);
+        }
+
+        /// <summary>Resolve either a project asset path or a scene hierarchy path to a Mesh.</summary>
+        private static string TryLoadMesh(string path, out Mesh mesh)
+        {
+            mesh = null;
+            if (string.IsNullOrEmpty(path))
+                return L.T("'mesh_path' is required (an Assets/... mesh or a scene GameObject path).",
+                    "'mesh_path' 必填（Assets/... 下的 Mesh 资源，或场景中 GameObject 层级路径）。");
+
+            string p = path.Replace('\\', '/');
+            if (p.StartsWith("Assets/", StringComparison.OrdinalIgnoreCase))
+            {
+                mesh = AssetDatabase.LoadAssetAtPath<Mesh>(p);
+                if (mesh == null)
+                {
+                    var assets = AssetDatabase.LoadAllAssetsAtPath(p);
+                    for (int i = 0; i < assets.Length; i++)
+                    {
+                        mesh = assets[i] as Mesh;
+                        if (mesh != null) break;
+                    }
+                }
+                if (mesh == null)
+                    return L.T($"No Mesh found in '{p}'.", $"'{p}' 中未找到 Mesh。");
+                return null;
+            }
+
+            GameObject go = GameObject.Find(p);
+            if (go == null)
+            {
+                var all = Resources.FindObjectsOfTypeAll<GameObject>();
+                for (int i = 0; i < all.Length; i++)
+                {
+                    if (all[i].name == p || HierarchyPath(all[i].transform) == p)
+                    {
+                        go = all[i];
+                        break;
+                    }
+                }
+            }
+            if (go == null)
+                return L.T($"GameObject '{p}' not found. Pass an Assets/... mesh path instead.",
+                    $"未找到 GameObject '{p}'。也可改传 Assets/... 下的 Mesh 路径。");
+
+            var filter = go.GetComponent<MeshFilter>();
+            if (filter != null) mesh = filter.sharedMesh;
+            if (mesh == null)
+            {
+                var skinned = go.GetComponent<SkinnedMeshRenderer>();
+                if (skinned != null) mesh = skinned.sharedMesh;
+            }
+            if (mesh == null)
+            {
+                var childFilters = go.GetComponentsInChildren<MeshFilter>(true);
+                for (int i = 0; i < childFilters.Length; i++)
+                {
+                    if (childFilters[i].sharedMesh != null) { mesh = childFilters[i].sharedMesh; break; }
+                }
+            }
+            if (mesh == null)
+                return L.T($"GameObject '{p}' has no MeshFilter / SkinnedMeshRenderer with a mesh.",
+                    $"GameObject '{p}' 上没有带 Mesh 的 MeshFilter / SkinnedMeshRenderer。");
+            return null;
+        }
+
+        private static string HierarchyPath(Transform t)
+        {
+            string path = t.name;
+            while (t.parent != null)
+            {
+                t = t.parent;
+                path = t.name + "/" + path;
+            }
+            return path;
+        }
+
+        private static string AssignTextureToMaterial(string absolutePng, string materialPath, string property)
+        {
+            if (!IsUnderAssets(absolutePng))
+                return L.T("PNG is outside Assets/, cannot assign to a material.", "PNG 位于 Assets/ 之外，无法挂到材质。");
+
+            string textureAssetPath = ToAssetPath(absolutePng);
+            Texture2D texture = AssetDatabase.LoadAssetAtPath<Texture2D>(textureAssetPath);
+            if (texture == null)
+                return L.T($"Texture not imported at '{textureAssetPath}'.", $"'{textureAssetPath}' 尚未导入为贴图。");
+
+            Material material = AssetDatabase.LoadAssetAtPath<Material>(materialPath);
+            if (material == null)
+                return L.T($"Material not found at '{materialPath}'.", $"未找到材质 '{materialPath}'。");
+            if (string.IsNullOrEmpty(property)) property = "_MainTex";
+            if (!material.HasProperty(property))
+                return L.T($"Material '{materialPath}' has no property '{property}'.",
+                    $"材质 '{materialPath}' 没有属性 '{property}'。");
+
+            material.SetTexture(property, texture);
+            EditorUtility.SetDirty(material);
+            AssetDatabase.SaveAssets();
+            return null;
+        }
+
+        /// <summary>
+        /// Import only the PNG that was just written. A project-wide AssetDatabase.Refresh()
+        /// scans every asset and may start a script recompile / domain reload on Unity's
+        /// main thread — the same thread that writes the MCP HTTP response. That is the
+        /// root cause of "invalid JSON-RPC response" on write calls whose side effect
+        /// had in fact succeeded. Importing one file avoids the reload entirely.
+        /// </summary>
+        private static void ImportSingleAsset(string absolutePath)
+        {
+            if (!IsUnderAssets(absolutePath)) return;
+            string assetPath = ToAssetPath(absolutePath);
+            if (string.IsNullOrEmpty(assetPath)) return;
+            AssetDatabase.ImportAsset(assetPath,
+                ImportAssetOptions.ForceUpdate | ImportAssetOptions.ForceSynchronousImport);
+        }
+
+        private static string ToAssetPath(string absolutePath)
+        {
+            string assetPath = absolutePath.Replace('\\', '/');
+            if (assetPath.StartsWith("Assets/", StringComparison.OrdinalIgnoreCase)) return assetPath;
+            string data = (Application.dataPath ?? "").Replace('\\', '/');
+            if (data.Length == 0 || !assetPath.StartsWith(data, StringComparison.OrdinalIgnoreCase)) return "";
+            return "Assets" + assetPath.Substring(data.Length).Replace('\\', '/');
+        }
+
+        private static string SafeFileName(string name)
+        {
+            if (string.IsNullOrEmpty(name)) return "mesh";
+            var invalid = Path.GetInvalidFileNameChars();
+            var sb = new StringBuilder(name.Length);
+            foreach (char c in name)
+                sb.Append(Array.IndexOf(invalid, c) >= 0 ? '_' : c);
+            return sb.ToString();
         }
 
         // ------------------------------------------------------------------
@@ -500,10 +1022,9 @@ namespace UniMcp.Tools.TexGen
             bool underAssets = IsUnderAssets(absolute);
             if (underAssets)
             {
+                ImportSingleAsset(absolute);
                 if (TgJson.GetBool(args, "select_asset", selectByDefault))
                     SelectAsset(absolute);
-                else
-                    AssetDatabase.Refresh();
             }
 
             ApplyImporterSettings(absolute, args, spec.NormalMap);
@@ -528,8 +1049,8 @@ namespace UniMcp.Tools.TexGen
             if (!absolutePath.StartsWith(Application.dataPath)) return;
             string assetPath = "Assets" + absolutePath.Substring(Application.dataPath.Length).Replace('\\', '/');
 
-            AssetDatabase.Refresh();
-
+            // The caller imports the freshly written PNG with ImportSingleAsset;
+            // do not Refresh() the whole project here (see ImportSingleAsset).
             var importer = AssetImporter.GetAtPath(assetPath) as TextureImporter;
             if (importer == null) return;
 
@@ -566,7 +1087,6 @@ namespace UniMcp.Tools.TexGen
 
         private static void SelectAsset(string assetOrAbsolutePath)
         {
-            AssetDatabase.Refresh();
             if (!IsUnderAssets(assetOrAbsolutePath)) return;
 
             string assetPath = assetOrAbsolutePath.Replace('\\', '/');

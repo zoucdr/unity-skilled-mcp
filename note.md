@@ -542,3 +542,124 @@ node scripts/unity_mcp.js call code_runner --args '{"action":"execute","mode":"d
 - 禁止一次拉取能力全集；组超限或全集选择返回 400，客户端不拆分、不重试、不静默截断。
 - 旧 MCP 客户端的 `tools/list`、`prompts/list`、`resources/list`、`prompts/get`、`resources/read` 行为保持不变。
 - 用户可见品牌统一为 **Unity Skilled MCP**；技术路径、命名空间、协议名、图片文件名不改。
+
+---
+
+## 本轮：TexGen 扩展「按 Mesh UV 绘制」（在原有 7 个动作基础上追加）
+
+> 用户：「texgen 能针对指定 mesh 生纹理么，比如有个桌子模型」→ 明确「保持现有工具基础上扩展」。
+
+**定位澄清**：texgen 是 demo 工程的自定义工具模块（`demo/Assets/Extends/CustomTools/TexGen/`），不是 `unity-skilled-mcp` 技能包的一部分；`SKILL.md` 只负责 discover/call 契约。原 `TgSpec` 只有画布字段，完全没有 mesh / UV / 材质输入，因此「数据给够就生效」不成立，必须加读 mesh 的能力。
+
+### 新增
+
+| 文件 / 动作 | 内容 |
+| --- | --- |
+| `TexGenMeshUv.cs`（新增，含 `.meta`） | UV 三角形栅格化成 coverage mask；按 `submesh` / `island`（顶点索引 + UV 接缝的并查集）/ `all` 分组；按区域合成多套指令表；边缘颜色外扩（padding）防 mip 接缝黑边 |
+| `texgen.uv_info` | 返回 UV 分区、每区的 `rect_px`（可直接写进图层几何）、覆盖率、UV 超界警告 |
+| `texgen.for_mesh` | 读 Mesh → 分析 UV → 每区渲染一张画布 → 按 mask 合成 → 写 PNG，可选 `material_path` + `texture_property` 自动挂材质 |
+
+### 设计约定
+
+- **不改动** `TgRasterizer`、原有 7 个动作及 `TgSpec`；每个区域仍走原来的 2D 画布渲染，UV mask 只做后处理合成。`TgParser.Parse` 复用，全局 `layers` 只渲染一次并被所有未覆盖的区域共享。
+- 像素坐标与 UV 对齐：`x = u * width`、`y = v * height`，画布第一行为 `v = 0`；`rect_px` 已换算，调用方无需自行翻转 V。
+- `mesh_path` 支持 `Assets/...` 资源（含 FBX 内嵌 Mesh，走 `LoadAllAssetsAtPath`）或场景 GameObject 层级路径（含 inactive 兜底、MeshFilter / SkinnedMeshRenderer / 子物体）。
+- 未覆盖像素填画布底色；`padding` 默认 4 像素向外扩散颜色。UV 超出 [0,1] 会裁切并给警告（不自动 tile）。
+- 材质挂载是显式副作用：只有传 `material_path` 才写，失败只记录 `material_error`，不影响已写出的 PNG。
+
+**遗留**：UV 岛分组按顶点索引 + UV 值判连通，未做面积/法线驱动的 3D 投影（即「桌面横纹、桌腿竖纹」需靠 `regions` 手工分区），亦未做 AO / 曲率烘焙。
+
+---
+
+## 本轮：ProBuilder UV 图集扩展 + 红警2盟军坦克端到端验证
+
+> 用户：「效果不好的话就扩展 probuilder 的 UV 功能，开放给技能，让模型 UV 适配贴图」。
+
+**根因**：ProBuilder 图元默认每面 0–1 平铺 UV，`mergeObjects` 合并后所有部件的 UV 完全重叠，贴图必然串色。原模块 14 个动作没有任何 UV 编辑能力。
+
+### 新增（纯新增，原有 14 个动作零改动）
+
+| 项 | 内容 |
+| --- | --- |
+| `ProBuilderUvTools.cs`（+ `.meta`） | 同 `probuilder` 前缀的独立模块，动作名与原有 14 个不冲突，经 ToolCatalog 自动注册 → 出现在 `/tools`、`groups`、GUI，技能按 discover → list → schema → call 即可调用（SKILL.md 按铁律不写具体工具名） |
+| `probuilder.uv_atlas` | 按「同位置顶点 + 三角形边」并查集求几何连通部件 → 每部件分配一格互不重叠的图集矩形 → 盒式投影（6 轴向各占子矩形）或平面投影 → 按 `(原顶点, 轴向组)` 重建顶点，跨组自动分裂消除 UV 接缝冲突 → 写回 `MeshFilter.sharedMesh`；默认 `bake=true` 移除 ProBuilderMesh，防止后续 `ToMesh/Refresh` 用 Auto UV 覆盖。返回每格 `rect` / `rect_px` / 三角形数 / 包围盒 |
+| `probuilder.uv_info` | 只读查询 UV0 连通岛、像素矩形、覆盖率、跨岛重叠像素、UV 是否越界 |
+
+**设计约定**：不依赖 ProBuilder 内部 UV API（`UVEditing.ApplyUVs/GetUVs` 是 internal），直接重建 `UnityEngine.Mesh`，任何读 `Mesh.uv` 的工具（含 `texgen.for_mesh`）都能消费。像素坐标与 texgen 对齐：`x=u*width, y=v*height`，第一行 `v=0`，`rect_px` 可直接写进图层几何。
+
+### 实机验证（Unity 2022.3.62f3c1，MCP :8000）
+
+- 新建独立场景 `Assets/RA2Allied/RA2Allied.unity`（不动 CannonBird 场景），6 辆盟军作战坦克：灰熊、多功能步兵战车、幻影、光棱、坦克杀手（德国）、战斗要塞；每辆 14–16 个 ProBuilder 图元合并为单网格，共 91 个部件。
+- 每辆 `uv_atlas`：**图集格子数 = 部件数**（16/15/15/15/14/16），UV 连通岛 322–402 个，覆盖率 0.53–0.62，**跨岛重叠像素全部为 0**，UV 全在 [0,1] 内，无越界。
+- `texgen.for_mesh` 按格子画分色图层（车体/炮塔/履带/轮子/炮管/棱镜/伪装/盟军星徽），生成 6 张各不相同的 512×512 PNG；6 个材质 `_MainTex` 均指向各自 PNG；场景 6 个 `MeshRenderer` 各自引用对应材质 guid。
+- 全量 C# 编译（Unity 真实托管 DLL，Editor + TexGen + ProBuilder）**0 错误**；技能 JS 回归 **66/66**。
+
+### 已知边界
+
+- 几何是图元组合的低模，非 RA2 精灵级还原；未做 3D 位置/法线驱动图案、AO / 曲率烘焙。要更高还原度需 `createPolyShape` / 布尔 / 倒角做斜面车体与细节。
+- 部件 → 格子的配色映射用几何包围盒中心就近匹配，个别部件可能串色；要精确应按材质或部件名分组，而非猜测 bounds。
+- `texgen.for_mesh` 写 PNG 后触发纹理导入，会打断 Unity 主线程上的 HTTP 响应（客户端报「无效 JSON-RPC 响应」）；**写操作本身已生效**，须以只读手段核实产物再续行，勿重放。编排脚本已按此实现，并同步为 SKILL.md 的一条常见坑。
+
+---
+
+## 本轮：问题复盘、Mesh 资产化与贴图去重
+
+> 用户：「遇到的问题总结一下，并优化。另外，生成的 mesh 数据，为何不是用的 ProBuilderMeshFilter，且 mesh 未存文件，切换场景不就丢了。最后，你生成的贴图文件里面有很多重复的图元」。
+
+### 一、问题清单（按根因归类）
+
+| # | 现象 | 根因 | 本轮优化 |
+| --- | --- | --- | --- |
+| 1 | 合并后贴图糊、串色 | ProBuilder 图元每面 0–1 平铺 UV，合并后全重叠 | 上轮已加 `probuilder.uv_atlas` |
+| 2 | 写 PNG 后客户端报「无效 JSON-RPC 响应」，但 PNG/材质实际已写 | 一次写触发 3~4 次全量 `AssetDatabase.Refresh()`（写后、importer 设置、SelectAsset 各一次）+ Unity 文件监视器自动刷新 → 主线程域重载 → HTTP 响应与请求账本一起丢失 | 改单文件 `ImportAsset(ForceSynchronousImport)`；`DisallowAutoRefresh()` 包裹写操作、`EditorApplication.delayCall` 里恢复 `AllowAutoRefresh()`（避免同步恢复在响应写出前触发刷新）；`select_asset` 默认改 false、`SelectAsset` 不再 Refresh。6 辆实机中 4 辆响应恢复正常 |
+| 3 | 编排把「响应丢失」误判为写成功 | `tolerant()` 吞掉所有异常，包括工具返回 `success:false`（例如找不到 GameObject），并且只检查 PNG 是否存在 → 旧文件被当成新写 | 区分业务错误（`MCP isError` / `success:false`）直接抛出，仅网络层异常容忍；写前记录 mtime，写后必须 mtime 变化才算成功 |
+| 4 | `texgen.for_mesh` 报「未找到 GameObject 'RA2_Allied_Tanks/…'」 | `mesh_path` 绑定场景层级路径，域重载 / 父级变化后失效 | 改读持久化的 `.asset`；`uv_atlas` 也放宽为「仅 `bake=false` 才需要 ProBuilderMesh」，可对已 detach 的对象重跑 |
+| 5 | 子对象创建时找不到刚建的父对象 | `hierarchy.create_empty` 与后续查找跨请求时序 | 编排统一挂到常驻根 `RA2_Allied_Tanks` |
+| 6 | IFV 材质未挂、Mirage 落盘检查过早 | 异步生效 / 域重载 | 只读核实 + 缺则补挂 `_MainTex` |
+| 7 | `TgParser` 默认画布 256 与 UV 布局默认 512 尺寸错位 | 两套默认值互不相干 | 强制把显式 width/height 写入解析 root；合成前校验 `Color32[]` 长度 |
+| 8 | 218 图层渲染占满主线程 | `TgRasterizer` 对每个图层遍历整张超采样画布（ss=2 时 1024²）并分配 16MB 临时缓冲 | 用 1 个全局磨损层取代逐面 noise，装饰按面限量，图层 218 → 31~34；新增的 `nearest` 填充用 O(w·h) 多源 BFS，不额外增加每图层开销 |
+| 9 | 响应丢失后 `status` 查到 `unknown` | 域重载会重建请求账本 | 不把 `unknown` 当「未执行」；以只读产物核实为准，绝不重放写操作 |
+| 10 | mesh 不是 asset，且 detach 组件有销毁网格风险 | 见下节 | 见下节 |
+| 11 | 贴图里满是重复图元 | 见第三节 | 见第三节 |
+
+### 二、关于 ProBuilderMeshFilter 与「切场景就丢」
+
+**先纠正前提**：ProBuilder 5.2.4 **没有 `ProBuilderMeshFilter` 类型**。它用标准 `MeshFilter` + `MeshRenderer` + `ProBuilderMesh` 组件，后者以 `[SerializeField] Mesh m_Mesh` 持有网格（`Runtime/Core/ProBuilderMesh.cs`）；`filter` 属性只是对 `MeshFilter` 的包装，并给它打上 `HideFlags.DontSave | HideInInspector | NotEditable`。所以代码操作 `MeshFilter.sharedMesh` 本身没错。
+
+**「切场景就丢」并不成立**：Unity 会把运行时 `Mesh` 作为场景内嵌对象序列化进 `.unity`。改前实测 `RA2Allied.unity` 为 **597,148 字节**，含 6 个 `--- !u!43` Mesh 节点，`MeshFilter.m_Mesh` 指向这些场景内 fileID。只要场景被保存，切场景后网格仍在。
+
+但真实缺陷有三个：内嵌 mesh 不能跨场景 / 预制体复用、场景文件被网格数据撑大；`bake=true` 的 `DestroyImmediate(ProBuilderMesh)` 会执行 `OnDestroy → DestroyUnityMesh() → DestroyImmediate(MeshFilter.sharedMesh, true)`，把刚写好的 UV 网格一起销毁；detach 后对象不再是 ProBuilder 可编辑对象，且 `DontSave` 标记需恢复。
+
+**优化**：`probuilder.uv_atlas` 新增 `save_mesh`（默认 true）与 `mesh_path`（默认 `Assets/Generated/Meshes/<名称>_UvAtlas.asset`）。
+- 用 `AssetDatabase.CreateFolder` 逐级建目录（不触发全量 Refresh）；`CreateAsset` 保存；若 asset 已存在则 `EditorUtility.CopySerialized` 覆盖内容以**保持 GUID 稳定**，避免已保存场景 / 材质引用断裂。
+- detach 前设 `component.preserveMeshAssetOnDestroy = true`，销毁后把 `filter.hideFlags = HideFlags.None` 并重新绑定 asset Mesh。
+- `EditorSceneManager.MarkSceneDirty`；编排末尾 `scene.save` 落盘。
+- `probuilder.uv_info` 新增 `meshAssetPath` / `meshIsAsset` / `hasProBuilderMesh`，便于只读核实。
+- 结果：6 个 `.asset`；场景 6 个 `m_Mesh` 全部变成 `{fileID: 4300000, guid: …, type: 2}`；内嵌 Mesh 节点 **0**；场景 **597KB → 23.9KB**；`uv_info` 6/6 `meshIsAsset=true`。
+
+### 三、贴图里的重复图元
+
+三个叠加根因：
+
+1. **装饰按格子复制**：旧编排给每个 cell 都画 noise + 白条 + 星徽，6 个轮子 cell 各画一个大径向渐变圆，履带各画 6 条横线 → 十几个近乎相同的图元。
+2. **标签靠猜**：`matchTags` 只用包围盒中心距离且强制一对一（`used` 集合），没有尺寸信息，小轮子常被错配成车体类。
+3. **盒式投影切碎图案**：`box` 投影把每格拆成最多 6 个轴向子矩形，装饰却按整格拉伸 → 每个子面只显示图案的一块，出现「半圆、断线、缺角星」，看起来像一堆重复小图元。
+
+**优化**：
+- `uv_atlas` 返回 `face_rects`（每个实际使用的轴向面的 `rect` / `rect_px` / `axis_group`），贴图按面绘制而非按整格拉伸；底色仍按整格铺（纯色被切分不会出现碎片）。
+- 装饰改成**按坦克限量**：盟军星徽 1、白条 1、棱镜高光 1、伪装 2；轮子改为小轮毂点；履带节纹 6 → 3。
+- `matchTags` 改成「中心距离 + 包围盒尺寸」加权，且不再强制一对一。
+- `texgen.for_mesh` 新增 `fill_mode`：`background`（旧行为）| `nearest`（O(w·h) 多源 BFS，把未覆盖像素填成最近 UV 区域颜色），消除一圈圈岛轮廓与 mip 黑边；未覆盖像素本来不会被网格采样，填充是安全的。
+- 图层数 218 → 31~34，PNG 由 ~88KB 降到 ~9KB，贴图从「碎片 + 重复圆」变成完整分区色块。
+
+### 四、验证
+
+- 全量 C# 编译（Unity 2022.3.62f3c1 真实托管 DLL，Editor + TexGen + ProBuilder）**0 错误 / 0 警告**；技能 JS 回归 **66/66**；UV / padding / nearest 填充断言 **18/18**。
+- Unity 实机 `:8000` 重跑 6 辆：6 个 `.asset`、6 张互异 PNG、6 个材质 `_MainTex` 全部挂载；UV 岛 322–402，跨岛重叠 **0**，越界 **0**；`meshIsAsset` **6/6 true**。
+- 新增可复现编排 `docs/ra2_allied_build.js`（`--rebuild` 完整建模 / `--retexture` 复用现有网格 / `--only=<id>`），含写前 mtime 校验、业务错误区分、场景保存。
+
+### 五、仍存边界
+
+- 首次导入新 asset 时仍偶发丢响应（2/6），`status` 因账本随域重载清空返回 `unknown`；策略仍是「只读核实、不重放」，长耗时写建议走 `async_call` 门面。
+- `TgRasterizer` 每图层全画布遍历未改（保持既有渲染行为不变）；图层数需控制在几十量级，后续可做按包围盒裁剪。
+- 模型仍是图元组合低模，非 RA2 精灵级还原；装饰限量后贴图更素属预期，更高还原需按部件名/材质精确分组 + 3D 位置驱动图案。

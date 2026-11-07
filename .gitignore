@@ -27,3 +27,4 @@ SECRET_CLEANUP_GUIDE.md
 /server/uv.lock
 /server/.python-version
 /server/Dockerfile
+/.workbuddy
