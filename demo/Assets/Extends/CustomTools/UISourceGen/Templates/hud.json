@@ -1,0 +1,46 @@
+{
+  "name": "HUD",
+  "width": 1280,
+  "height": 720,
+  "tags": ["hud", "game", "overlay", "health", "progress", "minimap", "action", "badge"],
+  "background": "#101820",
+  "background_end": "#080c12",
+  "background_gradient": true,
+  "theme": {
+    "primary": "#ff5a5f",
+    "primary_end": "#c63b40",
+    "surface": "#1b1d24",
+    "surface_end": "#131519",
+    "on_surface": "#ffffff",
+    "border": "#ffffff2a",
+    "radius": 8
+  },
+  "controls": [
+    { "id": "health_label", "type": "label", "anchor": "bottomleft", "rect": [40, 66, 180, 22], "text": "HP 82%", "style": { "text_color": "#ffffff", "font_size": 16, "text_align": "left" } },
+    { "id": "health", "type": "progressbar", "anchor": "bottomleft", "rect": [40, 34, 320, 26], "value": 0.82,
+      "style": { "track_color": "#3a1416", "fill_color": "#ff5a5f", "fill_color_end": "#b8343a", "corner_radius": 13 } },
+    { "id": "ammo_badge", "type": "badge", "anchor": "bottomleft", "rect": [374, 32, 70, 28], "text": "12",
+      "style": { "background": "#3aa0ff", "corner_radius": 14, "text_color": "#ffffff", "font_weight": "bold" } },
+    { "id": "mana", "type": "progressbar", "anchor": "bottomleft", "rect": [40, 8, 260, 18], "value": 0.55,
+      "style": { "track_color": "#10243a", "fill_color": "#3aa0ff", "fill_color_end": "#1c6fd0", "corner_radius": 9 } },
+
+    { "id": "score", "type": "label", "anchor": "topcenter", "rect": [640, 24, 300, 34], "text": "SCORE 01230",
+      "style": { "text_color": "#ffe27a", "font_size": 26, "font_weight": "bold" } },
+    { "id": "combo", "type": "badge", "anchor": "topcenter", "rect": [640, 68, 110, 30], "text": "x3",
+      "style": { "background": "#ff8a3d", "corner_radius": 15, "text_color": "#1a1208", "font_weight": "bold" } },
+
+    { "id": "minimap", "type": "panel", "anchor": "topright", "rect": [40, 40, 260, 260],
+      "style": { "background": "#0c1a12", "border_color": "#2f6b46", "border_width": 2, "corner_radius": 6 } },
+    { "id": "minimap_label", "type": "label", "anchor": "topleft", "rect": [1000, 54, 200, 20], "text": "MAP",
+      "style": { "text_color": "#7fe0a0", "font_size": 14, "text_align": "left" } },
+    { "id": "btn_pause", "type": "button", "anchor": "topright", "rect": [40, 316, 48, 48], "icon": "gear",
+      "style": { "background": "#2a2d35", "corner_radius": 24 } },
+
+    { "id": "btn_attack", "type": "button", "anchor": "bottomright", "rect": [40, 40, 68, 68], "icon": "star",
+      "style": { "background": "#ff5a5f", "background_end": "#c63b40", "corner_radius": 34 } },
+    { "id": "btn_item", "type": "button", "anchor": "bottomright", "rect": [122, 46, 56, 56], "icon": "plus",
+      "style": { "background": "#2a2d35", "corner_radius": 28 } },
+    { "id": "btn_map", "type": "button", "anchor": "bottomright", "rect": [192, 50, 48, 48], "icon": "menu",
+      "style": { "background": "#2a2d35", "corner_radius": 24 } }
+  ]
+}

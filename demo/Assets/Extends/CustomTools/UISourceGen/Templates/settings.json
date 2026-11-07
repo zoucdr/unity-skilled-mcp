@@ -1,0 +1,41 @@
+{
+  "name": "Settings",
+  "width": 1024,
+  "height": 720,
+  "tags": ["settings", "preferences", "panel", "options", "config", "gear"],
+  "background": "#0f1115",
+  "background_end": "#0a0c10",
+  "theme": {
+    "primary": "#21c08b",
+    "primary_end": "#139a6e",
+    "surface": "#191b21",
+    "surface_end": "#14161b",
+    "on_surface": "#eef1f6",
+    "border": "#ffffff1a",
+    "radius": 10
+  },
+  "controls": [
+    { "id": "panel", "type": "panel", "anchor": "center", "rect": [512, 360, 880, 640] },
+    { "id": "title", "type": "label", "anchor": "topleft", "rect": [112, 62, 320, 38], "text": "Settings", "style": { "text_color": "#ffffff", "font_size": 26, "font_weight": "bold", "text_align": "left" } },
+    { "id": "divider_top", "type": "divider", "anchor": "topleft", "rect": [112, 118, 800, 2], "style": { "background": "#ffffff12" } },
+    { "id": "tab_graphics", "type": "tab", "anchor": "middleleft", "rect": [112, 162, 168, 44], "text": "Graphics", "selected": true },
+    { "id": "tab_audio", "type": "tab", "anchor": "middleleft", "rect": [292, 162, 168, 44], "text": "Audio" },
+    { "id": "tab_controls", "type": "tab", "anchor": "middleleft", "rect": [472, 162, 168, 44], "text": "Controls" },
+
+    { "id": "brightness_label", "type": "label", "anchor": "middleleft", "rect": [112, 266, 240, 24], "text": "Brightness", "style": { "text_color": "#c7ccd6", "font_size": 17, "text_align": "left" } },
+    { "id": "brightness", "type": "slider", "anchor": "middleleft", "rect": [452, 266, 460, 28], "value": 0.72 },
+
+    { "id": "volume_label", "type": "label", "anchor": "middleleft", "rect": [112, 336, 240, 24], "text": "Master Volume", "style": { "text_color": "#c7ccd6", "font_size": 17, "text_align": "left" } },
+    { "id": "volume", "type": "slider", "anchor": "middleleft", "rect": [452, 336, 460, 28], "value": 0.45 },
+
+    { "id": "vsync_label", "type": "label", "anchor": "middleleft", "rect": [112, 406, 400, 24], "text": "Enable V-Sync", "style": { "text_color": "#c7ccd6", "font_size": 17, "text_align": "left" } },
+    { "id": "vsync_toggle", "type": "toggle", "anchor": "middleleft", "rect": [856, 406, 56, 30], "checked": true },
+
+    { "id": "quality_label", "type": "label", "anchor": "middleleft", "rect": [112, 476, 240, 24], "text": "Quality", "style": { "text_color": "#c7ccd6", "font_size": 17, "text_align": "left" } },
+    { "id": "quality_dropdown", "type": "dropdown", "anchor": "middleleft", "rect": [452, 476, 460, 42], "text": "High", "items": ["Low", "Medium", "High", "Ultra"] },
+
+    { "id": "divider_bottom", "type": "divider", "anchor": "bottomleft", "rect": [112, 128, 800, 2], "style": { "background": "#ffffff12" } },
+    { "id": "cancel", "type": "button", "anchor": "bottomright", "rect": [296, 42, 180, 52], "text": "Cancel", "style": { "background": "#2a2d35", "corner_radius": 10 } },
+    { "id": "apply", "type": "button", "anchor": "bottomright", "rect": [96, 42, 180, 52], "text": "Apply", "style": { "background": "#21c08b", "background_end": "#139a6e", "corner_radius": 10 } }
+  ]
+}

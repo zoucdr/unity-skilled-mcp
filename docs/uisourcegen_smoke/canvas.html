@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>UISourceGen · 画布层 / SkiaSharp 2D 全能力</title>
+<style>
+  :root {
+    --bg: #0b0d11;
+    --panel: #14171d;
+    --line: #262b35;
+    --text: #e8ebf1;
+    --dim: #8b94a3;
+    --accent: #4d9fff;
+    --ok: #35c88a;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 40px 32px 72px;
+    background: var(--bg); color: var(--text);
+    font: 15px/1.6 -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+  }
+  header { max-width: 1180px; margin: 0 auto 36px; }
+  h1 { margin: 0 0 8px; font-size: 26px; letter-spacing: -.02em; }
+  h1 code { color: var(--accent); font-size: 22px; }
+  .lede { color: var(--dim); margin: 0; font-size: 14px; max-width: 78ch; }
+  .stats { display: flex; gap: 28px; margin-top: 24px; flex-wrap: wrap; }
+  .stat { border-left: 2px solid var(--accent); padding-left: 12px; }
+  .stat b { display: block; font-size: 20px; font-weight: 600; }
+  .stat span { color: var(--dim); font-size: 12px; text-transform: uppercase; letter-spacing: .06em; }
+
+  main { max-width: 1180px; margin: 0 auto; display: grid; gap: 26px; }
+  section {
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: 12px; overflow: hidden;
+  }
+  .head {
+    display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap;
+    padding: 16px 20px; border-bottom: 1px solid var(--line);
+  }
+  .head h2 { margin: 0; font-size: 17px; font-weight: 600; }
+  .head .tag {
+    font-size: 11px; letter-spacing: .06em; text-transform: uppercase;
+    color: var(--accent); border: 1px solid #29405e; border-radius: 999px;
+    padding: 2px 9px; background: #131c28;
+  }
+  .head .meta { color: var(--dim); font-size: 13px; margin-left: auto; }
+  .body { padding: 18px 20px 20px; }
+  .body img {
+    display: block; width: 100%; height: auto;
+    border-radius: 8px; border: 1px solid var(--line);
+    background: #000;
+  }
+  .desc { color: var(--dim); font-size: 13.5px; margin: 0 0 14px; }
+  .desc code {
+    color: #b8c4d6; background: #1b2029; border-radius: 4px;
+    padding: 1px 5px; font-size: 12.5px;
+  }
+  .checks { display: flex; gap: 18px; flex-wrap: wrap; margin-top: 12px; font-size: 12.5px; color: var(--dim); }
+  .checks b { color: var(--ok); font-weight: 600; }
+  table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--dim); font-weight: 500; font-size: 12px; text-transform: uppercase; letter-spacing: .05em; }
+  td code { color: #b8c4d6; background: #1b2029; border-radius: 4px; padding: 1px 5px; font-size: 12px; }
+  .defects { list-style: none; padding: 0; margin: 0; display: grid; gap: 12px; }
+  .defects li { padding-left: 34px; position: relative; font-size: 13.5px; color: #c2cad8; }
+  .defects li b {
+    position: absolute; left: 0; top: 1px;
+    width: 24px; height: 24px; border-radius: 6px;
+    background: #2a1a1a; border: 1px solid #5a2a2a; color: #ff8f8f;
+    display: grid; place-items: center; font-size: 12px;
+  }
+  .defects li i { color: var(--dim); font-style: normal; display: block; font-size: 12.5px; margin-top: 2px; }
+  footer { max-width: 1180px; margin: 40px auto 0; color: #5d6675; font-size: 12.5px; }
+
+  /* light theme follows the host */
+  @media (prefers-color-scheme: light) {
+    :root {
+      --bg: #f6f7f9; --panel: #ffffff; --line: #e2e6ec;
+      --text: #1a1f28; --dim: #67707e; --accent: #1f6fd0; --ok: #128a52;
+    }
+    .head .tag { background: #eaf2fd; border-color: #bfd8f6; }
+    .desc code, td code { background: #eef1f5; color: #33404f; }
+    .defects li { color: #3a4451; }
+    .defects li b { background: #fdeaea; border-color: #f3c2c2; color: #c0392b; }
+    footer { color: #8d95a2; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1><code>uisourcegen</code> · 画布层 —— SkiaSharp 2D 全能力</h1>
+  <p class="lede">
+    控件层只画「已经想好的 16 个部件」。画布层把 SkiaSharp 的绘制原语全部摊开成声明式 JSON：
+    16 种图元、8 种填充、28 种混合模式、4 种模糊、5 种图像滤镜、4 种路径效果，
+    外加变换 / 裁剪 / 图层合成，导出 png / jpg / webp / bmp / gif 与多页 PDF。
+    以下每一张图都由一次 <code>uisourcegen.draw</code> 调用产出。
+  </p>
+  <div class="stats">
+    <div class="stat"><b>7</b><span>新增动作</span></div>
+    <div class="stat"><b>16</b><span>图元类型</span></div>
+    <div class="stat"><b>28</b><span>混合模式</span></div>
+    <div class="stat"><b>9</b><span>源文件 · 0 错误 0 警告</span></div>
+    <div class="stat"><b>6/6</b><span>往返一致性</span></div>
+  </div>
+</header>
+
+<main>
+
+  <section>
+    <div class="head">
+      <h2>图元总览</h2>
+      <span class="tag">shapes</span>
+      <span class="meta">860 × 480 · 10 种图元</span>
+    </div>
+    <div class="body">
+      <p class="desc">
+        矩形 / 圆角矩形 / 圆 / 椭圆 / 线段 / 扇形弧 / SVG 路径曲线 / 实心多边形 / 折线 / 散点。
+        第二行末尾两个三角形演示 <code>x</code>/<code>y</code> 会整体平移点列——同一份 <code>points</code> 放到不同位置。
+      </p>
+      <img src="canvas/shapes.png" alt="shapes">
+      <div class="checks"><span><b>✓</b> 278 色</span><span><b>✓</b> 尺寸 = 声明值</span><span><b>✓</b> 多边形实心填充</span></div>
+    </div>
+  </section>
+
+  <section>
+    <div class="head">
+      <h2>填充与着色器</h2>
+      <span class="tag">gradients</span>
+      <span class="meta">860 × 350 · 7 种 paint</span>
+    </div>
+    <div class="body">
+      <p class="desc">
+        线性 / 径向 / 扫描 / 双点锥形四种渐变，四段显式 stop 的彩虹渐变，
+        以及分形噪波与湍流两种 <code>PerlinNoise</code> 着色器。
+      </p>
+      <img src="canvas/gradients.png" alt="gradients">
+      <div class="checks"><span><b>✓</b> 9081 色（确实在插值）</span><span><b>✓</b> jpg / webp 编码器可用</span></div>
+    </div>
+  </section>
+
+  <section>
+    <div class="head">
+      <h2>效果合成</h2>
+      <span class="tag">effects</span>
+      <span class="meta">800 × 540 · 滤镜 / 混合 / 路径效果 / 裁剪</span>
+    </div>
+    <div class="body">
+      <p class="desc">
+        投影（<code>CreateDropShadow</code>）、掩膜模糊、multiply 与 screen 混合、
+        虚线 / trim 局部线段 / discrete 抖动虚线三种路径效果、30% 透明度、
+        绕枢轴旋转的组、圆形裁剪与圆角裁剪各一。
+        底部两块遮罩里的渐变用 <code>space:"canvas"</code> 铺满整个裁剪区。
+      </p>
+      <img src="canvas/effects.png" alt="effects">
+      <div class="checks"><span><b>✓</b> 897 色</span><span><b>✓</b> 4 种路径效果</span><span><b>✓</b> 裁剪不覆盖元素 box</span></div>
+    </div>
+  </section>
+
+  <section>
+    <div class="head">
+      <h2>文字排版</h2>
+      <span class="tag">text</span>
+      <span class="meta">800 × 530 · 7 种排版</span>
+    </div>
+    <div class="body">
+      <p class="desc">
+        大标题、中文与渐变字、描边字形（先描边后填充两遍）、盒子内居中与右对齐、
+        沿曲线路径排布的文字、带投影的文字。
+      </p>
+      <img src="canvas/text.png" alt="text">
+      <div class="checks"><span><b>✓</b> 中文正常</span><span><b>✓</b> 描边可见</span><span><b>✓</b> 路径文字</span></div>
+    </div>
+  </section>
+
+  <section>
+    <div class="head">
+      <h2>内置矢量图标</h2>
+      <span class="tag">icons</span>
+      <span class="meta">640 × 460 · 12 个</span>
+    </div>
+    <div class="body">
+      <p class="desc">
+        控件层与画布层共用同一套 <code>IconLibrary</code>，全部用 SkiaSharp 基本图元手绘，无外部资源。
+      </p>
+      <img src="canvas/icons.png" alt="icons">
+      <div class="checks"><span><b>✓</b> 12/12 可辨识</span></div>
+    </div>
+  </section>
+
+  <section>
+    <div class="head">
+      <h2>逐顶点渐变网格</h2>
+      <span class="tag">mesh</span>
+      <span class="meta">780 × 330 · vertices</span>
+    </div>
+    <div class="body">
+      <p class="desc">
+        <code>DrawVertices</code> 的逐顶点着色：三角形三色插值，四边形用 <code>indices</code> 指定两个三角形。
+      </p>
+      <img src="canvas/mesh.png" alt="mesh">
+      <div class="checks"><span><b>✓</b> 22340 色</span><span><b>✓</b> 索引三角化</span></div>
+    </div>
+  </section>
+
+  <section>
+    <div class="head">
+      <h2>图片合成</h2>
+      <span class="tag">composite</span>
+      <span class="meta">760 × 260 · 3 种用法</span>
+    </div>
+    <div class="body">
+      <p class="desc">
+        左：图片缩放绘制。右上：图片作为 <code>repeat</code> 平铺着色器填满矩形。
+        右下：同一张图以 <code>screen</code> 混合叠在渐变上。
+      </p>
+      <img src="canvas/composite.png" alt="composite">
+      <div class="checks"><span><b>✓</b> 1461 色</span><span><b>✓</b> 图片 shader</span><span><b>✓</b> 混合叠加</span></div>
+    </div>
+  </section>
+
+  <section>
+    <div class="head">
+      <h2>动作一览</h2>
+      <span class="tag">api</span>
+    </div>
+    <div class="body">
+      <table>
+        <tr><th>动作</th><th>说明</th></tr>
+        <tr><td><code>uisourcegen.draw</code></td><td>单张画布 → 图片（png/jpg/webp/bmp/gif）+ <code>canvas.json</code> 回写，可重放</td></tr>
+        <tr><td><code>uisourcegen.draw_batch</code></td><td>多张画布，各自一个子目录</td></tr>
+        <tr><td><code>uisourcegen.pdf</code></td><td>多页 PDF（<code>SKDocument.CreatePdf</code>，矢量）</td></tr>
+        <tr><td><code>uisourcegen.svg</code></td><td>SVG 路径数据按包围盒自动定尺寸栅格化</td></tr>
+        <tr><td><code>uisourcegen.measure</code></td><td>文本宽度 / 上下降部 / 行高；路径长度与包围盒</td></tr>
+        <tr><td><code>uisourcegen.fonts</code></td><td>系统字体族枚举 + 默认字体路径</td></tr>
+        <tr><td><code>uisourcegen.canvas_spec</code></td><td>画布语法骨架、图元 / paint / 混合 / 效果枚举</td></tr>
+        <tr><td><code>uisourcegen.canvas_examples</code></td><td>一份可直接投喂 <code>draw</code> 的示例</td></tr>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <div class="head">
+      <h2>这轮修掉的 7 个真实缺陷</h2>
+      <span class="tag">debug log</span>
+    </div>
+    <div class="body">
+      <ul class="defects">
+        <li><b>1</b><code>line</code> 的 <code>to</code> 用了绝对坐标
+          <i>一条 210px 的短线画成横穿整个画布的长斜线</i></li>
+        <li><b>2</b><code>polygon</code> 填充被静默丢弃
+          <i><code>SKCanvas.DrawPoints</code> 只能描边；实心三角形被画成三条边，改走 SKPath 两遍</i></li>
+        <li><b>3</b>SVG path 不吃 <code>x,y</code>
+          <i><code>ParseSvgPathData</code> 出来的路径停在原点，补 <code>Offset</code></i></li>
+        <li><b>4</b>顶点网格不吃 <code>x,y</code>
+          <i>同上，<code>vertices</code> 也无法整体平移</i></li>
+        <li><b>5</b>描边文字完全不可见
+          <i>描边色藏在 fill paint 的 <code>stroke_color</code> 里，而绘制用的是 fill 的透明 <code>color</code>；解析期拆成独立 stroke，文字改先描边后填充</i></li>
+        <li><b>6</b><code>SKAutoCanvasRestore(cv, false)</code> 是空操作
+          <i>构造传 <code>false</code> 就不 Save，Dispose 里永远不恢复——一个自称"自动恢复"的结构什么都没做</i></li>
+        <li><b>7</b><code>SKTileMode</code> 不存在
+          <i>SkiaSharp 2.88.9 里叫 <code>SKShaderTileMode</code>，只在真编译时现形</i></li>
+      </ul>
+    </div>
+  </section>
+
+</main>
+
+<footer>
+  验证方式：临时 dotnet 工程引用真实 <code>CanvasModel / CanvasParser / CanvasRenderer</code> 渲染并断言；
+  另一临时工程引用真实 MCP 框架源码 + 真实 Unity 2022.3.62f3c1 程序集 + 真实 SkiaSharp.dll 编译全部 9 个源文件。
+  PDF 已断言（2 页、<code>%PDF</code> 头）但未入库：逐顶点网格会让矢量 PDF 膨胀到 12 MB。
+</footer>
+
+</body>
+</html>

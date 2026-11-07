@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>UISourceGen · 5 个界面模板</title>
+<style>
+  :root {
+    --bg: #0b0d11;
+    --panel: #14171d;
+    --line: #262b35;
+    --text: #e8ebf1;
+    --dim: #8b94a3;
+    --accent: #4d9fff;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 40px 32px 64px;
+    background: var(--bg); color: var(--text);
+    font: 15px/1.6 -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+  }
+  header { max-width: 1180px; margin: 0 auto 36px; }
+  h1 { margin: 0 0 8px; font-size: 26px; letter-spacing: -.02em; }
+  h1 code { color: var(--accent); font-size: 22px; }
+  .lede { color: var(--dim); margin: 0; font-size: 14px; }
+  .stats { display: flex; gap: 28px; margin-top: 20px; flex-wrap: wrap; }
+  .stat { border-left: 2px solid var(--accent); padding-left: 12px; }
+  .stat b { display: block; font-size: 20px; font-weight: 600; }
+  .stat span { color: var(--dim); font-size: 12px; text-transform: uppercase; letter-spacing: .06em; }
+
+  main { max-width: 1180px; margin: 0 auto; display: grid; gap: 28px; }
+  section {
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: 12px; overflow: hidden;
+  }
+  .head {
+    display: flex; align-items: baseline; gap: 12px;
+    padding: 16px 20px; border-bottom: 1px solid var(--line);
+  }
+  .head h2 { margin: 0; font-size: 17px; font-weight: 600; }
+  .head .file { color: var(--dim); font-size: 13px; font-family: ui-monospace, Consolas, monospace; }
+  .head .meta { margin-left: auto; color: var(--dim); font-size: 12px; }
+  .shot { display: block; width: 100%; height: auto; background: #05070a; }
+  .thumbs {
+    display: flex; gap: 8px; padding: 14px 20px; overflow-x: auto;
+    border-top: 1px solid var(--line); background: #101318;
+  }
+  .thumbs figure { margin: 0; flex: 0 0 auto; text-align: center; }
+  .thumbs img {
+    height: 44px; width: auto; display: block;
+    background: repeating-conic-gradient(#1b1f26 0% 25%, #14171d 0% 50%) 50% / 12px 12px;
+    border: 1px solid var(--line); border-radius: 4px; padding: 3px;
+  }
+  .thumbs figcaption {
+    font-size: 10px; color: var(--dim); margin-top: 4px;
+    max-width: 100px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  footer { max-width: 1180px; margin: 40px auto 0; color: var(--dim); font-size: 13px; }
+  footer code { color: var(--accent); }
+</style>
+</head>
+<body>
+
+<header>
+  <h1><code>uisourcegen</code> · 5 个界面模板</h1>
+  <p class="lede">
+    全部由 <strong>SkiaSharp</strong> 程序化绘制，非截图、非文生图。
+    每个控件按状态导出带透明边距的切图，并生成配套 <code>layout.json</code>（含 9-slice）。
+  </p>
+  <div class="stats">
+    <div class="stat"><b>5</b><span>templates</span></div>
+    <div class="stat"><b>64</b><span>controls</span></div>
+    <div class="stat"><b>145</b><span>sprites</span></div>
+    <div class="stat"><b>16 × 9</b><span>types × anchors</span></div>
+    <div class="stat"><b>0</b><span>compile errors</span></div>
+  </div>
+</header>
+
+<main>
+
+  <section>
+    <div class="head">
+      <h2>登录</h2>
+      <span class="file">login.json</span>
+      <span class="meta">960 × 600 · 10 控件</span>
+    </div>
+    <img class="shot" src="templates/login/preview.png" alt="登录界面预览">
+    <div class="thumbs">
+      <figure><img src="templates/login/login_normal.png" alt=""><figcaption>login_normal</figcaption></figure>
+      <figure><img src="templates/login/login_pressed.png" alt=""><figcaption>login_pressed</figcaption></figure>
+      <figure><img src="templates/login/user_normal.png" alt=""><figcaption>user_normal</figcaption></figure>
+      <figure><img src="templates/login/remember_normal.png" alt=""><figcaption>remember_normal</figcaption></figure>
+      <figure><img src="templates/login/lang_normal.png" alt=""><figcaption>lang_normal</figcaption></figure>
+      <figure><img src="templates/login/card_normal.png" alt=""><figcaption>card_normal</figcaption></figure>
+    </div>
+  </section>
+
+  <section>
+    <div class="head">
+      <h2>设置</h2>
+      <span class="file">settings.json</span>
+      <span class="meta">1024 × 720 · 17 控件</span>
+    </div>
+    <img class="shot" src="templates/settings/preview.png" alt="设置界面预览">
+    <div class="thumbs">
+      <figure><img src="templates/settings/tab_graphics_selected.png" alt=""><figcaption>tab_selected</figcaption></figure>
+      <figure><img src="templates/settings/brightness_normal.png" alt=""><figcaption>slider</figcaption></figure>
+      <figure><img src="templates/settings/vsync_toggle_normal.png" alt=""><figcaption>toggle</figcaption></figure>
+      <figure><img src="templates/settings/quality_dropdown_normal.png" alt=""><figcaption>dropdown</figcaption></figure>
+      <figure><img src="templates/settings/apply_normal.png" alt=""><figcaption>apply</figcaption></figure>
+      <figure><img src="templates/settings/divider_top_normal.png" alt=""><figcaption>divider</figcaption></figure>
+    </div>
+  </section>
+
+  <section>
+    <div class="head">
+      <h2>HUD</h2>
+      <span class="file">hud.json</span>
+      <span class="meta">1280 × 720 · 12 控件 · 四角布局</span>
+    </div>
+    <img class="shot" src="templates/hud/preview.png" alt="HUD 界面预览">
+    <div class="thumbs">
+      <figure><img src="templates/hud/health_normal.png" alt=""><figcaption>health</figcaption></figure>
+      <figure><img src="templates/hud/mana_normal.png" alt=""><figcaption>mana</figcaption></figure>
+      <figure><img src="templates/hud/ammo_badge_normal.png" alt=""><figcaption>badge</figcaption></figure>
+      <figure><img src="templates/hud/btn_attack_normal.png" alt=""><figcaption>btn_attack</figcaption></figure>
+      <figure><img src="templates/hud/combo_normal.png" alt=""><figcaption>combo</figcaption></figure>
+      <figure><img src="templates/hud/minimap_normal.png" alt=""><figcaption>minimap</figcaption></figure>
+    </div>
+  </section>
+
+  <section>
+    <div class="head">
+      <h2>主菜单</h2>
+      <span class="file">mainmenu.json</span>
+      <span class="meta">1280 × 720 · 10 控件</span>
+    </div>
+    <img class="shot" src="templates/mainmenu/preview.png" alt="主菜单预览">
+    <div class="thumbs">
+      <figure><img src="templates/mainmenu/play_normal.png" alt=""><figcaption>play</figcaption></figure>
+      <figure><img src="templates/mainmenu/play_hover.png" alt=""><figcaption>play_hover</figcaption></figure>
+      <figure><img src="templates/mainmenu/play_disabled.png" alt=""><figcaption>play_disabled</figcaption></figure>
+      <figure><img src="templates/mainmenu/quit_normal.png" alt=""><figcaption>quit</figcaption></figure>
+      <figure><img src="templates/mainmenu/lang_normal.png" alt=""><figcaption>lang</figcaption></figure>
+      <figure><img src="templates/mainmenu/divider_normal.png" alt=""><figcaption>divider</figcaption></figure>
+    </div>
+  </section>
+
+  <section>
+    <div class="head">
+      <h2>商店</h2>
+      <span class="file">shop.json</span>
+      <span class="meta">1100 × 740 · 15 控件</span>
+    </div>
+    <img class="shot" src="templates/shop/preview.png" alt="商店界面预览">
+    <div class="thumbs">
+      <figure><img src="templates/shop/card_sword_normal.png" alt=""><figcaption>card</figcaption></figure>
+      <figure><img src="templates/shop/sword_price_normal.png" alt=""><figcaption>price badge</figcaption></figure>
+      <figure><img src="templates/shop/sword_buy_normal.png" alt=""><figcaption>buy</figcaption></figure>
+      <figure><img src="templates/shop/coins_normal.png" alt=""><figcaption>coins</figcaption></figure>
+      <figure><img src="templates/shop/scroll_normal.png" alt=""><figcaption>scrollbar</figcaption></figure>
+      <figure><img src="templates/shop/close_normal.png" alt=""><figcaption>close</figcaption></figure>
+    </div>
+  </section>
+
+</main>
+
+<footer>
+  生成方式：<code>uisourcegen.templates</code> 取模板 → <code>uisourcegen.render</code> 出图。
+  切图带透明边距（容阴影与描边），可直接作为 Unity Sprite 导入并按 <code>layout.json</code> 的
+  <code>slice</code> 设为 Sliced Image。
+</footer>
+
+</body>
+</html>

@@ -1,0 +1,12 @@
+{
+  "name": "com.unity-skilled.skiasharp",
+  "version": "2.88.9",
+  "displayName": "SkiaSharp (Unity Skilled)",
+  "description": "SkiaSharp 2.88.9 managed assembly plus the win-x64 native binding, vendored locally so Unity-Skilled modules (e.g. UISourceGen) can draw with Skia without a NuGet restore. Managed DLL auto-assembles into the com.unity-skilled.skiasharp assembly; the native lib is placed under Plugins/x86_64 for Windows 64-bit.",
+  "unity": "2021.3",
+  "dependencies": {},
+  "keywords": ["skia", "skiasharp", "2d", "drawing", "ui", "graphic"],
+  "author": {
+    "name": "Unity Skilled"
+  }
+}

@@ -49,7 +49,7 @@
 | 场景层级 | `scene` | hierarchy、gameobject、scene、component、object |
 | 资源资产 | `assets` | terrain、prefab、mesh、model、material、audio、script、sprite_atlas、scriptable_object、shader、texture、**texgen、probuilder**（扩展） |
 | 动画与特效 | `animation` | animator、effects、anim_clip、particle |
-| 界面 | `ui` | ui、ugui、**figma、ui_rule**（扩展） |
+| 界面 | `ui` | ui、ugui、**figma、ui_rule、uisourcegen**（扩展） |
 | 编辑器 | `editor` | console、camera、scene_view、game_view、editor |
 | 运行与调试 | `runtime` | gameplay、engine、tests |
 | 项目工程 | `project` | project、package、tag_layer |
@@ -58,7 +58,7 @@
 ### 三、改动清单
 
 - **包内 39 个模块**的 `GroupEn` / `GroupZh` 全部改写：`ResEdit/` 下 13 个资源类拆入 场景层级 / 资源资产 / 动画与特效；`Hierarchy/`（3）、`Projet/`（3）、`Window/`（3）、`Setting/`（3）、`Storage/`（2）、`RunCode/`（2）、`UI/`（2）、`Console/`（1）及根级 `BaseEditorTool` / `EngineTool` / `GamePlayTool` / `ObjectTool` / `HttpTool` / `TestsTool` 逐一套用新组。
-- **demo 扩展 7 个模块**同套分组：`texgen` / `probuilder` → 资源资产，`figma` / `ui_rule` → 界面，`cmd` / `asset_index` / `webpage` → 系统工具。
+- **demo 扩展 8 个模块**同套分组：`texgen` / `probuilder` → 资源资产，`figma` / `ui_rule` / `uisourcegen` → 界面，`cmd` / `asset_index` / `webpage` → 系统工具。
 - **测试夹具同步**：`McpDiscoveryTests.cs` 的 `[CapabilityTags("Scene", ...)]`、`ToolNameAttribute(..., "Scene", "场景层级")` 与断言标签 `hierarchy-management` → `scene`；否则稳定标签断言会失败。
 - **注释同步**：`ToolNameAttribute.cs` 参数文档示例由旧组名改为 `Scene` / `Assets`。
 - **文档同步**：`README.zh-CN.md` 工具分类表重写为 8 分组表格 + 扩展模块归组说明；示例 `[ToolModule("animator", ...)]` 的 `GroupZh` 由「动画」→「动画与特效」（`README.md` 同步）；`docs/index.html` 工具生态卡片重排为 8 组 + 新增分组标签徽标，`docs/styles.css` 补 `.tool-tag` 样式与 `h4` flex 对齐；`unity-package/Unity3d_MCP_用户使用指南.md` 分类表由旧 10 类改为 8 分组。
@@ -744,3 +744,262 @@ Unity 2022.3.62f3c1 实机逐张渲染核对（`demo/Assets/CannonBirdDemo/Textu
 - `hex` 在 tiling 下靠「列数取偶 + 行数取整」闭合两轴，格子会有几个百分点的各向异性拉伸；带 `rotation` 的图案（含斜纹 `denim`）无法保证严格无缝，因为旋转后的周期不再与画布轴对齐。
 - `wood_grain` 与 `marble_stone` 本质是「条纹 + 强扭曲」，能出直纹木与脉络大理石，但做不出年轮、树节这类拓扑特征；要更真需引入外部位图采样（当前渲染器不支持读图）。
 - 图案仍走「每图层全画布遍历」，`hex` 每像素 9 次邻域查询，512² 约 2.3 秒；2048² 会明显变慢。
+
+## 本轮：UISourceGen —— SkiaSharp UI 控件图 + 布局 JSON 引擎
+
+> 用户：「我还需要一套生成 ui 控件的工具，希望集成 SkiaSharp 库，然后提供一套类似 texgen 的工具系统，供 mcp 和技能访问」；「我要的是生 ui 控件图以及 ui 界面对应的布局 json 即可，可以叫 UISourceGen」
+
+### 一、定位与边界
+
+TexGen 画的是「贴图」（像素级程序化纹理，最终是材质输入）；UISourceGen 画的是「控件」（可直接进 Unity UI 的切图 + 摆放数据）。两者共用同一套 MCP 工具形状（`spec` / `examples` / `templates`），但渲染后端换成 **SkiaSharp**：TexGen 自己写光栅化，UISourceGen 用成熟的 2D 矢量 + 文字引擎，代价是引入一个原生依赖。
+
+**只做两件事，不做 UGUI 生成**：输出控件图 PNG + 对应 `layout.json`。不在场景里建 GameObject、不挂 Image/Button 组件 —— 用户明确要「图 + JSON」，把「怎么用」留给调用方。
+
+### 二、依赖
+
+SkiaSharp 2.88.9 vendored 进仓库，不走 NuGet 还原：
+
+| 文件 | 来源 | 说明 |
+| --- | --- | --- |
+| `demo/Packages/com.unity-skilled.skiasharp/SkiaSharp.dll` | NuGet `skiasharp/2.88.9/lib/netstandard2.0/` | 托管程序集，全平台 |
+| `demo/Packages/com.unity-skilled.skiasharp/Plugins/x86_64/libSkiaSharp.dll` | NuGet `skiasharp.nativeassets.win32/2.88.9/runtimes/win-x64/native/` | 原生库，`.meta` 里 PluginImporter 限定 `Win + x86_64`，其他平台 `enabled: 0` |
+
+包的 `SkiaSharp.dll.meta` 是普通 Managed Plugin，原生库用 `platformData` 关掉 `Any`、只开 `Win/x86_64`，避免 Unity 把它当 AnyCPU 打进 Linux/Android 包。`manifest.json` 加 `"com.unity-skilled.skiasharp": "file:com.unity-skilled.skiasharp"`（embedded 包本可自动发现，写进去是为了让依赖关系显式可见）。
+
+### 三、文件
+
+`demo/Assets/Extends/CustomTools/UISourceGen/`（4 源，**无 asmdef**——本项目 Assets 下统一编进 `Assembly-CSharp`，加 asmdef 反而会把 `UniMcp` 引用切断）：
+
+| 文件 | 职责 |
+| --- | --- |
+| `UiGenModel.cs` | 纯数据：`UiControlType`（16 种）/ `UiState`（6 态）/ `UiAnchor`（9 锚点）/ `UiColor`（hex、`r,g,b,a`、数组三种解析）/ `UiStyle`（含 `Merge`/`Clone`）/ `UiTheme` / `UiControl` / `UiScreen` |
+| `UiGenRenderer.cs` | 纯 .NET + SkiaSharp，**零 Unity 依赖**，因此能独立跑验证。`Surface()` 一个原语包办阴影+渐变+圆角+描边；`Text()` / `TextWithIcon()` 自带缩放适配；`DrawIcon()` 内置 12 个矢量图标；`RenderControls` / `RenderControl` / `RenderScreenPreview` |
+| `UiGenParser.cs` | 容错 JSON → 模型。每个字段都有 fallback，坏值只记 warning 不抛 |
+| `UiGenTool.cs` | MCP 模块，5 个动作 + 落盘 + `AssetDatabase` 导入 |
+
+### 四、动作
+
+工具分两层。**控件层**把常见 UI 部件一键成图；**画布层**开放 SkiaSharp 的全部 2D 绘制能力，任何图都能拼。两层共用 `uisourcegen` 前缀与同一个模块实例。
+
+**控件层**（5 个）：
+
+| 动作 | 参数 | 产出 |
+| --- | --- | --- |
+| `uisourcegen.render` | `screen`(require) `output_dir` `base_name` `preview` `supersample` `select_asset` | 每控件 × 每状态的 PNG + `preview.png` + `layout.json` |
+| `uisourcegen.batch` | `screens`(require) `output_dir` `preview` `supersample` | 多界面各自一个子目录 |
+| `uisourcegen.spec` | — | 语法骨架 + 16 种 `control_types` + 图标名列表 |
+| `uisourcegen.examples` | — | 一份可直接用的登录界面 spec |
+| `uisourcegen.templates` | `tag` `name` | 读 `Templates/*.json`，返回原文供直接投喂 `render` |
+
+**画布层**（7 个）：
+
+| 动作 | 参数 | 产出 |
+| --- | --- | --- |
+| `uisourcegen.draw` | `canvas`(require) `output_dir` `base_name` `format` `quality` `name_suffix` `supersample` `select_asset` | 一张图（png/jpg/webp/bmp/gif）+ `canvas.json` 回写 |
+| `uisourcegen.draw_batch` | `canvases`(require) `output_dir` `format` `quality` `supersample` | 每张画布一个子目录 |
+| `uisourcegen.pdf` | `canvases`(require) `output_dir` `base_name` | 多页 PDF |
+| `uisourcegen.svg` | `path`(require) `output_dir` `base_name` `width` `height` `fill` `stroke` `stroke_width` `padding` `supersample` | SVG 路径按包围盒自动定尺寸栅格化 |
+| `uisourcegen.measure` | `text` `path` `font_size` `font_path` `font_family` `bold` `text_scale_x` | 文本宽度/上下降部/行高，路径长度与包围盒 |
+| `uisourcegen.fonts` | `filter` | 系统字体族列表 + 默认字体路径 |
+| `uisourcegen.canvas_spec` / `uisourcegen.canvas_examples` | — | 画布语法骨架 / 可直接投喂的示例 |
+
+默认给交互控件（button/toggle/checkbox/radio/tab/slider/dropdown/input）出 `normal` + `hover` + `pressed` + `disabled` 四态；非交互控件（panel/card/label/icon/divider/progressbar/scrollbar/badge）只出 `normal`。`states` 里显式写到的状态额外追加。
+
+### 五、这轮踩到并修掉的设计缺陷
+
+初版跑通但**排版全错**，逐张核对预览图后才定位到三个真问题，都不是「渲染 bug」而是**模型语义没定清楚**：
+
+**1. 9 个锚点只实现了 `center`**
+`Left()` 原本只写 `Anchor == Center ? X - W/2 : X`，于是 `topright` / `bottomleft` 当普通左上角算。HUD 的血条设 `bottomleft` + `y=660` 直接被画到 720 高的画布外，齿轮按 `topright` + `x=940` 落在屏幕中间。
+改成 `Left(screenW)` / `Top(screenH)`：右列锚点 `X` 表示**距右边缘的间隙**（`screenW - X - W`），下排锚点 `Y` 表示**距下边缘的间隙**（`screenH - Y - H`），中间行/列按中心。这样同一份 JSON 换 `width/height` 仍然贴边，而不是绝对坐标写死。
+
+**2. 字号不随控件走**
+下拉框 `38` 高配主题 `font_size: 22`，`English` 加 `chevron` 直接顶出边框。`MakeTextPaint` 加 `boxH` 参数，字号上限 `boxH * 0.58`；`Text()` 里再按可用宽度等比缩一次（下限 0.6 倍），最后才 `FitText()` 加省略号。徽章更极端（`h=28` 装 `1200`），单独把上限压到 `h * 0.52`。改完 `1200` / `800` / `650` 全部完整显示，无省略号。
+
+**3. 轨道色和填充色没有独立语义**
+初版进度条把 `background` 当槽、`background_end` 当填充，于是「深红槽 + 亮红填充」被渲染成整个条都是渐变。补 `track_color` / `fill_color` / `fill_color_end` 三个样式令牌：槽恒为纯色 `FillRoundRectColored`，只有填充走 `FillRoundRectGradient`。滑块、开关、滚动条同样受益。
+
+顺带修的两处：`Surface()` 里 `MaskFilter` 用了 `blur` 而非 `blur * 0.5`（阴影过散）；`SKTextAlign` 被误写成返回 `float` 的辅助函数（编译不过，`ToSkAlign` 改为返回 `SKTextAlign`）。
+
+### 六、验证
+
+**双轨验证**，因为这台机器有 Unity 但没在编辑器里点开：
+
+1. **渲染正确性** —— 临时 dotnet 工程 `uisrc_test` 引用真实 `UiGenModel/UiGenRenderer/UiGenParser` + 一份 `UniMcp` JSON stub，逐模板渲染并做结构断言（frame 必须落在图内、PNG 不能为空、9-slice 不超过 frame 的 1/3）：
+
+```
+hud        ok   24 images
+login      ok   25 images
+mainmenu   ok   28 images
+settings   ok   44 images
+shop       ok   24 images
+ALL CHECKS PASSED
+```
+
+2. **Unity 侧可编译性** —— 临时工程 `uigen_unity` 引用 **真实 MCP 框架源码**（`ToolModuleBase` / `ToolAttributes` / `ToolContext` / `MethodKey` / `Response` / `SimpleJson` / `LocalizationHelper`）+ **真实 Unity 2022.3.62f3c1 的 `UnityEngine.dll`、`UnityEngine.CoreModule.dll`、`UnityEditor.dll`** + 真实 `SkiaSharp.dll`，编译 UISourceGen 四个源文件：**0 错误 0 警告**。这一步抓到了 `Response` 实际在 `UniMcp.Models` 命名空间（初版漏 `using`）、`GetString` 少传 `fallback` 参数、`SKFont.GetMetrics` 应为属性等一堆在 Unity 里才会报的错。
+
+产物留在 `docs/uisourcegen_smoke/templates/<模板>/{控件_状态.png, preview.png}`。
+
+### 七、模板库
+
+`Templates/*.json`（5 个，结构即 `render` 的 `screen` 入参，可直接投喂）：
+
+| 模板 | 画布 | 控件 | 要点 |
+| --- | --- | --- | --- |
+| `login` | 960×600 | 10 | 卡片 + 标题/副标 + 双输入 + 开关行 + 主按钮 + 链接 + 语言下拉 |
+| `settings` | 1024×720 | 17 | 面板 + 三 Tab（选中态带底部高亮条）+ 三条 slider 行 + toggle + dropdown + 顶/底分隔线 + 双按钮 |
+| `hud` | 1280×720 | 12 | 四角布局：左下血/蓝条 + 弹药徽章，顶部居中分数/连击，右上小地图 + 齿轮，右下三个圆形按钮 |
+| `mainmenu` | 1280×720 | 10 | 大标题 + 分隔线 + 四枚堆叠按钮（Play 主色/Quit 危险色）+ 右上齿轮+语言 |
+| `shop` | 1100×740 | 15 | 双商品卡（卡内标题/描述/价格徽章/Buy）+ 币值徽章 + 关闭 + 竖向滚动条 |
+
+模板里的坐标全部按真实锚点语义书写（右/下锚点写「间隙」），所以改 `width/height` 后仍然贴边。
+
+### 八、仍存边界
+
+- **只出图不出 UI**。`layout.json` 给了 `id/type/anchor/rect/text/icon/value/checked/selected/image/slice/states`，但把它变成 `RectTransform` 的活留给调用方。`slice` 是 `[L,T,R,B]`，可直接喂 `Image.Type.Sliced` + `sprite.border`，但**没有自动写 `.meta` 的 sprite border**——导入设置仍需人工或另写一段。
+- **SkiaSharp 原生库只带了 win-x64**。macOS / Linux 编辑器要补对应 `runtimes/*/native/libSkiaSharp.dylib|so`，否则 `SKSurface.Create` 会在目标平台抛 `DllNotFoundException`。
+- **单行文字**。没有换行、没有富文本、没有字距调整；超长文本靠缩小 + 省略号兜底。多行段落得拆成多个 `label`。
+- **图标是手写矢量**。12 个内置图标（check/cross/arrow/chevron-down/star/menu/play/plus/minus/search/gear/heart）够做原型，不够做正式图标集；真图标建议走 `texgen` 出图或直接引 SVG。
+- **没有九宫格拉伸的实际验证**。`slice` 数值按「圆角 + 描边、不超过 1/3」算出并断言过，但没在 Unity 的 `Image.Type.Sliced` 里实拉一次看边缘。
+
+### 九、画布层：把 SkiaSharp 的全部 2D 能力开放给 MCP
+
+控件层只能画「已经想好的 16 个部件」。要真正把 SkiaSharp 用起来，需要一层通用的、声明式的绘图 DSL —— 让 Agent 用 JSON 描述任意 2D 图形，而不是每次都新增一个控件类型。
+
+#### 9.1 图元（16 种 `shape`）
+
+| shape | 几何语义 |
+| --- | --- |
+| `rect` / `roundrect` | `x,y,w,h` 矩形；roundrect 另取 `radius` |
+| `circle` / `oval` | `x,y` 是**外框原点**，`w,h` 是直径；也可只给 `radius` |
+| `line` | `x,y` 起点 + `to:[dx,dy]` |
+| `arc` | 外框 + `start_angle` + `sweep`；有填充时走 `useCenter` 扇形，只有描边时走弧线 |
+| `path` | `path` 字段给 SVG path data，或 `points` 给局部点列 |
+| `polygon` / `polyline` / `points` | 局部点列 + `x,y` 整体偏移 |
+| `text` / `textOnPath` | 有 `w,h` 时按盒子对齐（水平三种 + 垂直居中），无盒子时 `x,y` 即基线 |
+| `icon` | 12 个内置矢量图标 |
+| `image` / `imageNinePatch` | 项目内或绝对路径图片，可选九宫格 |
+| `vertices` | 逐顶点着色的渐变网格（可选 `indices`） |
+| `group` | 容器，向下继承 transform / clip / paint |
+
+**所有点列都是局部坐标**：`x,y` 平移整个元素。这个决定是必须的 —— 初版把 `points` 当绝对坐标，导致一个多边形无法整体挪位置，只能改每一个点。
+
+#### 9.2 填充（`fill` / `stroke`）
+
+8 种 paint：`solid`、`linear`、`radial`、`sweep`、`twoPointConical`（`conical` 别名）、`noise`、`image`、`none`。每个 paint 同时携带：
+
+- 颜色：`color` / `color2` / `stops:[[offset,"#hex"],...]`
+- 几何：`from`/`to`/`x0,y0,x1,y1`/`radius`/`start_angle`/`end_angle`
+- 噪波：`base_freq`/`octaves`/`seed`/`turbulence`/`stitch`
+- 描边：`stroke`/`stroke_width`/`stroke_color`/`cap`/`join`/`miter`
+- 混合与抗锯齿：`blend`（28 种 SKBlendMode）/ `antialias` / `dither`
+- 模糊：`blur` + `blur_style`（Normal/Solid/Outer/Inner）
+- 图像滤镜：`filter` = `blur`/`dropshadow`/`offset`/`dilate`/`erode` + `sigma_x/y`/`dx`/`dy`/`radius`/`shadow_color`
+- 路径效果：`path_effect` = `dash`/`corner`/`discrete`/`trim` + `dash`/`dash_phase`/`trim_start`/`trim_end`
+- 着色器矩阵：`shader_matrix`（6 或 9 个数）
+- 坐标系：`space` = `object`（默认，锚点相对图形框）/ `canvas`（画布坐标）
+
+`space` 是这轮补的：裁剪遮罩里想让渐变铺满整块遮罩，就必须用画布坐标；而普通图形又希望渐变跟着图形走。两种都要，所以做成显式开关而不是猜。
+
+#### 9.3 变换 / 裁剪 / 合成
+
+- 变换：`translate` → `rotate` → `scale` → `skew` → `matrix`，围绕 `pivot_x/pivot_y`（默认元素中心）。给 `matrix` 时其余全部跳过。
+- 裁剪：`clip:{shape,rect|radius,even_odd}`。**几何字段独立**（`ClipX/Y/W/H`），不覆盖元素自身的 box —— 初版复用了 `X/Y/W/H`，给一个图形加裁剪会顺手把它挪走。
+- 合成：`layer:{opacity,blend}` 走 `SaveLayer`；裸 `opacity` 也走 SaveLayer（整棵子树统一透明度，而不是每个图元各自乘一次）。
+
+#### 9.4 编码与文档
+
+`draw` 支持 png / jpg / webp / bmp / gif，`quality` 对损率格式生效。`pdf` 走 `SKDocument.CreatePdf` 出多页文档。两张画布 800×530 + 860×480 的 PDF 是 12 MB —— PDF 里文字和渐变都是矢量对象，体积主要来自逐顶点网格，合理。
+
+`draw` 每次都写一份 `canvas.json` 回写：把解析后的模型序列化成同一套 JSON。这不是日志，是**可重放的产物** —— 消费方拿它就能重建完全相同的图，也顺便当了解析器的往返测试。
+
+#### 9.5 这轮修掉的 7 个真实缺陷
+
+全部是**看着图才发现的**，单测数字都不会报错：
+
+**1. `line` 的终点是绝对坐标**
+`to:[dx,dy]` 文档写的是相对，代码里直接 `DrawLine(e.X, e.Y, e.X1, e.Y1)`，一条 210px 的短线画成了横穿整个画布的长斜线。
+
+**2. `polygon` 填充被静默丢弃**
+`SKCanvas.DrawPoints` 只能描边（`SKPointMode.Polygon` 是"连成折线"不是"填充多边形"）。实心三角形被画成三条边。改成检测到 `polygon` 就走 `SKPath` + 独立 fill/stroke 两遍。
+
+**3. SVG path 不吃 `x,y`**
+`ParseSvgPathData` 出来的路径停在原点，加 `Offset(e.X, e.Y)` 才跟别的图元一致。
+
+**4. 顶点网格不吃 `x,y`**
+同上，`vertices` 也补了偏移。
+
+**5. 描边文字完全不可见**
+`fill:{"color":"#00000000","stroke":true,"stroke_width":2,"stroke_color":"#4ecdc4"}` —— 颜色透明、描边色在 `stroke_color` 里。原来的 `MakeTextPaint` 用 fill 的 `Color`，于是画了个全透明的字。修法：把「描边藏在 fill paint 里」这种写法在解析期拆成独立的 `stroke` paint，并且文本绘制改成**先描边后填充**两遍。
+
+**6. `SKAutoCanvasRestore(cv, false)` 是空操作**
+构造传 `false` 就不 Save，`Dispose` 里 `_count >= 0` 永远不成立 —— 一个自称"自动恢复"的结构什么都没做。改成 `true`。
+
+**7. `SKTileMode` 不存在**
+SkiaSharp 2.88.9 里叫 `SKShaderTileMode`。这类错误只在真编译时才现形。
+
+顺带：`MakeShader` 在裁剪组里坐标基准混乱 → 引入 `space` 开关；`ReadClip` 不再覆盖元素几何。
+
+#### 9.6 验证
+
+`docs/uisourcegen_smoke/canvas/` 下 8 张产物 + 1 个 PDF，由 8 份文档驱动：
+
+| 文档 | 覆盖 | 断言 |
+| --- | --- | --- |
+| `shapes.png` | 10 种图元 + x/y 偏移 | 278 色，尺寸 = 声明值 |
+| `gradients.png` | 4 种渐变 + 多 stop + 分形噪波 + 湍流 | 9081 色（渐变确实在插值） |
+| `effects.png` | 投影/模糊/混合/虚线/trim/discrete/透明度/旋转组/圆与圆角裁剪 | 897 色 |
+| `text.png` | 标题/中文/渐变字/描边字/盒子对齐/路径文字/投影字 | 373 色 |
+| `icons.png` | 12 个内置图标 | 全部可辨识 |
+| `mesh.png` | 逐顶点着色的三角形与四边形 | 22340 色 |
+| `composite.png` | 图片缩放 / 图片作平铺着色器 / 图片 screen 混合叠加 | 1461 色 |
+| `gradients.jpg/.webp` | 有损编码器 | 均可解码 |
+| `multi_page.pdf` | 多页 PDF | 有 `%PDF` 头，2 页 |
+| roundtrip | 6 份文档解析 → 序列化 → 再解析 | 6/6 几何与 shape 完全一致 |
+
+同时 Unity 侧编译（真实 MCP 框架源码 + 真实 Unity 2022.3.62f3c1 程序集 + 真实 SkiaSharp.dll）覆盖全部 **9 个源文件**：**0 错误 0 警告**。
+
+#### 9.7 边界
+
+- **没有 SVG 文件解析**。只有 `SKPath.ParseSvgPathData`（路径数据），不解析 `<svg>` 文档、不做 `<use>`/`<style>`/CSS。要完整 SVG 得引 `Svg.Skia`。
+- **没有 SkSL 运行时着色器**。`SKRuntimeEffect` 在 2.88.9 里存在，但没有开放；复杂效果只能拼内置 shader + 滤镜 + 混合。
+- **没有 GPU 后端**。全程 CPU 光栅化，`GRContext` 完全没碰。
+- **噪波只能单色调制**。`CreatePerlinNoise*` 产出灰度，我用 `Modulate` 叠一层颜色，所以做不出双色噪波图；要双色得用 `ColorFilter.CreateTable` 手搓映射。
+- **PDF 里逐顶点网格会膨胀**。矢量化的三角网格每个三角形都是独立填充，12 MB 的 PDF 主要是它。
+
+### 9.8 Unity 侧运行时：三个导致「渲染失败」的真实故障
+
+dotnet 临时工程里全部通过，不等于 Unity 里可用。在真实 Unity 2021.3.45f2c1 编辑器里跑 `uisourcegen.draw` 时连续踩到三个独立缺陷，全部已修。
+
+**故障一：原生插件平台键无效，`libSkiaSharp` 从未被加载。**
+现象：`渲染失败：The type initializer for 'SkiaSharp.SKImageInfo' threw an exception.`，内层是 `DllNotFoundException: libSkiaSharp`；`Get-Process` 的 `Modules` 里找不到该模块。
+根因：`Plugins/x86_64/libSkiaSharp.dll.meta` 的 `platformData` 写了 `Win:`，而 Unity 认的键是 `Editor: Editor` / `Standalone: Win64`。`Win` 是无效键被静默忽略，`Any` 又被 `enabled: 0` 关掉，于是插件在所有平台都不导入，`DllImport` 自然找不到库。
+修法：平台条目改为 `Any: 0` + `Editor: Editor`（`CPU: x86_64`）+ `Standalone: Win64`，随后 `AssetDatabase.ImportAsset(..., ForceUpdate)` 重导入。
+排错要点：`TypeInitializationException` 在 AppDomain 内**永久缓存**，首次失败后所有后续调用都只是重放旧异常；改完必须触发域重载（`engine.recompile`）才能重新验证，否则会误判「改了没用」。
+附：`libSkiaSharp.dll` 的导入表只有 `ole32 / FONTSUB / USER32 / KERNEL32`，**没有 MSVC 运行库依赖**（CRT 静态链接），所以「缺 VC++ 运行库」不是本故障原因；两处二进制的 md5 与 NuGet 官方 2.88.9 win-x64 完全一致。
+
+**故障二：`ProjectPath` 前缀偏移错一位，产物写到盘符根目录。**
+现象：工具返回 `success: true` 且 `image: Assets/UISourceGen/x/x.png`，但工程里没有文件；实际落在 `E:/UISourceGen/x/x.png`。
+根因：`assetsPath.Substring(6)` 切掉了 6 个字符，而 `"Assets/".Length == 7`。剩下部分以 `/` 开头，`Path.Combine` 视其为**根路径**并丢弃前面的 `Application.dataPath`，于是拼出 `/x/x.png`，最终写到当前盘符根。
+修法：改为 `Length > 7 ? Substring(7) : ""`，并加注释说明为什么不能切 6。
+
+**故障三：`[ToolAction]` 参数串用竖线拼接，只暴露第一个参数。**
+现象：`uisourcegen.draw` 的 `inputSchema.properties` 只有 `canvas`，`output_dir` / `format` / `quality` / `supersample` 等全部不可见；`measure` 连 `text` 都没有，schema 为空。
+根因：`[ToolAction("draw", "canvas=require|output_dir|format|...")]` 把一串参数当成了 `params string[]` 的**单个元素**。`ToolActionAttribute` 只按数组元素拆分，不按 `|` 拆；框架 `BuildSpec` 拿整个 `"canvas=require|output_dir|..."` 去 `KeyIndex` 里查，只匹配不到前缀之外的名字，最终只解析出 `canvas`，其余静默丢弃。
+修法：全部改为每参数一个字符串元素，如 `[ToolAction("draw", "canvas=require", "output_dir", "base_name", "format", "quality", "name_suffix", "supersample", "select_asset")]`。13 个动作逐条改完，`templates` 另补注册此前缺失的 `name` 键。
+
+**回归结果（Unity 2021.3.45f2c1，真实编辑器进程内）**
+
+| 动作 | 参数暴露 | 实测 |
+| --- | --- | --- |
+| `render` | 6 项，`screen` 必填 | 3 控件 → 7 文件（含 4 态切图 + `layout.json`）|
+| `batch` / `draw_batch` | 4 / 5 项 | 2 画布批量落盘 |
+| `draw` | 8 项，`canvas` 必填 | 720×420，渐变/径向/锥形/文字/阴影/路径全对 |
+| `pdf` | 3 项 | 2 页，12.4 MB，`%PDF` 头有效 |
+| `svg` | 9 项 | 路径栅格化 300×100 |
+| `measure` | 8 项 | 文本 153.75×42.23、路径长 288.68 |
+| `fonts` | 1 项 | 282 族，`default_path` 正确 |
+| `templates` / `examples` / `canvas_examples` / `spec` / `canvas_spec` | 2 / 0 / 0 / 0 / 0 | 均返回可用内容 |
+
+证据图见 `docs/uisourcegen_smoke/unity_env/`：`canvas_full.png`（画布层全能力）、`controls_preview.png`（控件层整屏合成，含中英文文字）。
+

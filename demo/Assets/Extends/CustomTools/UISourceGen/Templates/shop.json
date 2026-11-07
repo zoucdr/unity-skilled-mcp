@@ -1,0 +1,52 @@
+{
+  "name": "Shop",
+  "width": 1100,
+  "height": 740,
+  "tags": ["shop", "store", "catalog", "product", "card", "price", "buy", "inventory"],
+  "background": "#0e1014",
+  "background_end": "#08090c",
+  "theme": {
+    "primary": "#ffb020",
+    "primary_end": "#e08a00",
+    "surface": "#181b22",
+    "surface_end": "#121419",
+    "on_surface": "#f2f3f7",
+    "border": "#ffffff1a",
+    "radius": 12
+  },
+  "controls": [
+    { "id": "header", "type": "label", "anchor": "topleft", "rect": [56, 34, 300, 40], "text": "Shop",
+      "style": { "text_color": "#ffffff", "font_size": 28, "font_weight": "bold", "text_align": "left" } },
+    { "id": "coins", "type": "badge", "anchor": "topright", "rect": [112, 34, 130, 40], "text": "1200", "icon": "star",
+      "style": { "background": "#3a2f12", "corner_radius": 20, "text_color": "#ffd166", "font_size": 17 } },
+    { "id": "close", "type": "button", "anchor": "topright", "rect": [46, 34, 42, 42], "icon": "cross",
+      "style": { "background": "#23262f", "corner_radius": 21 } },
+    { "id": "divider", "type": "divider", "anchor": "topleft", "rect": [56, 96, 988, 2],
+      "style": { "background": "#ffffff14" } },
+
+    { "id": "card_sword", "type": "card", "anchor": "topleft", "rect": [56, 128, 452, 380],
+      "style": { "surface": "#181b22" } },
+    { "id": "sword_title", "type": "label", "anchor": "topleft", "rect": [88, 156, 388, 28], "text": "Plasma Sword",
+      "style": { "text_color": "#ffffff", "font_size": 20, "font_weight": "bold", "text_align": "left" } },
+    { "id": "sword_desc", "type": "label", "anchor": "topleft", "rect": [88, 190, 388, 22], "text": "Energy blade · +18 ATK",
+      "style": { "text_color": "#8b93a1", "font_size": 15, "text_align": "left" } },
+    { "id": "sword_price", "type": "badge", "anchor": "bottomleft", "rect": [88, 96, 120, 34], "text": "800", "icon": "star",
+      "style": { "background": "#3a2f12", "corner_radius": 17, "text_color": "#ffd166", "font_size": 16 } },
+    { "id": "sword_buy", "type": "button", "anchor": "bottomright", "rect": [88, 96, 160, 46], "text": "Buy",
+      "style": { "background": "#ffb020", "background_end": "#e08a00", "corner_radius": 12, "text_color": "#1a1205", "font_weight": "bold" } },
+
+    { "id": "card_shield", "type": "card", "anchor": "topleft", "rect": [592, 128, 452, 380],
+      "style": { "surface": "#181b22" } },
+    { "id": "shield_title", "type": "label", "anchor": "topleft", "rect": [624, 156, 388, 28], "text": "Aegis Shield",
+      "style": { "text_color": "#ffffff", "font_size": 20, "font_weight": "bold", "text_align": "left" } },
+    { "id": "shield_desc", "type": "label", "anchor": "topleft", "rect": [624, 190, 388, 22], "text": "Reactive plating · +24 DEF",
+      "style": { "text_color": "#8b93a1", "font_size": 15, "text_align": "left" } },
+    { "id": "shield_price", "type": "badge", "anchor": "bottomleft", "rect": [624, 96, 120, 34], "text": "650", "icon": "star",
+      "style": { "background": "#3a2f12", "corner_radius": 17, "text_color": "#ffd166", "font_size": 16 } },
+    { "id": "shield_buy", "type": "button", "anchor": "bottomright", "rect": [624, 96, 160, 46], "text": "Buy",
+      "style": { "background": "#ffb020", "background_end": "#e08a00", "corner_radius": 12, "text_color": "#1a1205", "font_weight": "bold" } },
+
+    { "id": "scroll", "type": "scrollbar", "anchor": "topright", "rect": [18, 128, 14, 560], "value": 0.28,
+      "style": { "track_color": "#1c1f27", "fill_color": "#5b6472", "corner_radius": 7 } }
+  ]
+}

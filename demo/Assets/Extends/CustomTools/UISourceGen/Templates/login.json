@@ -1,0 +1,29 @@
+{
+  "name": "Login",
+  "width": 960,
+  "height": 600,
+  "tags": ["login", "auth", "signin", "form", "account", "welcome"],
+  "background": "#121319",
+  "background_end": "#080a0e",
+  "theme": {
+    "primary": "#3399F5",
+    "primary_end": "#1f66da",
+    "surface": "#1c1d22",
+    "surface_end": "#15161a",
+    "on_surface": "#f2f3f7",
+    "border": "#ffffff22",
+    "radius": 12
+  },
+  "controls": [
+    { "id": "card", "type": "card", "anchor": "center", "rect": [480, 330, 520, 440] },
+    { "id": "title", "type": "label", "anchor": "center", "rect": [480, 150, 420, 40], "text": "Welcome Back", "style": { "text_color": "#ffffff", "font_size": 30, "font_weight": "bold" } },
+    { "id": "subtitle", "type": "label", "anchor": "center", "rect": [480, 195, 420, 24], "text": "Sign in to continue", "style": { "text_color": "#aab1bd", "font_size": 16 } },
+    { "id": "user", "type": "input", "anchor": "center", "rect": [480, 245, 420, 52], "text": "Username" },
+    { "id": "pass", "type": "input", "anchor": "center", "rect": [480, 315, 420, 52], "text": "Password" },
+    { "id": "remember", "type": "toggle", "anchor": "middleleft", "rect": [292, 372, 56, 30], "checked": true },
+    { "id": "remember_label", "type": "label", "anchor": "middleleft", "rect": [360, 372, 220, 22], "text": "Remember me", "style": { "text_color": "#c7ccd6", "font_size": 15, "text_align": "left" } },
+    { "id": "login", "type": "button", "anchor": "center", "rect": [480, 432, 420, 56], "text": "Login", "style": { "background": "#3399F5", "background_end": "#1f66da", "corner_radius": 12 } },
+    { "id": "forgot", "type": "label", "anchor": "center", "rect": [480, 488, 260, 22], "text": "Forgot password?", "style": { "text_color": "#6cb6ff", "font_size": 15 } },
+    { "id": "lang", "type": "dropdown", "anchor": "center", "rect": [480, 530, 220, 38], "text": "English", "items": ["English", "中文", "日本語"] }
+  ]
+}

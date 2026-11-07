@@ -1,0 +1,42 @@
+{
+  "name": "MainMenu",
+  "width": 1280,
+  "height": 720,
+  "tags": ["mainmenu", "menu", "title", "start", "play", "home", "navigation"],
+  "background": "#10131a",
+  "background_end": "#05070b",
+  "theme": {
+    "primary": "#7c5cff",
+    "primary_end": "#5236d6",
+    "surface": "#1a1d27",
+    "surface_end": "#14161e",
+    "on_surface": "#f3f4f8",
+    "border": "#ffffff14",
+    "radius": 14
+  },
+  "controls": [
+    { "id": "title", "type": "label", "anchor": "center", "rect": [640, 178, 620, 72], "text": "STARFALL",
+      "style": { "text_color": "#ffffff", "font_size": 56, "font_weight": "bold" } },
+    { "id": "subtitle", "type": "label", "anchor": "center", "rect": [640, 248, 520, 26], "text": "A procedural universe awaits",
+      "style": { "text_color": "#9aa3b2", "font_size": 18 } },
+    { "id": "divider", "type": "divider", "anchor": "center", "rect": [640, 292, 180, 2],
+      "style": { "background": "#ffffff1f" } },
+
+    { "id": "play", "type": "button", "anchor": "center", "rect": [640, 358, 340, 64], "text": "Play",
+      "style": { "background": "#7c5cff", "background_end": "#5236d6", "corner_radius": 16, "font_size": 22, "font_weight": "bold" } },
+    { "id": "options", "type": "button", "anchor": "center", "rect": [640, 446, 340, 56], "text": "Options",
+      "style": { "background": "#23262f", "corner_radius": 14, "font_size": 19 } },
+    { "id": "customize", "type": "button", "anchor": "center", "rect": [640, 518, 340, 56], "text": "Customize",
+      "style": { "background": "#23262f", "corner_radius": 14, "font_size": 19 } },
+    { "id": "quit", "type": "button", "anchor": "center", "rect": [640, 590, 340, 56], "text": "Quit",
+      "style": { "background": "#2a1417", "corner_radius": 14, "text_color": "#ff8a8f", "font_size": 19 } },
+
+    { "id": "settings_icon", "type": "button", "anchor": "topright", "rect": [214, 36, 44, 44], "icon": "gear",
+      "style": { "background": "#23262f", "corner_radius": 22 } },
+    { "id": "lang", "type": "dropdown", "anchor": "topright", "rect": [30, 36, 170, 40], "text": "English",
+      "items": ["English", "中文", "日本語", "Español"] },
+
+    { "id": "version", "type": "label", "anchor": "bottomleft", "rect": [40, 34, 260, 20], "text": "v1.0.0 build 248",
+      "style": { "text_color": "#5b6472", "font_size": 13, "text_align": "left" } }
+  ]
+}

@@ -247,7 +247,7 @@ unity-runtime-package/Runtime/
 >
 > `capability` 为**内置自省模块**，把 MCP 三原语（tools / prompts / resources）的管理面暴露给 AI：`list` 发现、`get` 查详情、`set` 启停（工具支持整组前缀，如 `texgen`）、`save` / `remove` 增删可配置的提示词与资源、`settings` 读写通用设置。改动即时重发现并失效列表缓存；`capability.set` 为恢复通道，禁止自锁禁用。
 
-demo 工程另含 `demo/Assets/Extends/CustomTools/` 下的**自定义扩展工具示例**（不随包分发，演示如何扩展）：`cmd` (1)、`asset_index` (9)、`webpage` (7)、`figma` (4)、`ui_rule` (5)、`probuilder` (16，需 ProBuilder 包；含 `uv_atlas` / `uv_info` 两项 UV 图集工具，把合并后的网格按连通部件排成互不重叠的 UV 布局，并把重建后的 Mesh 持久化为 `.asset`)，以及 `texgen` (11)——**程序化贴图引擎**：矢量图元 + SDF 光栅化 + 渐变/噪波/图案/混合，导出 PNG（纯 C#，零外部依赖）；支持无缝平铺、域扭曲、整套 PBR 派生、按 Mesh 的 UV 布局分区绘制，并内置 33 个可检索的表面模板。demo 合计 7 模块 / 53 动作。`docs/ra2_allied_build.js` 是这些扩展的端到端验证脚本（红警2 盟军坦克）。
+demo 工程另含 `demo/Assets/Extends/CustomTools/` 下的**自定义扩展工具示例**（不随包分发，演示如何扩展）：`cmd` (1)、`asset_index` (9)、`webpage` (7)、`figma` (4)、`ui_rule` (5)、`probuilder` (16，需 ProBuilder 包；含 `uv_atlas` / `uv_info` 两项 UV 图集工具，把合并后的网格按连通部件排成互不重叠的 UV 布局，并把重建后的 Mesh 持久化为 `.asset`)，以及 `texgen` (11)——**程序化贴图引擎**：矢量图元 + SDF 光栅化 + 渐变/噪波/图案/混合，导出 PNG（纯 C#，零外部依赖）；支持无缝平铺、域扭曲、整套 PBR 派生、按 Mesh 的 UV 布局分区绘制，并内置 33 个可检索的表面模板；以及 `uisourcegen` (12)——**SkiaSharp 双引擎**：**控件层**把 `{width,height,theme,controls:[...]}` 渲染成每个控件每个状态的透明切图 PNG 并产出配套 `layout.json`（含 9-slice 边框），内置 5 个界面模板（登录/设置/HUD/主菜单/商店）；**画布层**把 SkiaSharp 的全部 2D 能力开放给 MCP——16 种图元（矩形/圆角/圆/椭圆/线/弧/路径/多边形/折线/散点/文字/路径文字/图标/图片/九宫格/逐顶点网格/组）、8 种填充（纯色/线性/径向/扫描/双点锥形/噪波/图片/无）、28 种混合模式、4 种模糊、5 种图像滤镜、4 种路径效果、变换/裁剪/图层合成，导出 png/jpg/webp/bmp/gif 与多页 PDF，并提供 `svg` 路径栅格化、`measure` 文本与路径测量、`fonts` 字体枚举。demo 合计 8 模块 / 65 动作。`docs/ra2_allied_build.js` 是这些扩展的端到端验证脚本（红警2 盟军坦克）。
 
 > `probuilder.uv_atlas` 默认把重建后的 Mesh 存为 `.asset`（`save_mesh` / `mesh_path` 可配），返回每格与每个轴向面的矩形 `face_rects`；`uv_info` 可只读核实 `meshIsAsset`。贴图应按 `face_rects` 逐面绘制，否则盒式投影会把一整幅图案切成六块碎片。
 >
@@ -255,7 +255,13 @@ demo 工程另含 `demo/Assets/Extends/CustomTools/` 下的**自定义扩展工�
 >
 > `texgen` 新增四项能力：① `tiling=true` 让噪波与图案在画布边界闭合，噪声格数吸附为整数，产出可直接平铺的 PNG；② `fill="pattern"` 提供 `brick` / `plank` / `tile` / `checker` / `stripe` / `hex` / `scale` / `weave` / `dot` / `cobble` 十种周期图案，配 `cell` / `gap` / `gapColor` / `stagger` / `variation`；③ 图层级 `warp`（域扭曲）把直线条纹弯成木纹、胞状噪波扭成大理石脉络；④ `texgen.pbr` 一次渲染派生 `BaseColor` / `Height` / `Normal` / `Roughness` / `AO` / `ORM` 六张图并按通道设置导入参数。`texgen.templates` 检索 `Templates/*.json` 模板库（33 个，覆盖地面/墙面/金属/织物/自然/UI/图标），按 `tag` 过滤或按 `name` 取单个 spec 直接投喂 `render` / `pbr`。
 
-> 扩展模块与内置模块共用同一套分组：`figma` / `ui_rule` 归 **界面**，`texgen` / `probuilder` 归 **资源资产**，`cmd` / `asset_index` / `webpage` 归 **系统工具**。接入后直接出现在对应 `groups` 标签下。
+> 扩展模块与内置模块共用同一套分组：`figma` / `ui_rule` / `uisourcegen` 归 **界面**，`texgen` / `probuilder` 归 **资源资产**，`cmd` / `asset_index` / `webpage` 归 **系统工具**。接入后直接出现在对应 `groups` 标签下。
+
+> `uisourcegen` 需要 `com.unity-skilled.skiasharp` 包（已 embedded 在 `demo/Packages/`，含托管 `SkiaSharp.dll` 与 win-x64 原生 `libSkiaSharp.dll`）。
+>
+> **控件层 5 个动作**：`render`（单界面）/ `batch`（多界面）/ `spec`（语法）/ `examples`（示例）/ `templates`（模板检索）。控件支持 16 种类型 × 9 锚点；交互控件自动出 `normal` / `hover` / `pressed` / `disabled` 四态；产出目录含各状态切图、`preview.png` 整屏合成图与 `layout.json`（`id/type/anchor/rect/text/icon/value/checked/selected/image/slice/states`，`slice` 可直接喂 `Image.Type.Sliced`）。`supersample` 控抗锯齿倍数（1-4，默认 2），图像带与描边等宽透明边距，坐标以屏幕像素计。
+>
+> **画布层 7 个动作**：`draw`（单张画布 → png/jpg/webp/bmp/gif + `canvas.json` 回写）/ `draw_batch`（多张）/ `pdf`（多页 PDF）/ `svg`（SVG 路径按包围盒自动定尺寸栅格化）/ `measure`（文本宽度、上下部、行高，路径长度与包围盒）/ `fonts`（系统字体枚举）/ `canvas_spec` + `canvas_examples`（语法与示例）。元素用 `"elements":[{shape:"roundrect",x:..,fill:{paint:"linear",...}}]` 描述，新动作 `draw` 不接受 `screen` 对象。所有点列为局部坐标、`x,y` 整体平移；裁剪几何独立于元素 box；渐变锚点用 `space:"canvas"` 可切到画布坐标。
 
 ---
 
