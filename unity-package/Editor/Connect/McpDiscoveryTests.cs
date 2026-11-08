@@ -499,9 +499,10 @@ namespace UniMcp
                 Check(response["result"] != null, "旧 MCP 列表仍兼容返回: " + method);
             }
             Check(type.GetMethod("BuildPromptDetailResult", flags).Invoke(service, new object[] { "disabled" }) == null, "get_prompt 拒绝快照外提示词");
-            var missingPrompt = Json.Parse((string)type.GetMethod("HandlePromptsGet", flags).Invoke(service, new object[] {
+            // prompts/get 已改为 async（正文需回主线程求值），反射调用后取值需先展开 Task。
+            var missingPrompt = Json.Parse(((System.Threading.Tasks.Task<string>)type.GetMethod("HandlePromptsGet", flags).Invoke(service, new object[] {
                 "1", new JsonClass { { "name", new JsonData("disabled") } }
-            }));
+            })).GetAwaiter().GetResult());
             Check(missingPrompt["error"]["code"].AsInt == -32602, "prompts/get 拒绝快照外提示词");
             foreach (string name in new[] { "get_prompt", "get_resource", "get_tool" })
             {

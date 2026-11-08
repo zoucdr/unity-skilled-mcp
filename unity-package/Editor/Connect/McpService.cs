@@ -520,6 +520,57 @@ namespace UniMcp
         }
 
         /// <summary>
+        /// 把需要 Unity 编辑器 API 的求值搬到主线程执行。
+        /// HTTP 请求在后台线程处理，直接读 Application.dataPath 等会抛
+        /// "get_dataPath can only be called from the main thread"，提示词正文按需解析工程路径时即命中此坑。
+        /// </summary>
+        private Task<T> RunOnMainThreadAsync<T>(Func<T> func, int timeoutSeconds = 15)
+        {
+            if (IsMainThread())
+            {
+                return Task.FromResult(func());
+            }
+
+            // 让等待方在线程池续跑，避免主线程出队时内联执行 HTTP 响应写回逻辑。
+            var tcs = new TaskCompletionSource<T>(TaskCreationOptions.RunContinuationsAsynchronously);
+            EnqueueTask(() =>
+            {
+                try
+                {
+                    tcs.TrySetResult(func());
+                }
+                catch (Exception ex)
+                {
+                    tcs.TrySetException(ex);
+                }
+            });
+
+            return AwaitWithTimeout(tcs.Task, timeoutSeconds);
+        }
+
+        /// <summary>
+        /// 等待主线程求值，超时即报错，避免请求线程被编辑器阻塞时无限挂起。
+        /// 编辑器未在 update 中出队（如导入、域重载期间）时不会等到结果。
+        /// </summary>
+        private static async Task<T> AwaitWithTimeout<T>(Task<T> task, int timeoutSeconds)
+        {
+            if (task.IsCompleted)
+            {
+                return await task;
+            }
+
+            Task finished = await Task.WhenAny(task, Task.Delay(TimeSpan.FromSeconds(timeoutSeconds)));
+            if (finished != task)
+            {
+                throw new TimeoutException(L.T(
+                    $"Main thread did not evaluate in {timeoutSeconds}s (editor busy or reloading).",
+                    $"主线程 {timeoutSeconds}s 内未完成求值（编辑器忙或正在域重载）。"));
+            }
+
+            return await task;
+        }
+
+        /// <summary>
         /// 处理消息队列中的任务
         /// </summary>
         private void ProcessMessageQueue()
@@ -2505,7 +2556,7 @@ namespace UniMcp
                             break;
 
                         case "prompts/get":
-                            result = HandlePromptsGet(id, paramsNode);
+                            result = await HandlePromptsGet(id, paramsNode);
                             break;
 
                         case "resources/list":
@@ -2992,7 +3043,7 @@ namespace UniMcp
         /// <summary>
         /// 处理prompts/get请求
         /// </summary>
-        private string HandlePromptsGet(string id, JsonNode paramsNode)
+        private async Task<string> HandlePromptsGet(string id, JsonNode paramsNode)
         {
             try
             {
@@ -3016,6 +3067,14 @@ namespace UniMcp
                     return CreateMcpErrorResponse(id, -32602, $"Prompt not found: {promptName}");
                 }
 
+                // 提示词正文可能按需解析 Unity 工程路径（Application.dataPath），必须在主线程求值。
+                var promptDetail = await RunOnMainThreadAsync(() => new
+                {
+                    prompt.Name,
+                    prompt.Description,
+                    prompt.PromptText
+                });
+
                 var result = new JsonClass();
                 
                 // 检查是否启用描述信息
@@ -3023,7 +3082,7 @@ namespace UniMcp
                 
                 if (enableDescriptions)
                 {
-                    result.Add("description", new JsonData(prompt.Description));
+                    result.Add("description", new JsonData(promptDetail.Description));
                 }
                 // 禁用描述时不添加 description 字段，节省 token
 
@@ -3034,7 +3093,7 @@ namespace UniMcp
 
                 var content = new JsonClass();
                 content.Add("type", new JsonData("text"));
-                content.Add("text", new JsonData($"This is the {prompt.Name} prompt: {prompt.PromptText}"));
+                content.Add("text", new JsonData($"This is the {promptDetail.Name} prompt: {promptDetail.PromptText}"));
 
                 var contentArray = new JsonArray();
                 contentArray.Add(content);
