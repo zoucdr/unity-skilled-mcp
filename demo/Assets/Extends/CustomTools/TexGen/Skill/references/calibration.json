@@ -1,0 +1,47 @@
+{
+  "measured_at": "2026-11-08T11:34:57.360Z",
+  "project": "E:/unity3d-skilled-mcp/demo",
+  "canvas": {
+    "width": 512,
+    "height": 512
+  },
+  "y_axis": "up",
+  "x_axis": "right",
+  "origin": {
+    "topLeft": {
+      "origin_px": [
+        0,
+        0
+      ]
+    },
+    "center": {
+      "origin_px": [
+        256,
+        256
+      ],
+      "verified": true
+    }
+  },
+  "evidence": {
+    "center[128,128] 的红色块质心": {
+      "x": 127.5,
+      "y": 383.5,
+      "pixels": 25600
+    },
+    "center[384,384] 的蓝色块质心": {
+      "x": 383.5,
+      "y": 127.5,
+      "pixels": 25600
+    },
+    "origin=center 时 center[0,0] 的绿色块质心": {
+      "x": 255.5,
+      "y": 255.5,
+      "pixels": 25600
+    }
+  },
+  "rules": {
+    "layer_y": "y 向上：canvas_y = originY + y，y=0 在画布底边（origin=topLeft 时 originY=0）",
+    "uv_to_layer": "UV 的 v 向上，与画布同向 → 直接用 y = v * height，不要写 1-v",
+    "on_screen": "画布 y 越大，在导出的 PNG 里越靠上"
+  }
+}

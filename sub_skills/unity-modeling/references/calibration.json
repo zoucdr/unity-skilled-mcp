@@ -1,0 +1,91 @@
+{
+  "measured_at": "2026-11-08T12:44:05.824Z",
+  "project": "demo",
+  "canvas_size": [
+    512,
+    512
+  ],
+  "canvas": {
+    "y_axis": "up",
+    "x_axis": "right",
+    "origin_center_verified": true,
+    "evidence": {
+      "center[128,128] 红块质心": {
+        "x": 127.5,
+        "y": 383.5,
+        "pixels": 25600
+      },
+      "center[384,384] 蓝块质心": {
+        "x": 383.5,
+        "y": 127.5,
+        "pixels": 25600
+      },
+      "origin=center 时 center[0,0] 绿块质心": {
+        "x": 255.5,
+        "y": 255.5,
+        "pixels": 25600
+      }
+    },
+    "rules": {
+      "canvas_y": "y 向上，y=0 在画布底边，canvas_y = v * H",
+      "uv_to_layer": "UV 的 v 也向上，与画布同向 → 直接用 y = v * H，**不要写 1-v**",
+      "image_row": "导出的 PNG 行号向下 → row = (1 - v) * H"
+    }
+  },
+  "atlas": {
+    "atlas_columns": 2,
+    "atlas_islands": 2,
+    "cells": [
+      {
+        "id": 0,
+        "column": 0,
+        "row": 0,
+        "rect": [
+          0.04,
+          0.08,
+          0.46,
+          0.92
+        ],
+        "rect_px": [
+          20,
+          41,
+          215,
+          430
+        ]
+      },
+      {
+        "id": 1,
+        "column": 1,
+        "row": 0,
+        "rect": [
+          0.54,
+          0.08,
+          0.96,
+          0.92
+        ],
+        "rect_px": [
+          276,
+          41,
+          215,
+          430
+        ]
+      }
+    ],
+    "rect_form": "x0y0x1y1",
+    "rect_note": "rect 是 [x0, y0, x1, y1]；y 直接就是 UV 的 v（v=0 在底边），不做 1-v",
+    "color_check": {
+      "file": "Assets/_TexGenCalib/calib_atlas.png",
+      "red_centroid": {
+        "x": 127.5,
+        "y": 255.5,
+        "pixels": 89380
+      },
+      "blue_centroid": {
+        "x": 383.5,
+        "y": 255.5,
+        "pixels": 89380
+      },
+      "expect_cell0_file_y": 256
+    }
+  }
+}
