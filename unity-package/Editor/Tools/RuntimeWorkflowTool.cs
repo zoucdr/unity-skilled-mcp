@@ -9,7 +9,8 @@ using UniMcp.Models;
 
 namespace UniMcp.Tools
 {
-    [ToolModule("runtime", GroupEn = "Runtime", GroupZh = "运行与调试")]
+    [ToolModule("runtime", GroupEn = "Runtime", GroupZh = "运行与调试",
+        Tags = new[] { "profiling", "memory", "diagnostics", "runtime-control" })]
     public sealed class RuntimeWorkflowTool : ToolModuleBase, IStrictToolModule
     {
         private static readonly Dictionary<string, string> Snapshots = new Dictionary<string, string>();

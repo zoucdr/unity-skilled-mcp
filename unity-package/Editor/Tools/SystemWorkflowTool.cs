@@ -8,7 +8,8 @@ using UniMcp.Models;
 
 namespace UniMcp.Tools
 {
-    [ToolModule("system", GroupEn = "System", GroupZh = "系统工具")]
+    [ToolModule("system", GroupEn = "System", GroupZh = "系统工具",
+        Tags = new[] { "task-management", "persistence", "diagnostics", "validation" })]
     public sealed class SystemWorkflowTool : ToolModuleBase, IStrictToolModule
     {
         private sealed class BatchTask

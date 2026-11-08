@@ -7,7 +7,8 @@ using UniMcp.Models;
 
 namespace UniMcp.Tools
 {
-    [ToolModule("project", GroupEn = "Project", GroupZh = "项目工程")]
+    [ToolModule("project", GroupEn = "Project", GroupZh = "项目工程",
+        Tags = new[] { "project-settings", "build-pipeline", "asset-database", "file-io" })]
     public sealed class ProjectWorkflowTool : ToolModuleBase, IStrictToolModule
     {
         public override string Description => "构建场景、PlayerSettings、质量、宏、asmdef与项目体检";

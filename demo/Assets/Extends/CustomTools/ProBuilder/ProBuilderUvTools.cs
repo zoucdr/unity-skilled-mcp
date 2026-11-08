@@ -21,7 +21,8 @@ namespace ProBuilder.SkilledMcp
     /// ProBuilder UV 编辑：按几何连通部件生成图集布局并查询 UV 岛。
     /// 与 ProBuilderMcpTools 共用 probuilder 前缀，动作名互不重叠。
     /// </summary>
-    [ToolModule("probuilder", GroupEn = "Assets", GroupZh = "资源资产")]
+    [ToolModule("probuilder", GroupEn = "Assets", GroupZh = "资源资产",
+        Tags = new[] { "mesh-editing", "modeling", "uv-mapping", "geometry" })]
     public class ProBuilderUvTools : ToolModuleBase
     {
         public override string Description => L.T(

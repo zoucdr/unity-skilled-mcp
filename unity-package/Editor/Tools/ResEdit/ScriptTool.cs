@@ -16,7 +16,8 @@ namespace UniMcp.Tools
     /// Handles C# script management operations in Unity.
     /// 对应方法名: manage_script
     /// </summary>
-    [ToolModule("script", GroupEn = "Assets", GroupZh = "资源资产")]
+    [ToolModule("script", GroupEn = "Assets", GroupZh = "资源资产",
+        Tags = new[] { "scripting", "file-io", "csharp" })]
     public class ScriptTool : ToolModuleBase
     {
         public override string Description => L.T("Manage C# script files including create and modify", "管理C#脚本文件，包括创建和修改");

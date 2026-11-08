@@ -7,7 +7,8 @@ using UniMcp.Models;
 
 namespace UniMcp.Tools
 {
-    [ToolModule("audio", GroupEn = "Assets", GroupZh = "资源资产")]
+    [ToolModule("audio", GroupEn = "Assets", GroupZh = "资源资产",
+        Tags = new[] { "audio-mixer", "runtime-control", "asset-management", "import-settings" })]
     public sealed class AudioWorkflowTool : ToolModuleBase, IStrictToolModule
     {
         public override string Description => "音频源、监听器、混音器暴露参数与快照过渡";

@@ -14,7 +14,8 @@ namespace UniMcp.Tools
     /// 与 edit_anim_clip（片段/曲线/事件）互补：本工具负责控制器结构（层、状态、过渡、参数、混合树）。
     /// 对应方法名: edit_animator
     /// </summary>
-    [ToolModule("animator", GroupEn = "Animation", GroupZh = "动画与特效")]
+    [ToolModule("animator", GroupEn = "Animation", GroupZh = "动画与特效",
+        Tags = new[] { "state-machine", "blend-tree", "animation-clip" })]
     public class AnimatorTool : ToolModuleBase
     {
         public override string Description => L.T(

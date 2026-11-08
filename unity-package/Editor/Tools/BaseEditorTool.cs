@@ -14,7 +14,8 @@ namespace UniMcp.Tools
     /// Handles Unity Editor state management and controls.
     /// 对应方法名: base_editor
     /// </summary>
-    [ToolModule("editor", GroupEn = "Editor", GroupZh = "编辑器")]
+    [ToolModule("editor", GroupEn = "Editor", GroupZh = "编辑器",
+        Tags = new[] { "editor-automation", "selection", "window-management", "inspector" })]
     public class BaseEditorTool : ToolModuleBase
     {
         public override string Description => L.T("Manage Unity Editor state and controls", "管理Unity编辑器状态和控制");

@@ -16,7 +16,8 @@ namespace UniMcp.Tools
     /// Second tree: Component operation execution
     /// 对应方法名: edit_component
     /// </summary>
-    [ToolModule("component", GroupEn = "Scene", GroupZh = "场景层级")]
+    [ToolModule("component", GroupEn = "Scene", GroupZh = "场景层级",
+        Tags = new[] { "inspector", "serialized-property" })]
     public class ComponentTool : ToolModuleBase, ITargetedTool
     {
         public override string Description => L.T("Manage GameObject components including get and set properties", "管理游戏对象组件，包括获取和设置属性");

@@ -6,7 +6,8 @@ using UniMcp.Models;
 
 namespace UniMcp.Tools
 {
-    [ToolModule("editor", GroupEn = "Editor", GroupZh = "编辑器")]
+    [ToolModule("editor", GroupEn = "Editor", GroupZh = "编辑器",
+        Tags = new[] { "editor-automation", "selection", "window-management", "inspector" })]
     public sealed class EditorWorkflowTool : ToolModuleBase, IStrictToolModule
     {
         public override string Description => "Selection、Inspector、窗口布局快照、辅助标记与资源预览";

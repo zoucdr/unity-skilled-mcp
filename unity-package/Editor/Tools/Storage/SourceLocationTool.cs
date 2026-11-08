@@ -11,7 +11,8 @@ namespace UniMcp.Tools.Storage
     /// Handles asset and folder location operations, including opening folders and revealing files.
     /// 对应方法名: source_location
     /// </summary>
-    [ToolModule("source_location", GroupEn = "System", GroupZh = "系统工具")]
+    [ToolModule("source_location", GroupEn = "System", GroupZh = "系统工具",
+        Tags = new[] { "asset-database", "file-io", "editor-automation" })]
     public class SourceLocationTool : ToolModuleBase
     {
         public override string Description => L.T("Locate and reveal assets and folders in the system", "定位并显示系统中的资源和文件夹");

@@ -12,7 +12,8 @@ namespace UniMcp.Tools
     /// Handles Unity Scene window management and control
     /// 对应方法名: scene_view
     /// </summary>
-    [ToolModule("scene_view", GroupEn = "Editor", GroupZh = "编辑器")]
+    [ToolModule("scene_view", GroupEn = "Editor", GroupZh = "编辑器",
+        Tags = new[] { "window-management", "screenshot", "editor-automation" })]
     public class SceneViewTool : ToolModuleBase
     {
         /// <summary>

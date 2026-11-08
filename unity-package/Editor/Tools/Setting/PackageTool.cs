@@ -15,7 +15,8 @@ namespace UniMcp.Tools
     /// Handles Unity Package Manager operations including adding, removing, listing, and searching packages.
     /// 对应方法名: manage_package
     /// </summary>
-    [ToolModule("package", GroupEn = "Project", GroupZh = "项目工程")]
+    [ToolModule("package", GroupEn = "Project", GroupZh = "项目工程",
+        Tags = new[] { "package-management", "project-settings", "dependency-analysis" })]
     public class PackageTool : ToolModuleBase
     {
         public override string Description => L.T("Manage Unity Package Manager packages", "管理Unity包管理器包");

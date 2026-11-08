@@ -12,7 +12,8 @@ namespace UniMcp.Tools
     // 提供：list_templates（列出模板）/ generate（一键生成整屏）/ create_component（单控件）。
     // 底层生成逻辑全部在 UguiGenerator（纯 Unity UGUI），坐标/配色由 UguiTheme 设计令牌驱动。
     // ============================================================================
-    [ToolModule("ugui", GroupEn = "UI", GroupZh = "界面")]
+    [ToolModule("ugui", GroupEn = "UI", GroupZh = "界面",
+        Tags = new[] { "ui-authoring", "ui-layout", "code-generation", "templates" })]
     public class UguiToolModule : ToolModuleBase
     {
         public override string Description => L.T(

@@ -9,7 +9,8 @@ using UniMcp.Models;
 
 namespace UniMcp.Tools
 {
-    [ToolModule("asset", GroupEn = "Assets", GroupZh = "资源资产")]
+    [ToolModule("asset", GroupEn = "Assets", GroupZh = "资源资产",
+        Tags = new[] { "asset-database", "dependency-analysis", "build-pipeline", "validation" })]
     public sealed class AssetWorkflowTool : ToolModuleBase, IStrictToolModule
     {
         public override string Description => "依赖反查、导入规则、资源校验、Addressables与AssetBundle";

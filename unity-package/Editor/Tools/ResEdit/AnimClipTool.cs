@@ -13,7 +13,8 @@ namespace UniMcp.Tools
     /// 专门的动画片段管理工具，提供动画片段的创建、修改、复制、删除等操作
     /// 对应方法名: manage_anim_clip
     /// </summary>
-    [ToolModule("anim_clip", GroupEn = "Animation", GroupZh = "动画与特效")]
+    [ToolModule("anim_clip", GroupEn = "Animation", GroupZh = "动画与特效",
+        Tags = new[] { "animation-clip", "curves", "animation-events" })]
     public class AnimClipTool : ToolModuleBase
     {
         public override string Description => L.T("Manage animation clips including create, modify, copy, delete", "管理动画片段，包括创建、修改、复制和删除");

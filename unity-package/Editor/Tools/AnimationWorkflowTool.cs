@@ -8,7 +8,8 @@ using UniMcp.Models;
 
 namespace UniMcp.Tools
 {
-    [ToolModule("animation", GroupEn = "Animation", GroupZh = "动画与特效")]
+    [ToolModule("animation", GroupEn = "Animation", GroupZh = "动画与特效",
+        Tags = new[] { "animation-clip", "timeline", "rigging" })]
     public sealed class AnimationWorkflowTool : ToolModuleBase, IStrictToolModule
     {
         public override string Description => "Timeline/Playable绑定、采样、Avatar与约束";

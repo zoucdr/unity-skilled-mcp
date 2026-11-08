@@ -8,7 +8,8 @@ using UniMcp.Models;
 
 namespace UniMcp.Tools
 {
-    [ToolModule("rendering", GroupEn = "Rendering", GroupZh = "渲染与光照")]
+    [ToolModule("rendering", GroupEn = "Rendering", GroupZh = "渲染与光照",
+        Tags = new[] { "lighting", "lightmapping", "render-pipeline" })]
     public sealed class RenderingWorkflowTool : ToolModuleBase, IStrictToolModule
     {
         public override string Description => "光照、Lightmap、Probe、Volume与渲染管线检查和配置";

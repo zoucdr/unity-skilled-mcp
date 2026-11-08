@@ -9,7 +9,8 @@ using UniMcp.Models;
 
 namespace UniMcp.Tools
 {
-    [ToolModule("scene", GroupEn = "Scene", GroupZh = "场景层级")]
+    [ToolModule("scene", GroupEn = "Scene", GroupZh = "场景层级",
+        Tags = new[] { "scene-management", "hierarchy", "transform", "build-settings" })]
     public sealed class SceneWorkflowTool : ToolModuleBase, IStrictToolModule
     {
         public override string Description => "Transform、批量对象、多场景与缺失引用检查";

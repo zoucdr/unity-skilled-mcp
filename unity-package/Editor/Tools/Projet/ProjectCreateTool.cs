@@ -16,7 +16,8 @@ using UnityEngine;
 
 namespace UniMcp.Tools
 {
-    [ToolModule("project", GroupEn = "Project", GroupZh = "项目工程")]
+    [ToolModule("project", GroupEn = "Project", GroupZh = "项目工程",
+        Tags = new[] { "project-settings", "build-pipeline", "asset-database", "file-io" })]
     public sealed class ProjectCreateTool : ToolModuleBase
     {
         public override string Description => L.T("Create assets in the Project window", "在项目窗口中创建资源");

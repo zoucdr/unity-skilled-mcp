@@ -14,7 +14,8 @@ namespace UniMcp.Tools
     /// 专门的粒子系统编辑工具，提供粒子系统的创建、修改、控制等操作
     /// 对应方法名: edit_particle_system
     /// </summary>
-    [ToolModule("particle", GroupEn = "Animation", GroupZh = "动画与特效")]
+    [ToolModule("particle", GroupEn = "Animation", GroupZh = "动画与特效",
+        Tags = new[] { "vfx", "particles", "runtime-control" })]
     public class ParticleTool : ToolModuleBase, ITargetedTool
     {
         public override string Description => L.T("Manage particle system assets including create and modify", "管理粒子系统资源，包括创建和修改");

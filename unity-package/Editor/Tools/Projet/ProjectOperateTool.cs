@@ -16,7 +16,8 @@ using UnityEngine;
 
 namespace UniMcp.Tools
 {
-    [ToolModule("project", GroupEn = "Project", GroupZh = "项目工程")]
+    [ToolModule("project", GroupEn = "Project", GroupZh = "项目工程",
+        Tags = new[] { "project-settings", "build-pipeline", "asset-database", "file-io" })]
     public sealed class ProjectOperateTool : ToolModuleBase
     {
         public override string Description => L.T("Manage Unity assets including import, modify, move, duplicate", "管理Unity资源，包括导入、修改、移动和复制");

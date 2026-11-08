@@ -20,7 +20,8 @@ namespace UniMcp.Tools
     /// and gameplay (play mode/input/screenshots) instead of duplicating them.
     /// 对应方法名: engine_control
     /// </summary>
-    [ToolModule("engine", GroupEn = "Runtime", GroupZh = "运行与调试")]
+    [ToolModule("engine", GroupEn = "Runtime", GroupZh = "运行与调试",
+        Tags = new[] { "build-pipeline", "project-settings", "compilation", "editor-automation" })]
     public class EngineTool : ToolModuleBase
     {
         public override string Description => L.T(

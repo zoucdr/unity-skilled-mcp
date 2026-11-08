@@ -1141,3 +1141,12 @@ dotnet 临时工程里全部通过，不等于 Unity 里可用。在真实 Unity
 
 证据图见 `docs/uisourcegen_smoke/unity_env/`：`canvas_full.png`（画布层全能力）、`controls_preview.png`（控件层整屏合成，含中英文文字）。
 
+## 本轮：ToolModule 能力标签补全 + Unity MCP Services 工具集行尾展示标签（未提交）
+
+- 65 个 `[ToolModule]`（unity-package 55 + demo 10）全部补 `Tags = new[] { ... }`，按 prefix 统一成 54 套受控标签、93 个 slug 标签；与 `[ToolAction].Tags` / `[CapabilityTags]` 一起经 `CapabilityTagsAttribute.Normalize` 合并，框架另自动补 group / prefix 两个默认 tag。
+- **按 prefix 统一是硬约束**：`/groups` 的 tags 反查索引在同 prefix 内标签不一致时会退化成逐条 `"@工具全名"`；统一后实测 145 个 tag、271 个 prefix 引用、`@全名` 0 条，目录仍保持最紧凑形态。
+- 显式剔除与自动 group/prefix tag 重复的项（`animation` / `hierarchy` / `texgen` 等不再重复声明），每模块至少 2 个标签；`prefix.action` 无冲突，标签全部已 slug 化、无重复。
+- `McpServiceGUI.cs`：**只有工具集（模块）header 显示标签**，放在该行**行尾**（`Foldout` 之后用 `GUILayout.FlexibleSpace()` 撑开，标签右对齐固定宽 240px，`moduleStyle.clipping = TextClipping.Clip` 防止长标题溢出覆盖）；具体工具 header、工具展开区、内置门面工具均不显示标签。模块标签取该前缀下所有 `ToolSpec.Tags` 的交集，超过 3 个以 `+N` 收尾，tooltip 给出完整列表。`EditorGUILayout.Foldout` 无 `GUILayoutOption` 重载，故不能用 `GUILayout.Width` 约束标题宽度。
+- **用户后续收敛**：具体工具一律不显示 tag，标签只保留在工具集（模块）行且必须在**行尾**。已移除 3 处工具级绘制（工具 header、工具展开区、内置门面工具），模块行改为 `Foldout → FlexibleSpace → 右对齐标签`；标签数据（`ToolModule.Tags` → `ToolSpec.Tags` → `/groups` 索引）不变。
+- 验证：运行态 `GET /groups` 已读到 `asset-database` / `texture-generation` / `logging` / `ui-authoring` / `mesh-editing` / `uv-mapping` 等新 tag（145 个 tag / 271 个 prefix 引用 / 0 条 `@全名`），说明 Unity 已重载程序集；`git diff --check` 通过，`McpServiceGUI.cs` 词法括号未闭合 0 / 错配 0。未 commit/push。
+

@@ -118,6 +118,19 @@ mcp.resolveProject();          // 只求工程根，不发请求
 mcp.loaderCandidates();        // 看它打算从哪里加载客户端脚本
 ```
 
+## 曲面贴图 / 旋转体（进阶）
+
+模型是圆柱、杯体、花瓶，或贴图必须沿柱面精确展开时，ProBuilder 图集不够用，
+改走 `examples/fish_mug.js`：C# 程序化旋转体 + 扫掠把手 + 柱面 UV + 多 submesh 材质，
+零绝对路径、可重复执行。四条硬约束：
+
+1. 贴图宽高比 ≈ **柱面周长 : 高度**（本例 4096×1024 对应 4.37:1），用 2:1 会把图案横向拉伸约 2 倍。
+2. `u = 1 - j/N`：相机在 `-Z` 看向 `+Z` 时 `x = r·sinθ` 会让贴图左右镜像，必须取反。
+3. 扫掠管三角形绕序反转 `(a,c,b)`，否则法线朝内、把手被背面剔除。
+4. 无反射探针时金属度别给满（~0.4），内壁补一点 `_EMISSION` 才有亮釉色。
+
+完整踩坑记录见 `examples/README.md`。
+
 ## 脚本清单
 
 | 脚本 | 职责 | 关键导出 |
@@ -132,7 +145,7 @@ mcp.loaderCandidates();        // 看它打算从哪里加载客户端脚本
 | `field.js` | 高度场 | `Field` `gradientToNormal` `subtract` |
 | `png.js` | PNG 编解码 | `readPNG` `decodePNG` `encodePNG` `neighborDelta` |
 | `inspect.js` | 贴图体检 | `analyze` `seamDelta` `normalReport` `tilePreview` |
-| `check.js` | 技能自检 | `node check.js`（70 项，离线） |
+| `check.js` | 技能自检 | `node check.js`（96 项，离线） |
 
 ## 铁律
 
@@ -155,7 +168,7 @@ mcp.loaderCandidates();        // 看它打算从哪里加载客户端脚本
 ## 自检
 
 ```bash
-node scripts/check.js     # 93 项离线断言，全绿才可信
+node scripts/check.js     # 96 项离线断言，全绿才可信
 node scripts/calibrate.js --project <工程>   # 换工程/升级 MCP 后重新实测坐标语义
 ```
 

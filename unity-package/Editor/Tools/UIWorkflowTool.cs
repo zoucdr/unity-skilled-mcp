@@ -10,7 +10,8 @@ using UniMcp.Models;
 
 namespace UniMcp.Tools
 {
-    [ToolModule("ui", GroupEn = "UI", GroupZh = "界面")]
+    [ToolModule("ui", GroupEn = "UI", GroupZh = "界面",
+        Tags = new[] { "ui-authoring", "ui-toolkit", "uxml", "event-binding" })]
     public sealed class UIWorkflowTool : ToolModuleBase, IStrictToolModule
     {
         public override string Description => "UI控件创建、无参事件绑定、字体与Canvas适配检查";

@@ -15,7 +15,8 @@ namespace UniMcp.Tools
     /// Handles Unity ScriptableObject asset management operations including create, modify, duplicate, etc.
     /// 对应方法名: manage_scriptableobject
     /// </summary>
-    [ToolModule("scriptable_object", GroupEn = "Assets", GroupZh = "资源资产")]
+    [ToolModule("scriptable_object", GroupEn = "Assets", GroupZh = "资源资产",
+        Tags = new[] { "asset-management", "serialized-asset" })]
     public class ScriptableObjectTool : ToolModuleBase
     {
         public override string Description => L.T("Manage ScriptableObject assets including create and modify", "管理ScriptableObject资源，包括创建和修改");

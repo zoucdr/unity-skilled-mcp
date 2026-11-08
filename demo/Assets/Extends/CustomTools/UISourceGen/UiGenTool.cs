@@ -18,7 +18,8 @@ namespace UniMcp.UiGen
     /// UISourceGen: a TexGen-style tool that draws UI control images with SkiaSharp and
     /// emits a matching layout description. Exposed to MCP exactly like TexGen.
     /// </summary>
-    [ToolModule("uisourcegen", GroupEn = "UI", GroupZh = "界面")]
+    [ToolModule("uisourcegen", GroupEn = "UI", GroupZh = "界面",
+        Tags = new[] { "ui-authoring", "procedural-generation", "code-generation" })]
     public partial class UiGenTool : ToolModuleBase
     {
         public override string Description => L.T(

@@ -9,7 +9,8 @@ using UniMcp.Models;
 
 namespace UniMcp.Tools
 {
-    [ToolModule("optional_runtime", GroupEn = "Runtime", GroupZh = "运行与调试")]
+    [ToolModule("optional_runtime", GroupEn = "Runtime", GroupZh = "运行与调试",
+        Tags = new[] { "network", "xr", "diagnostics", "runtime-control" })]
     public sealed class OptionalRuntimeTool : ToolModuleBase, IStrictToolModule
     {
         public override string Description => "Netcode与XR可选包只读适配；缺包明确报错，不自动安装";

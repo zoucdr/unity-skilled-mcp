@@ -19,7 +19,8 @@ namespace UniMcp.Tools.TexGen
     /// of shape / fill / blend / layer commands, and this tool paints the pixels.
     /// No network, no shaders, no third-party packages.
     /// </summary>
-    [ToolModule("texgen", GroupEn = "Assets", GroupZh = "资源资产")]
+    [ToolModule("texgen", GroupEn = "Assets", GroupZh = "资源资产",
+        Tags = new[] { "texture-generation", "procedural-generation", "pbr", "templates" })]
     public class TexGenTool : ToolModuleBase
     {
         public override string Description => L.T(

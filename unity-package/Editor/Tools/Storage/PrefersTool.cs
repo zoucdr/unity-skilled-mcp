@@ -10,7 +10,8 @@ namespace UniMcp.Tools.Storage
     /// Handles EditorPrefs and PlayerPrefs operations for storing and retrieving preferences.
     /// 对应方法名: prefers
     /// </summary>
-    [ToolModule("prefers", GroupEn = "System", GroupZh = "系统工具")]
+    [ToolModule("prefers", GroupEn = "System", GroupZh = "系统工具",
+        Tags = new[] { "persistence", "configuration", "preferences" })]
     public class PrefersTool : ToolModuleBase
     {
         public override string Description => L.T("Manage EditorPrefs and PlayerPrefs storage", "管理编辑器偏好和玩家偏好存储");

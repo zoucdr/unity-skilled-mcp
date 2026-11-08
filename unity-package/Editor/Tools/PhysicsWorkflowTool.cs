@@ -7,7 +7,8 @@ using UniMcp.Models;
 
 namespace UniMcp.Tools
 {
-    [ToolModule("physics", GroupEn = "Physics", GroupZh = "物理与导航")]
+    [ToolModule("physics", GroupEn = "Physics", GroupZh = "物理与导航",
+        Tags = new[] { "navigation", "collision", "query" })]
     public sealed class PhysicsWorkflowTool : ToolModuleBase, IStrictToolModule
     {
         public override string Description => "2D/3D刚体、碰撞检测、关节与NavMesh路径查询";
