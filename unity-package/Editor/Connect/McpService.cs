@@ -107,6 +107,9 @@ namespace UniMcp
 
         private string boundProjectPath;
         private McpRequestLedger requestLedger;
+        // 落盘任务库：正常 tools/call 的结论也写入 ProjectSettings，
+        // 使 Unity 重启后仍可用同一 request_id 查询。
+        private ToolTaskStore taskStore;
 
         private HttpListener listener;
         private bool isRunning = false;
@@ -423,7 +426,7 @@ namespace UniMcp
         }
 
         /// <summary>
-        /// 获取内置门面工具（async_call / get_prompt / get_resource / search_tool）的已发布信息。
+        /// 获取内置门面工具（get_prompt / get_resource / get_tool）的已发布信息。
         /// 这些工具不在声明式目录里，工具树需单独展示。
         /// </summary>
         public static IReadOnlyList<ToolInfo> GetBuiltinToolInfos()
@@ -442,10 +445,9 @@ namespace UniMcp
         public static List<string> GetEnabledToolNames()
         {
             var allToolNames = ToolCatalog.Names;
-            allToolNames.Add("async_call");
             allToolNames.Add("get_prompt");
             allToolNames.Add("get_resource");
-            allToolNames.Add("search_tool");
+            allToolNames.Add("get_tool");
             return McpLocalSettings.Instance.FilterEnabledTools(allToolNames);
         }
 
@@ -742,10 +744,9 @@ namespace UniMcp
         private void RefreshToolInfos()
         {
             toolInfos.Clear();
-            AddAsyncMcpTool();
             AddGetPromptDetailTool();
             AddGetResourceDetailTool();
-            AddSearchMcpTool();
+            AddGetMcpTool();
             foreach (var spec in ToolCatalog.Reload())
             {
                 toolInfos[spec.Name] = ToolCatalog.CreateInfo(spec, true);
@@ -1033,65 +1034,6 @@ namespace UniMcp
         }
 
         /// <summary>
-        /// Publishes the async_call facade. Conclusions are persisted to a local
-        /// .asset (ProjectSettings/UnitySkilledMcpAsyncResults.asset).
-        /// </summary>
-        private void AddAsyncMcpTool()
-        {
-            try
-            {
-                string toolName = "async_call";
-                Log($"[UniMcp] 手动添加AsyncCall工具: {toolName}");
-
-                if (!mcpToolInstanceCache.ContainsKey(toolName)) mcpToolInstanceCache[toolName] = new AsyncCall();
-
-                var toolInfo = new ToolInfo
-                {
-                    name = toolName,
-                    description = L.T(
-                        "Asynchronous call: run a long tool by name, then read its persisted conclusion by id even after Unity restarts",
-                        "异步调用：按名称执行耗时工具，结论写入本地 asset，Unity 重启后仍可按 id 取回"),
-                    inputSchema = new JsonClass
-                    {
-                        { "type", new JsonData("object") },
-                        { "properties", new JsonClass
-                            {
-                                { "id", new JsonClass {
-                                    { "type", new JsonData("string") },
-                                    { "description", new JsonData(L.T("Unique call id; reuse it with type='out' after a restart", "调用唯一标识；重启后用同一 id 配合 type='out' 取回结论")) }
-                                }},
-                                { "type", new JsonClass {
-                                    { "type", new JsonData("string") },
-                                    { "description", new JsonData(L.T("in = start, out = read conclusion, list = list ids, remove = delete one, clear = delete all; defaults to out", "in 启动，out 取结论，list 列出，remove 删除单个，clear 清空；缺省为 out")) },
-                                    { "enum", new JsonArray {
-                                        new JsonData("in"), new JsonData("out"), new JsonData("list"),
-                                        new JsonData("remove"), new JsonData("clear")
-                                    }}
-                                }},
-                                { "func", new JsonClass {
-                                    { "type", new JsonData("string") },
-                                    { "description", new JsonData(L.T("Tool name to run, e.g. a group.action name discovered via /tools (required when type='in')", "要执行的工具名，如通过 /tools 发现的 分组.动作 名称（type='in' 时必填）")) }
-                                }},
-                                { "args", new JsonClass {
-                                    { "type", new JsonData("object") },
-                                    { "description", new JsonData(L.T("Arguments passed to the tool when type='in'", "type='in' 时传给该工具的参数")) }
-                                }},
-                            }
-                        },
-                        { "required", new JsonArray { new JsonData("id") } }
-                    }
-                };
-                toolInfos[toolName] = toolInfo;
-
-                Log($"[UniMcp] 成功添加AsyncCall工具: {toolName}");
-            }
-            catch (Exception ex)
-            {
-                LogError($"[UniMcp] 添加AsyncCall工具失败: {ex.Message}\n{ex.StackTrace}");
-            }
-        }
-
-        /// <summary>
         /// 构建单个提示词的详情（供 get_prompt 工具和内部使用），仅返回 MCP 客户端需要的 prompt_text
         /// </summary>
         /// <param name="promptName">提示词名称</param>
@@ -1236,21 +1178,21 @@ namespace UniMcp
         }
 
         /// <summary>
-        /// 添加 SearchTool 工具到可用工具列表（系统自带，供 MCP 客户端查询工具列表与详情）
+        /// 添加 GetTool 工具到可用工具列表（系统自带，供只会 tools/call 的客户端查询工具目录与定义）
         /// </summary>
-        private void AddSearchMcpTool()
+        private void AddGetMcpTool()
         {
             try
             {
-                string toolName = "search_tool";
-                Log($"[UniMcp] 手动添加 SearchTool 工具: {toolName}");
+                string toolName = "get_tool";
+                Log($"[UniMcp] 手动添加 GetTool 工具: {toolName}");
 
-                if (!mcpToolInstanceCache.ContainsKey(toolName)) mcpToolInstanceCache[toolName] = new SearchTool();
+                if (!mcpToolInstanceCache.ContainsKey(toolName)) mcpToolInstanceCache[toolName] = new GetTool();
 
                 var toolInfo = new ToolInfo
                 {
                     name = toolName,
-                    description = L.T("Search and query tool. Use type='list' to get all available tools, or type='detail' with a name parameter to get specific tool details.", "搜索与查询工具。使用 type='list' 获取所有可用工具列表，或使用 type='detail' 及 name 参数获取指定工具详情。"),
+                    description = L.T("Get tools by name. Use type='list' to enumerate all available tool names, or type='detail' with a name parameter to get one tool's schema and parameter keys.", "按名称获取工具定义。使用 type='list' 列出所有可用工具名，或使用 type='detail' 及 name 参数获取指定工具的 Schema 与参数键。"),
                     inputSchema = new JsonClass
                     {
                         { "type", new JsonData("object") },
@@ -1258,7 +1200,7 @@ namespace UniMcp
                             {
                                 { "type", new JsonClass {
                                     { "type", new JsonData("string") },
-                                    { "description", new JsonData(L.T("Query type: 'list' for tool list, 'detail' for tool details", "查询类型: 'list' 获取工具列表, 'detail' 获取工具详情")) }
+                                    { "description", new JsonData(L.T("Query type: 'list' for tool names, 'detail' for one tool's definition", "查询类型: 'list' 获取工具名列表, 'detail' 获取单个工具定义")) }
                                 }},
                                 { "name", new JsonClass {
                                     { "type", new JsonData("string") },
@@ -1275,11 +1217,11 @@ namespace UniMcp
                 };
                 toolInfos[toolName] = toolInfo;
 
-                Log($"[UniMcp] 成功添加 SearchTool 工具: {toolName}");
+                Log($"[UniMcp] 成功添加 GetTool 工具: {toolName}");
             }
             catch (Exception ex)
             {
-                LogError($"[UniMcp] 添加 SearchTool 工具失败: {ex.Message}\n{ex.StackTrace}");
+                LogError($"[UniMcp] 添加 GetTool 工具失败: {ex.Message}\n{ex.StackTrace}");
             }
         }
 
@@ -1482,6 +1424,11 @@ namespace UniMcp
 
             boundProjectPath = NormalizeProjectPath(Path.GetDirectoryName(Application.dataPath));
             requestLedger = new McpRequestLedger(McpConnectionInfo.InstanceId);
+            // 主线程预热任务库，之后各线程只读该引用；写入由库内部排队到主线程。
+            taskStore = ToolTaskStore.Instance;
+            // 服务启动即清点上一会话遗留的 running：它们不可能再完成，标为 interrupted，
+            // 免得客户端重启后一直轮询。
+            taskStore.EnsureOrphansMarked();
 
             // 等待一小段时间确保资源释放
             System.Threading.Thread.Sleep(200);
@@ -2032,13 +1979,7 @@ namespace UniMcp
                 {
                     string requestId = Uri.UnescapeDataString(requestPath.Substring("/requests/".Length));
                     string instance = request.QueryString["instance_id"];
-                    string state = ledger == null
-                        ? new JsonClass {
-                            { "request_id", new JsonData(requestId) },
-                            { "instance_id", new JsonData(instance ?? "") },
-                            { "status", new JsonData("unknown") }
-                        }.ToString()
-                        : ledger.Query(requestId, instance).ToString();
+                    string state = QueryTaskState(ledger, requestId, instance);
                     await WriteProtocolResponse(response, 200, state);
                     return;
                 }
@@ -2290,7 +2231,24 @@ namespace UniMcp
                         return;
                     }
                     string acceptance = ledger.Accept(executionId, RequestFingerprint(rpcParams));
-                    if (acceptance != "accepted")
+                    if (acceptance == "accepted")
+                    {
+                        // 跨会话重放：落盘任务库已记录了该 id 的终态结论时直接交回，
+                        // 客户端重试（含 Unity 重启后的重试）因此不会二次执行。
+                        string replay = ReplayPersistedToolCall(rpcId, executionId);
+                        if (replay != null)
+                        {
+                            // 账本里也存真实结论：否则同一会话内第三次查这个 id 只会拿回占位符。
+                            var recorded = QueryPersistedTask(executionId);
+                            string conclusion = recorded?["result"]?.ToString();
+                            ledger.Complete(executionId,
+                                string.IsNullOrEmpty(conclusion) ? "{\"replayed\":true}" : conclusion,
+                                recorded?["status"]?.Value == "failed");
+                            await WriteProtocolResponse(response, 200, replay);
+                            return;
+                        }
+                    }
+                    else
                     {
                         int status = acceptance == "conflict" ? 409 : acceptance == "full" ? 503 : 200;
                         string reply = acceptance == "duplicate"
@@ -2471,7 +2429,11 @@ namespace UniMcp
                 if (bindingError != null)
                 {
                     string rejected = CreateMcpErrorResponse(id, -32001, bindingError);
-                    if (executionId != null) ledger?.Abandon(executionId, rejected);
+                    if (executionId != null)
+                    {
+                        ledger?.Abandon(executionId, rejected);
+                        taskStore?.Interrupt(executionId, bindingError);
+                    }
                     return rejected;
                 }
                 if (method == "tools/call" && (ledger == null || executionId == null))
@@ -2513,25 +2475,27 @@ namespace UniMcp
                             // 使用超时保护
                             Task<string> callTask = ExecuteTrackedTool(id, paramsNode, expectedProject,
                                 instanceId, executionId, ledger);
+                            // 提前返回后没人 await callTask，先挂观察器避免未观察异常。
+                            _ = callTask.ContinueWith(t => { _ = t.Exception; },
+                                TaskContinuationOptions.OnlyOnFaulted);
 
-                            // 等待任务完成或超时
-                            if (await Task.WhenAny(callTask, Task.Delay(10000)) == callTask)
+                            // 耗时工具不拖住 HTTP 连接：到点先返回 running + task_id，
+                            // 工具继续在主线程执行，完成时自动落盘。
+                            int earlyReturnSeconds = McpLocalSettings.Instance.ToolEarlyReturnSeconds;
+                            using (var earlyCts = new CancellationTokenSource())
                             {
-                                // 任务完成
-                                result = await callTask;
-                                McpLogger.Log($"[UniMcp] 工具调用完成，ID: {id}");
-                            }
-                            else
-                            {
-                                // 任务超时
-                                McpLogger.LogError($"[UniMcp] 工具调用超时，ID: {id}");
-                                var timeout = Json.Parse(CreateMcpErrorResponse(id, -32000,
-                                    "Tool call timed out; execution may still finish. Query before any retry."));
-                                var state = ledger.Query(executionId, instanceId);
-                                state.Add("query_path", new JsonData("/requests/" + Uri.EscapeDataString(executionId)
-                                    + "?instance_id=" + Uri.EscapeDataString(instanceId)));
-                                timeout["error"].AsObject.Add("data", state);
-                                return timeout.ToString();
+                                Task earlyDelay = Task.Delay(TimeSpan.FromSeconds(earlyReturnSeconds), earlyCts.Token);
+                                if (await Task.WhenAny(callTask, earlyDelay) == callTask)
+                                {
+                                    earlyCts.Cancel();
+                                    result = await callTask;
+                                    McpLogger.Log($"[UniMcp] 工具调用完成，ID: {id}");
+                                }
+                                else
+                                {
+                                    McpLogger.LogWarning($"[UniMcp] 工具调用超过 {earlyReturnSeconds}s，ID: {id}，提前返回任务信息");
+                                    result = CreateRunningTaskResponse(id, paramsNode, executionId, instanceId, earlyReturnSeconds);
+                                }
                             }
                             break;
 
@@ -2585,7 +2549,11 @@ namespace UniMcp
             {
                 LogError($"[UniMcp] 处理MCP请求时发生错误: {ex.Message}");
                 string failure = CreateMcpErrorResponse(null, -32603, $"Internal error: {ex.Message}");
-                if (executionId != null) ledger?.Abandon(executionId, failure);
+                if (executionId != null)
+                {
+                    ledger?.Abandon(executionId, failure);
+                    taskStore?.Interrupt(executionId, ex.Message);
+                }
                 return failure;
             }
         }
@@ -2875,7 +2843,7 @@ namespace UniMcp
 
         /// <summary>
         /// 递归移除 JSON Schema 中的所有 description 字段
-        /// 用于处理预构建的 inputSchema（如 async_call）
+        /// 用于处理预构建的 inputSchema
         /// </summary>
         private JsonNode RemoveDescriptionsFromSchema(JsonNode schema)
         {
@@ -4064,17 +4032,8 @@ namespace UniMcp
                     return new JsonData("null");
                 }
 
-                switch (toolName)
-                {
-                    case "async_call":
-                        // async_call参数保持原样
-                        return argumentsNode;
-
-                    default:
-                        // 其他工具参数保持原样
-                        return argumentsNode;
-                }
-
+                // 参数保持原样
+                return argumentsNode;
             }
             catch (Exception ex)
             {
@@ -4107,25 +4066,25 @@ namespace UniMcp
             return node?.ToString() ?? "null";
         }
 
-        /// <summary>Retains completion even after the HTTP waiter times out or disconnects.</summary>
+        /// <summary>
+        /// Runs a tools/call. Completion is recorded by the tool callback itself,
+        /// so a call that returns early as "running" still lands its conclusion
+        /// (and the ledger state) once the tool actually finishes.
+        /// </summary>
         private async Task<string> ExecuteTrackedTool(string id, JsonNode parameters, string expectedProject,
             string instanceId, string executionId, McpRequestLedger ledger)
         {
-            string result;
             try
             {
-                result = await HandleToolsCall(id, parameters, expectedProject, instanceId, executionId, ledger);
+                return await HandleToolsCall(id, parameters, expectedProject, instanceId, executionId, ledger);
             }
             catch (Exception ex)
             {
-                result = CreateMcpErrorResponse(id, -32603, "Tool execution failed: " + ex.Message);
+                string failure = CreateMcpErrorResponse(id, -32603, "Tool execution failed: " + ex.Message);
+                ledger.Complete(executionId, failure, true);
+                taskStore?.Complete(executionId, null, ex.Message, true);
+                return failure;
             }
-            var parsed = Json.Parse(result);
-            bool failed = parsed.AsObject.ContainsKey("error") || parsed["result"]?["isError"]?.Value == "true";
-            JsonNode payload = parsed.AsObject.ContainsKey("error") ? parsed["error"]
-                : parsed.AsObject.ContainsKey("result") ? parsed["result"] : parsed;
-            ledger.Complete(executionId, payload.ToString(), failed);
-            return result;
         }
 
         /// <summary>
@@ -4191,6 +4150,8 @@ namespace UniMcp
                             throw new InvalidOperationException(bindingError
                                 ?? "MCP service restarted before execution");
                         ledger.MarkRunning(executionId);
+                        taskStore?.MarkRunning(executionId, toolName, adaptedArguments?.ToString() ?? "{}",
+                            McpConnectionInfo.InstanceId);
                         tool.HandleCommand(adaptedArguments, (result) =>
                         {
                             var endTime = DateTime.Now;
@@ -4205,24 +4166,8 @@ namespace UniMcp
                                 {
                                     var recordObject = McpExecuteRecordObject.instance;
 
-                                    // 根据工具类型决定记录方式
-                                    string cmdName;
-                                    string argsString;
-                                    if (toolName == "async_call")
-                                    {
-                                        // async_call: 记录具体的func和args
-                                        var func = argumentsNode?["func"]?.Value;
-                                        if (string.IsNullOrEmpty(func))
-                                            func = "checking...";
-                                        cmdName = "async_call." + func;
-                                        argsString = argumentsNode?.ToString() ?? "{}";
-                                    }
-                                    else
-                                    {
-                                        // 其他工具类型: 使用默认方式
-                                        cmdName = toolName;
-                                        argsString = Json.FromObject(new { func = cmdName, args = argumentsNode }).ToString();
-                                    }
+                                    string cmdName = toolName;
+                                    string argsString = Json.FromObject(new { func = cmdName, args = argumentsNode }).ToString();
 
                                     // 动态判断 status：根据 result 中的 success 字段
                                     string error = "";
@@ -4254,6 +4199,27 @@ namespace UniMcp
                                 catch (Exception recordEx)
                                 {
                                     LogError($"[UniMcp] 记录执行结果时发生错误: {recordEx.Message}");
+                                }
+
+                                // 收尾内存账本与落盘任务库：提前返回 running 的调用也在这里完成，
+                                // 因此结论不会因为 HTTP 已响应而丢失。
+                                try
+                                {
+                                    string conclusion = result?.ToString() ?? string.Empty;
+                                    bool failed = false;
+                                    string failure = string.Empty;
+                                    if (result is JsonClass outcome)
+                                    {
+                                        failed = outcome["success"]?.Value == "false"
+                                            || outcome["isError"]?.Value == "true";
+                                        if (failed) failure = outcome["error"]?.Value ?? "Tool reported a failure.";
+                                    }
+                                    taskStore?.Complete(executionId, conclusion, failure, failed);
+                                    ledger?.Complete(executionId, conclusion, failed);
+                                }
+                                catch (Exception persistenceEx)
+                                {
+                                    LogError($"[UniMcp] 任务收尾失败: {persistenceEx.Message}");
                                 }
 
                                 tcs.SetResult(result);
@@ -4401,6 +4367,138 @@ namespace UniMcp
             return null;
         }
         /// <summary>
+        /// 读取落盘任务库的记录。记录本身是加锁的字符串读取，后台线程可直接调用，
+        /// 因此长任务把主线程占住时也照样能查到 running 状态。
+        /// </summary>
+        private JsonClass QueryPersistedTask(string requestId)
+        {
+            var store = taskStore;
+            if (store == null || string.IsNullOrEmpty(requestId)) return null;
+            try
+            {
+                return store.Query(requestId);
+            }
+            catch (Exception e)
+            {
+                LogErrorThreadSafe($"[UniMcp] 读取落盘任务失败: {e.Message}");
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// 单次调用状态：先看内存账本（同实例、最快），未命中再回落到落盘任务库，
+        /// 因此 Unity 重启后仍能用同一 id 查到结论或"被中断"的事实。
+        /// </summary>
+        /// <summary>
+        /// 单次调用状态。落盘任务库是权威记录（状态、工具名、起止时间、结论齐全），
+        /// 同一 id 在 Unity 重启或域重载后仍可查；库内没有时才回落到内存账本，
+        /// 覆盖"已被接受但尚未进入执行"的瞬间状态。
+        /// </summary>
+        private string QueryTaskState(McpRequestLedger ledger, string requestId, string instance)
+        {
+            var persisted = QueryPersistedTask(requestId);
+            if (persisted != null) return persisted.ToString();
+
+            if (ledger != null)
+            {
+                var memory = ledger.Query(requestId, instance);
+                string memoryStatus = memory?["status"]?.Value;
+                if (!string.IsNullOrEmpty(memoryStatus) && memoryStatus != "unknown") return memory.ToString();
+                return memory.ToString();
+            }
+
+            return new JsonClass
+            {
+                { "request_id", new JsonData(requestId) },
+                { "instance_id", new JsonData(instance ?? "") },
+                { "status", new JsonData("unknown") }
+            }.ToString();
+        }
+
+        /// <summary>
+        /// 重启后重放保护：同一 request_id 在落盘任务库里已有终态时直接交回结论，
+        /// 不再执行工具，避免带副作用的调用被重复执行。
+        /// 返回 null 表示没有可重放的终态记录（仍 running 或从未见过）。
+        /// </summary>
+        private string ReplayPersistedToolCall(string rpcId, string requestId)
+        {
+            var record = QueryPersistedTask(requestId);
+            string status = record?["status"]?.Value;
+            if (status != "completed" && status != "failed" && status != "interrupted") return null;
+
+            if (status == "interrupted")
+                return CreateMcpErrorResponse(rpcId, -32004,
+                    "request_id '" + requestId + "' was interrupted when Unity reloaded before finishing; " +
+                    "check for side effects, then re-run it with a new request_id.");
+
+            var payload = new JsonClass
+            {
+                { "success", new JsonData(status == "completed") },
+                { "status", new JsonData(status) },
+                { "request_id", new JsonData(requestId) },
+                { "tool", new JsonData(record["tool"]?.Value ?? string.Empty) },
+                { "replayed", new JsonData(true) },
+                { "persisted", new JsonData(true) },
+                { "completed_at", new JsonData(record["completed_at"]?.Value ?? string.Empty) }
+            };
+            if (record["result"] != null) payload.Add("result", record["result"]);
+            if (record["error"] != null) payload.Add("error", record["error"]);
+
+            var result = new JsonClass
+            {
+                { "content", new JsonArray
+                    {
+                        new JsonClass
+                        {
+                            { "type", new JsonData("text") },
+                            { "text", new JsonData(payload.ToString()) }
+                        }
+                    }
+                }
+            };
+            if (status == "failed") result.Add("isError", new JsonData(true));
+            return CreateMcpSuccessResponse(rpcId, result);
+        }
+
+        /// <summary>
+        /// tools/call 的提前返回：工具仍在执行，先交回 task_id 与查询路径。
+        /// 这是成功语义而非错误——调用已被接受，只是结论稍后落盘，
+        /// 客户端可凭同一 id 查询（Unity 重启后依然可查）。
+        /// </summary>
+        private string CreateRunningTaskResponse(string id, JsonNode paramsNode, string executionId,
+            string instanceId, int elapsedSeconds)
+        {
+            string toolName = paramsNode?["name"]?.Value ?? string.Empty;
+            string boundInstance = string.IsNullOrEmpty(instanceId) ? McpConnectionInfo.InstanceId : instanceId;
+            string queryPath = "/requests/" + Uri.EscapeDataString(executionId ?? string.Empty)
+                + "?instance_id=" + Uri.EscapeDataString(boundInstance);
+
+            var payload = new JsonClass
+            {
+                { "success", new JsonData(true) },
+                { "status", new JsonData("running") },
+                { "task_id", new JsonData(executionId ?? string.Empty) },
+                { "tool", new JsonData(toolName) },
+                { "waited_seconds", new JsonData(elapsedSeconds) },
+                { "persisted", new JsonData(true) },
+                { "query_path", new JsonData(queryPath) },
+                { "message", new JsonData(
+                    "Still running after " + elapsedSeconds + "s. The call was accepted and keeps executing; "
+                    + "its conclusion is persisted and the same task_id stays readable after a Unity restart. "
+                    + "Query query_path before retrying.") }
+            };
+
+            var content = new JsonArray
+            {
+                new JsonClass
+                {
+                    { "type", new JsonData("text") },
+                    { "text", new JsonData(payload.ToString()) }
+                }
+            };
+            return CreateMcpSuccessResponse(id, new JsonClass { { "content", content } });
+        }
+
         /// <summary>
         /// 创建MCP成功响应
         /// </summary>

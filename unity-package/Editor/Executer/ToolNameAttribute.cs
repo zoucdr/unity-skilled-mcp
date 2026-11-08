@@ -1,9 +1,11 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using UniMcp.Utils;
 
 namespace UniMcp
 {
-    [AttributeUsage(AttributeTargets.Class, AllowMultiple = false, Inherited = false)]
+    [AttributeUsage(AttributeTargets.Class | AttributeTargets.Method, AllowMultiple = false, Inherited = false)]
     public sealed class CapabilityTagsAttribute : Attribute
     {
         private readonly string[] tags;
@@ -12,6 +14,34 @@ namespace UniMcp
         public CapabilityTagsAttribute(params string[] tags)
         {
             this.tags = tags == null ? new string[0] : (string[])tags.Clone();
+        }
+
+        /// <summary>
+        /// 所有能力（工具 / 提示词 / 资源）共用的 tag 规范化入口：slug 化、去空、
+        /// 去保留字 all、去重、按序号排序。传入顺序不限，返回独立副本。
+        /// </summary>
+        internal static string[] Normalize(params IEnumerable<string>[] sources)
+        {
+            var result = new SortedSet<string>(StringComparer.Ordinal);
+            if (sources == null) return new string[0];
+            foreach (var source in sources)
+            {
+                if (source == null) continue;
+                foreach (var raw in source)
+                {
+                    if (string.IsNullOrWhiteSpace(raw)) continue;
+                    var slug = Slug(raw);
+                    if (slug != "all") result.Add(slug);
+                }
+            }
+            return result.ToArray();
+        }
+
+        internal static string Slug(string value)
+        {
+            var slug = System.Text.RegularExpressions.Regex.Replace(
+                (value ?? "").ToLowerInvariant(), "[^a-z0-9]+", "-").Trim('-');
+            return string.IsNullOrEmpty(slug) ? "uncategorized" : slug;
         }
     }
 

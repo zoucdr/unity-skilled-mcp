@@ -70,7 +70,7 @@ AI 客户端（Cursor / Claude / Trae）
 2. **技能层**：`SKILL.md` 契约 + `unity_mcp.js` 客户端
 3. **MCP 协议层**：Unity 内置 MCP 服务器（HTTP + JSON-RPC 2.0）
 4. **执行层**：消息队列 → Editor 主线程 → Unity API
-5. **工具层**：43 个工具模块（364 个动作）+ 4 个内置入口（demo 另含 7 个自定义工具模块示例）
+5. **工具层**：43 个工具模块（364 个动作）+ 3 个内置入口（demo 另含 7 个自定义工具模块示例）；任意 tools/call 的结论都落盘，长耗时调用先返回 task_id
 
 #### 系统架构图
 
@@ -179,7 +179,7 @@ private void ProcessMessageQueue()          // 出队执行 + 自动注销
 // 工具装载（声明式）
 private void DiscoverTools()
 {
-    RefreshToolInfos();      // ToolCatalog.Reload() + 4 个内置入口
+    RefreshToolInfos();      // ToolCatalog.Reload() + 3 个内置入口
 }
 ```
 
@@ -188,7 +188,7 @@ private void DiscoverTools()
 ```
 unity-package/Editor/
 ├── Connect/                   # MCP 服务与发现
-├── Executer/                  # 执行器（AsyncCall / CoroutineRunner / McpTool / MethodKey / ToolNameAttribute）
+├── Executer/                  # 执行器（CoroutineRunner / McpTool / MethodKey / ToolNameAttribute）
 ├── ToolFramework/            # Attribute 反射框架（见「工具框架」）
 ├── Tools/                    # 工具模块：一个 [ToolModule] = 一个真实顶层类
 │   ├── Hierarchy/            # HierarchyApplyTool / HierarchyCreateTool / HierarchySearchTool
@@ -201,7 +201,7 @@ unity-package/Editor/
 │   ├── Setting/              # PackageTool / TagLayerTool
 │   ├── Storage/              # PrefersTool / SourceLocationTool
 │   ├── BaseEditorTool.cs / EngineTool.cs / GamePlayTool.cs / ObjectTool.cs / HttpTool.cs / TestsTool.cs
-├── Model/                    # 数据模型（Response / McpSettings / AsyncCallResultStore ...）
+├── Model/                    # 数据模型（Response / McpSettings / ToolTaskStore ...）
 ├── GUI/                      # MCP 状态窗口、调试窗口
 ├── Provider/                 # 设置提供者
 ├── Utils/                    # 工具类库（ConsoleUtils / GameObjectUtils / MenuUtils ...）
@@ -224,7 +224,7 @@ unity-runtime-package/Runtime/
 
 ### 工具模块分类
 
-当前 `unity-package/Editor/Tools/` 共 **55 个 `[ToolModule]`、446 个 `[ToolAction]`**，按 **10 个功能分组**组织（分组即 `groups` 命令返回的标签来源，由模块的 `GroupEn` / `GroupZh` 决定）：
+当前 `unity-package/Editor/Tools/` 共 **55 个 `[ToolModule]`、446 个 `[ToolAction]`**，按 **10 个功能分组**组织（分组是 `groups` 标签来源之一，由 `GroupEn` / `GroupZh` 决定；另有 `Prefix` 与显式 `Tags`，见「指定能力标签」）：
 
 | 分组 | 标签 | 模块前缀（动作数） |
 | --- | --- | --- |
@@ -442,7 +442,7 @@ node --test tests/test_unity_mcp.js
 | 路由 | 用途 |
 | --- | --- |
 | `GET /discovery` | 校验在线服务、读取非 MCP 连接元数据 |
-| `GET /groups` | 列出可用标签及工具 / 提示词 / 资源计数 |
+| `GET /groups` | 紧凑能力目录：`namespaces` 前缀树、`tags` 反查索引、中文分组名、提示词/资源名 |
 | `GET /tools` | 列出工具名、短说明与标签 |
 | `GET /prompts` | 列出提示词名、短说明与标签 |
 | `GET /resources` | 列出资源 URI、名称、短说明与标签 |
@@ -487,6 +487,41 @@ public class MyTool : ToolModuleBase
         => Response.Success("ok", new { name = args["name"]?.Value });
 }
 ```
+
+### 指定能力标签（tag）
+
+每个工具默认带两个 tag：`Slug(GroupEn)` 与 `Slug(Prefix)`，由 `ToolCatalog` 自动生成，**没有独立的 tag 注册表**。要额外指定，直接在工具代码里用 `Tags` 命名参数：
+
+```csharp
+// 模块级：该模块所有动作都额外带 "procedural"
+[ToolModule("texgen", GroupEn = "Assets", Tags = new[] { "Procedural" })]
+public class TexGenTool : ToolModuleBase { /* ... */ }
+
+// 单动作级：只有 texgen.render 额外带 "screen-capture"
+[ToolAction("render", Tags = new[] { "screen-capture" })]
+private object Render(JsonClass args) { /* ... */ }
+```
+
+也可以把 `[CapabilityTags("a", "b")]` 直接打在 handler 方法上——与提示词、资源定义类用的是同一个特性。模块 / 动作 / 方法三种写法都会合并（**追加**到默认 tag，不覆盖），并共用 `CapabilityTagsAttribute.Normalize` 规范化：小写 slug、去空白、保留字 `all` 剔除、去重、排序。
+
+`GET /groups` 中，覆盖整个前缀的 tag 记为前缀名；只挂在单个动作上的 tag 记为 `"@prefix.action"`，保证反查索引精确。
+
+### 把重计算移出主线程
+
+不碰 Unity API 的 CPU 密集动作可以直接声明为后台执行：
+
+```csharp
+[ToolAction("draw", "canvas=require", Background = true)]
+private object ActionDraw(JsonClass args) { /* SkiaSharp 渲染 + File.WriteAllBytes */ }
+```
+
+框架（`ToolCall.RunInBackground`）用 `Task.Run` 跑 handler，再经 `CoroutineRunner.Enqueue` 把结果送回编辑器主线程完成响应。需要 Unity 的操作要显式排队：
+
+```csharp
+CoroutineRunner.Enqueue(() => AssetDatabase.ImportAsset(path, ...));
+```
+
+`Application.dataPath`、`AssetDatabase`、`Selection`、`EditorApplication.delayCall` **仅限主线程**（已实测：后台线程读 `Application.dataPath` 会抛 "can only be called from the main thread"）。路径类值在 `CreateKeys()`（由目录在主线程调用）里预热缓存；`L.T` 可在后台线程使用。`Background` 与 `ToolContext.AsyncReturn` 互斥，只能二选一。UISourceGen 的 render / batch / draw / draw_batch / pdf / svg / measure 已接入。
 
 ---
 

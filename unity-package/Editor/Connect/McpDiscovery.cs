@@ -322,21 +322,85 @@ namespace UniMcp
             }
             catalogs.Add("/resources", Catalog("resources", summaries));
 
-            var groups = new JsonArray();
-            foreach (var tag in capabilities.Values.SelectMany(c => c.Tags).Distinct(StringComparer.Ordinal).OrderBy(t => t, StringComparer.Ordinal))
+            // 目录层自带能力树：工具名按 prefix/action 拆开，前缀只出现一次。
+            // 客户端按 prefix + "." + action 还原全名；RootNamespace 表示工具名本身无前缀。
+            var namespaces = new Dictionary<string, List<string>>(StringComparer.Ordinal);
+            foreach (var pair in capabilities)
             {
-                var members = capabilities.Values.Where(c => c.Tags.Contains(tag)).ToArray();
-                groups.Add(new JsonClass {
-                    { "tag", new JsonData(tag) }, { "label", new JsonData(labels.TryGetValue(tag, out var label) ? label : tag) },
-                    { "counts", new JsonClass {
-                        { "tools", new JsonData(members.Count(c => c.Kind == "tool")) },
-                        { "prompts", new JsonData(members.Count(c => c.Kind == "prompt")) },
-                        { "resources", new JsonData(members.Count(c => c.Kind == "resource")) }
-                    } }
-                });
+                if (pair.Value.Kind != "tool") continue;
+                string toolName = pair.Key.Substring("tool:".Length);
+                string prefix = NamespaceOf(toolName);
+                List<string> actions;
+                if (!namespaces.TryGetValue(prefix, out actions))
+                    namespaces[prefix] = actions = new List<string>();
+                actions.Add(ActionOf(toolName));
             }
+            var namespacesJson = new JsonClass();
+            foreach (var prefix in namespaces.Keys.OrderBy(p => p, StringComparer.Ordinal))
+            {
+                var actions = new JsonArray();
+                foreach (var action in namespaces[prefix].OrderBy(a => a, StringComparer.Ordinal))
+                    actions.Add(new JsonData(action));
+                namespacesJson.Add(prefix, actions);
+            }
+
+            // tag 索引：整个 prefix 命中记 prefix；仅部分工具命中（例如单个 action 显式打了 tag）记 "@全名"。
+            // 零例外时输出仍是最紧凑的 tag -> [prefix...]，且不依赖「同 prefix 内 tags 一致」这一假设。
+            var toolsByTag = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal);
+            foreach (var pair in capabilities)
+            {
+                if (pair.Value.Kind != "tool") continue;
+                foreach (var tag in pair.Value.Tags)
+                {
+                    HashSet<string> members;
+                    if (!toolsByTag.TryGetValue(tag, out members))
+                        toolsByTag[tag] = members = new HashSet<string>(StringComparer.Ordinal);
+                    members.Add(pair.Key.Substring("tool:".Length));
+                }
+            }
+            // prompts / resources 这类组没有工具，但仍须作为 details --tag 的合法键存在。
+            foreach (var tag in capabilities.Values.SelectMany(c => c.Tags).Distinct(StringComparer.Ordinal))
+                if (!toolsByTag.ContainsKey(tag)) toolsByTag[tag] = new HashSet<string>(StringComparer.Ordinal);
+
+            var tagsJson = new JsonClass();
+            foreach (var tag in toolsByTag.Keys.OrderBy(t => t, StringComparer.Ordinal))
+            {
+                var hit = toolsByTag[tag];
+                var wholePrefixes = new List<string>();
+                var singleTools = new List<string>();
+                foreach (var prefix in namespaces.Keys)
+                {
+                    var all = namespaces[prefix]
+                        .Select(a => prefix == RootNamespace ? a : prefix + "." + a).ToArray();
+                    if (all.All(hit.Contains)) wholePrefixes.Add(prefix);
+                    else foreach (var name in all.Where(hit.Contains)) singleTools.Add("@" + name);
+                }
+                var refs = new JsonArray();
+                foreach (var p in wholePrefixes.OrderBy(x => x, StringComparer.Ordinal)) refs.Add(new JsonData(p));
+                foreach (var n in singleTools.OrderBy(x => x, StringComparer.Ordinal)) refs.Add(new JsonData(n));
+                tagsJson.Add(tag, refs);
+            }
+
+            // 中文分组名是目录里唯一无法由树推导的信息，只保留与 tag 不同的项。
+            var labelsJson = new JsonClass();
+            foreach (var pair in labels.Where(p => p.Value != p.Key).OrderBy(p => p.Key, StringComparer.Ordinal))
+                labelsJson.Add(pair.Key, new JsonData(pair.Value));
+
+            var promptNames = new JsonArray();
+            foreach (var name in capabilities.Keys
+                .Where(k => k.StartsWith("prompt:", StringComparison.Ordinal))
+                .Select(k => k.Substring("prompt:".Length)).OrderBy(n => n, StringComparer.Ordinal))
+                promptNames.Add(new JsonData(name));
+            var resourceUris = new JsonArray();
+            foreach (var uri in capabilities.Keys
+                .Where(k => k.StartsWith("resource:", StringComparison.Ordinal))
+                .Select(k => k.Substring("resource:".Length)).OrderBy(u => u, StringComparer.Ordinal))
+                resourceUris.Add(new JsonData(uri));
+
             catalogs.Add("/groups", new JsonClass {
-                { "groups", groups }, { "max_details", new JsonData(MaxDetails) },
+                { "namespaces", namespacesJson }, { "tags", tagsJson }, { "labels", labelsJson },
+                { "prompts", promptNames }, { "resources", resourceUris },
+                { "max_details", new JsonData(MaxDetails) },
                 { "max_response_bytes", new JsonData(MaxResponseBytes) }
             }.ToString());
         }
@@ -346,18 +410,27 @@ namespace UniMcp
             capabilities.Add(kind + ":" + name, new Capability(kind, detail.ToString(), tags));
         }
 
-        internal static string Slug(string englishName)
+        // 无前缀工具（如 get_prompt）的保留命名空间；真实前缀均为字母/数字/连字符，不会冲突。
+        internal const string RootNamespace = "_";
+
+        internal static string NamespaceOf(string toolName)
         {
-            string slug = System.Text.RegularExpressions.Regex.Replace((englishName ?? "").ToLowerInvariant(), "[^a-z0-9]+", "-").Trim('-');
-            return string.IsNullOrEmpty(slug) ? "uncategorized" : slug;
+            int dot = string.IsNullOrEmpty(toolName) ? -1 : toolName.IndexOf('.');
+            return dot < 0 ? RootNamespace : toolName.Substring(0, dot);
         }
+
+        internal static string ActionOf(string toolName)
+        {
+            int dot = string.IsNullOrEmpty(toolName) ? -1 : toolName.IndexOf('.');
+            return dot < 0 ? toolName : toolName.Substring(dot + 1);
+        }
+
+        internal static string Slug(string englishName) => CapabilityTagsAttribute.Slug(englishName);
 
         internal static string[] GetTags(Type type, string fallback)
         {
             var attribute = (CapabilityTagsAttribute)Attribute.GetCustomAttribute(type, typeof(CapabilityTagsAttribute));
-            var tags = (attribute == null ? new string[0] : attribute.Tags)
-                .Where(t => !string.IsNullOrWhiteSpace(t)).Select(Slug)
-                .Where(t => t != "all").Distinct(StringComparer.Ordinal).OrderBy(t => t, StringComparer.Ordinal).ToArray();
+            var tags = CapabilityTagsAttribute.Normalize(attribute == null ? new string[0] : attribute.Tags);
             return tags.Length == 0 ? new[] { fallback } : tags;
         }
 
@@ -664,13 +737,39 @@ namespace UniMcp
         /// <summary>技能源目录绝对路径（unity-package/Skills/unity-skilled-mcp）；未导入时为 null。</summary>
         internal string SkillDir { get; }
 
-        /// <summary>本编辑器进程实例标识，用于执行绑定的 X-Mcp-Instance-Id 校验；每次域重载或服务重启重新生成。</summary>
-        internal static string InstanceId { get; private set; } = Guid.NewGuid().ToString("N");
+        // 实例标识存在 SessionState 里：跨域重载存活，编辑器进程退出即失效。
+        // 这样脚本重编译、进出 Play Mode 都不会改变绑定，客户端无需重新发现。
+        private const string InstanceIdKey = "UniMcp.InstanceId";
 
-        /// <summary>服务启动时更换实例标识：同域内停止再启动不会复用旧标识，客户端须重新发现确认。</summary>
-        internal static void RenewInstanceId()
+        private static string instanceId;
+
+        /// <summary>
+        /// 本编辑器会话的实例标识，用于执行绑定的 X-Mcp-Instance-Id 校验。
+        /// 域重载后保持不变（SessionState 持久化），只有编辑器进程退出重开才更换，
+        /// 因此热重载不会让已连接的客户端产生"实例漂移"、被迫重新拉取工具与详情。
+        /// </summary>
+        internal static string InstanceId => instanceId ?? (instanceId = Guid.NewGuid().ToString("N"));
+
+        /// <summary>
+        /// 当前域的标识，每次域重载重新生成；用于判定落盘任务是否属于"已经死掉的域"。
+        /// 与 InstanceId 分开是因为：热重载不该打断客户端绑定，但确实会杀死正在执行的调用。
+        /// </summary>
+        internal static readonly string DomainId = Guid.NewGuid().ToString("N");
+
+        /// <summary>
+        /// 每次域加载后（主线程）从 SessionState 取回实例标识。
+        /// 放在 InitializeOnLoad 而非 getter 里懒加载，避免后台线程查询任务状态时触碰编辑器 API。
+        /// </summary>
+        [InitializeOnLoadMethod]
+        private static void RestoreInstanceId()
         {
-            InstanceId = Guid.NewGuid().ToString("N");
+            string stored = SessionState.GetString(InstanceIdKey, string.Empty);
+            if (string.IsNullOrEmpty(stored))
+            {
+                stored = Guid.NewGuid().ToString("N");
+                SessionState.SetString(InstanceIdKey, stored);
+            }
+            instanceId = stored;
         }
 
         internal McpConnectionInfo(IEnumerable<string> boundPrefixes, string projectPath, int processId, DateTime updatedAt,

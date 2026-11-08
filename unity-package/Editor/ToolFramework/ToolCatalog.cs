@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
-using System.Text.RegularExpressions;
 using UnityEngine;
 
 namespace UniMcp
@@ -194,6 +193,11 @@ namespace UniMcp
                 jsonHandler = a => Invoke(method, owner, ConvertArguments(method, a));
             }
 
+            // [CapabilityTags] on the handler method is the third declaration form,
+            // shared with prompt / resource definition classes.
+            var methodTagAttribute = (CapabilityTagsAttribute)Attribute.GetCustomAttribute(
+                method, typeof(CapabilityTagsAttribute));
+
             string paramText = resolved.Count == 0 ? "none" : string.Join(", ", resolved.Select(k => k.Key).ToArray());
             string descEn = action.DescriptionEn ?? (Title(action.Action) + " (" + module.GroupEn + "). Parameters: " + paramText + ".");
             string descZh = action.DescriptionZh ?? (module.GroupZh + "：" + action.Action + "。参数：" + paramText + "。");
@@ -208,8 +212,10 @@ namespace UniMcp
                 DescriptionZh = descZh,
                 GroupEn = module.GroupEn,
                 GroupZh = module.GroupZh,
-                Tags = new[] { Slug(module.GroupEn), Slug(module.Prefix) }
-                    .Where(t => !string.IsNullOrWhiteSpace(t)).Distinct().ToArray(),
+                Tags = CapabilityTagsAttribute.Normalize(
+                    new[] { Slug(module.GroupEn), Slug(module.Prefix) },
+                    module.Tags, action.Tags,
+                    methodTagAttribute == null ? null : methodTagAttribute.Tags),
                 Parameters = resolved.ToArray(),
                 Required = required,
                 Injections = injections.ToArray(),
@@ -217,6 +223,7 @@ namespace UniMcp
                 ContextHandler = contextHandler,
                 Owner = owner,
                 NeedsTarget = owner is ITargetedTool,
+                Background = action.Background,
             };
         }
 
@@ -265,10 +272,6 @@ namespace UniMcp
             return char.ToUpperInvariant(value[0]) + value.Substring(1).Replace('_', ' ');
         }
 
-        private static string Slug(string value)
-        {
-            var slug = Regex.Replace((value ?? string.Empty).ToLowerInvariant(), "[^a-z0-9]+", "-").Trim('-');
-            return string.IsNullOrEmpty(slug) ? "uncategorized" : slug;
-        }
+        private static string Slug(string value) => CapabilityTagsAttribute.Slug(value);
     }
 }

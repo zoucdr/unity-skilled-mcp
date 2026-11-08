@@ -49,6 +49,37 @@ namespace UniMcp
         [SerializeField]
         private int _discoveryMaxDetails = McpDiscoverySnapshot.DefaultMaxDetails;
 
+        public const int DefaultToolEarlyReturnSeconds = 10;
+        public const int MinToolEarlyReturnSeconds = 1;
+        public const int MaxToolEarlyReturnSeconds = 600;
+
+        [SerializeField]
+        private int _toolEarlyReturnSeconds = DefaultToolEarlyReturnSeconds;
+
+        /// <summary>
+        /// tools/call 等待该秒数仍未完成时，先返回 running + task_id，让工具继续执行并落盘结论；
+        /// 客户端凭同一 id 查询即可，不必占着 HTTP 连接。
+        /// </summary>
+        public int ToolEarlyReturnSeconds
+        {
+            get => NormalizeEarlyReturn(_toolEarlyReturnSeconds);
+            set
+            {
+                int normalized = NormalizeEarlyReturn(value);
+                if (_toolEarlyReturnSeconds != normalized)
+                {
+                    _toolEarlyReturnSeconds = normalized;
+                    SaveSettings();
+                }
+            }
+        }
+
+        private static int NormalizeEarlyReturn(int seconds)
+        {
+            if (seconds < MinToolEarlyReturnSeconds) return DefaultToolEarlyReturnSeconds;
+            return seconds > MaxToolEarlyReturnSeconds ? MaxToolEarlyReturnSeconds : seconds;
+        }
+
         /// <summary>
         /// 单次发现详情数量；0 表示不限制数量，下次启动服务生效。
         /// </summary>
@@ -478,6 +509,7 @@ namespace UniMcp
             
             // 兼容旧配置，并将非法数量归一化后持久化。
             DiscoveryMaxDetails = _discoveryMaxDetails;
+            ToolEarlyReturnSeconds = _toolEarlyReturnSeconds;
 
             // 确保设置被正确初始化
             if (_mcpServerPort < 1024 || _mcpServerPort > 65535)

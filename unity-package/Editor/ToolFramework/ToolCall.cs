@@ -58,6 +58,12 @@ namespace UniMcp
                     state.SetObjectReference("_resolved_targets", target);
                 }
 
+                if (_spec.Background)
+                {
+                    RunInBackground(args, state);
+                    return;
+                }
+
                 object result = _spec.JsonHandler != null
                     ? _spec.JsonHandler(args)
                     : (_spec.ContextHandler != null ? _spec.ContextHandler(state) : null);
@@ -70,6 +76,53 @@ namespace UniMcp
                 Debug.LogException(e);
                 state.Complete(Response.Error("Tool '" + _spec.Name + "' failed: " + e.Message));
             }
+        }
+
+        /// <summary>
+        /// Execute a CPU-bound, Unity-API-free handler on the thread pool, then complete
+        /// the call on the editor main thread. Nothing is serialised on the worker.
+        /// </summary>
+        private void RunInBackground(JsonClass args, ToolContext state)
+        {
+            System.Threading.Tasks.Task.Run(() =>
+            {
+                object result = null;
+                string errorMessage = null;
+                try
+                {
+                    result = _spec.JsonHandler != null
+                        ? _spec.JsonHandler(args)
+                        : (_spec.ContextHandler != null ? _spec.ContextHandler(state) : null);
+                }
+                catch (Exception e)
+                {
+                    errorMessage = e.Message;
+                    Debug.LogException(e);
+                }
+
+                CoroutineRunner.Enqueue(() =>
+                {
+                    try
+                    {
+                        if (!string.IsNullOrEmpty(errorMessage))
+                        {
+                            state.Complete(Response.Error("Tool '" + _spec.Name + "' failed: " + errorMessage));
+                            return;
+                        }
+                        // A handler that returned its own context owns a coroutine (AsyncReturn);
+                        // Background and AsyncReturn are mutually exclusive, so this is defensive only.
+                        if (result == null || ReferenceEquals(result, state)) return;
+                        state.Complete(Json.FromObject(result));
+                    }
+                    catch (Exception e)
+                    {
+                        // Never leave the request pending: ProcessQueue swallows exceptions,
+                        // which would otherwise hang the MCP call forever.
+                        Debug.LogException(e);
+                        state.Complete(Response.Error("Tool '" + _spec.Name + "' result marshal failed: " + e.Message));
+                    }
+                });
+            });
         }
     }
 }

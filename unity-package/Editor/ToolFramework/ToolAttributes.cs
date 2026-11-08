@@ -15,6 +15,13 @@ namespace UniMcp
         public string GroupEn { get; set; }
         public string GroupZh { get; set; }
 
+        /// <summary>
+        /// Extra capability tags shared by every action in this module.
+        /// Merged with the default group / prefix tags, never replaces them.
+        /// Example: [ToolModule("texgen", GroupEn = "Assets", Tags = new[] { "procedural" })]
+        /// </summary>
+        public string[] Tags { get; set; }
+
         public ToolModuleAttribute(string prefix)
         {
             Prefix = (prefix ?? string.Empty).Trim();
@@ -47,6 +54,20 @@ namespace UniMcp
 
         /// <summary>Legacy field injections written as "key=value".</summary>
         public string[] Inject { get; set; }
+
+        /// <summary>
+        /// Extra capability tags for this single action only, on top of the module tags.
+        /// Example: [ToolAction("render", Tags = new[] { "screen-capture" })]
+        /// </summary>
+        public string[] Tags { get; set; }
+
+        /// <summary>
+        /// Run this action's handler on a thread-pool worker instead of the editor main thread.
+        /// Only valid for handlers that never touch Unity APIs directly; use
+        /// CoroutineRunner.Enqueue to marshal any Unity work back to the main thread.
+        /// Mutually exclusive with ToolContext.AsyncReturn.
+        /// </summary>
+        public bool Background { get; set; }
 
         /// <summary>
         /// True when the shortened parameter list was used. In that form each entry

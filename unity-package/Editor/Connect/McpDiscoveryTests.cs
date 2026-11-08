@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.IO;
 using System.Linq;
 using System.Text;
@@ -134,17 +134,19 @@ namespace UniMcp
             var tags = McpDiscoverySnapshot.GetTags(typeof(TaggedDefinition), "uncategorized");
             var group = new ToolNameAttribute("tagged", "Original Group", "原分类");
             var snapshot = new McpDiscoverySnapshot(new[] {
-                new ToolInfo { name = "tagged" }, new ToolInfo { name = "async_call" }
+                new ToolInfo { name = "tagged" }, new ToolInfo { name = "get_tool" }
             }, toolGroups: new System.Collections.Generic.Dictionary<string, ToolNameAttribute> { { "tagged", group } },
                 toolTags: new System.Collections.Generic.Dictionary<string, string[]> { { "tagged", tags } });
             var detail = Details(snapshot, "{\"tag\":\"shared\"}");
             Check(detail["count"].AsInt == 1 && detail["items"][0]["tags"].Count == 2, "工具实现类显式标签覆盖默认分类");
             Details(snapshot, "{\"tag\":\"original-group\"}", 404);
-            Check(Details(snapshot, "{\"tag\":\"system\"}")["items"][0]["name"].Value == "async_call", "系统工具保留 system 标签");
+            Check(Details(snapshot, "{\"tag\":\"system\"}")["items"][0]["name"].Value == "get_tool", "系统工具保留 system 标签");
             tags[0] = "mutated";
             Check(Details(snapshot, "{\"tag\":\"shared\"}").ToString() == detail.ToString(), "工具标签数组发布后隔离");
             var listing = Json.Parse(Response(snapshot, "/groups"));
-            Check(listing["groups"].Count == 3, "多标签目录去重且不包含被覆盖的默认组");
+            Check(listing["tags"].Count == 3, "多标签目录去重且不包含被覆盖的默认组");
+            Check(listing["tags"]["shared"].Count == 1 && listing["tags"]["shared"][0].Value == "@tagged",
+                "仅单个工具命中的标签以 @全名 精确记录，不误报整个 prefix");
             Check(McpDiscoverySnapshot.GetTags(typeof(ArrayTaggedDefinition), "prompts")[0] == "legacy", "统一标签保留数组构造兼容");
             var attribute = new CapabilityTagsAttribute("first");
             var copy = attribute.Tags;
@@ -170,10 +172,21 @@ namespace UniMcp
             var snapshot = new McpDiscoverySnapshot(tools, new[] { prompt }, new[] { resource }, groups);
             var groupListing = Json.Parse(Response(snapshot, "/groups"));
             Check(groupListing["max_details"].AsInt == 32 && groupListing["max_response_bytes"].AsInt == 65536, "组目录默认数量及独立字节限制");
-            var sceneGroup = Enumerable.Range(0, groupListing["groups"].Count).Select(i => groupListing["groups"][i]).First(g => g["tag"].Value == "scene");
-            Check(sceneGroup["tag"].Value == "scene", "稳定英文标签");
-            Check(sceneGroup["counts"]["tools"].AsInt == 2, "组成员数量");
-            Check(sceneGroup.ToObject().Count == 3, "组目录不复制详情");
+            var tagsIndex = groupListing["tags"];
+            Check(tagsIndex.Count == 3, "目录只保留三个 tag 键");
+            Check(tagsIndex["scene"].Count == 1
+                && tagsIndex["scene"][0].Value == McpDiscoverySnapshot.RootNamespace,
+                "整 prefix 命中时以 prefix 引用，无前缀工具归入保留命名空间");
+            Check(tagsIndex["prompts"].Count == 0 && tagsIndex["resources"].Count == 0,
+                "无工具的纯提示词/资源组保留为空索引，仍可作 details --tag 的键");
+            Check(groupListing["labels"].Count == 1 && groupListing["labels"]["scene"].Value != "scene",
+                "中文分组名单独保留，与 tag 相同者省略");
+            var namespaces = groupListing["namespaces"];
+            Check(namespaces.Count == 1 && namespaces[McpDiscoverySnapshot.RootNamespace].Count == 2,
+                "全局命名空间树汇总全部工具");
+            Check(namespaces[McpDiscoverySnapshot.RootNamespace][0].Value == "hierarchy_apply"
+                && McpDiscoverySnapshot.NamespaceOf("texgen.pbr") == "texgen"
+                && McpDiscoverySnapshot.ActionOf("texgen.pbr") == "pbr", "prefix + . + action 可还原全名");
             foreach (string path in new[] { "/groups", "/tools", "/prompts", "/resources" })
                 Check(Response(snapshot, path) == Response(snapshot, "/mcp" + path), "摘要别名 " + path);
             var prompts = Json.Parse(Response(snapshot, "/prompts"));
@@ -470,12 +483,12 @@ namespace UniMcp
             // UpdateDiscoverySnapshot is exercised below.
             type.GetField("availablePrompts", flags).SetValue(service, new System.Collections.Generic.Dictionary<string, IPrompts>());
             type.GetField("availableResources", flags).SetValue(service, new System.Collections.Generic.Dictionary<string, IRes>());
-            foreach (string method in new[] { "AddAsyncMcpTool", "AddGetPromptDetailTool", "AddGetResourceDetailTool", "AddSearchMcpTool" })
+            foreach (string method in new[] { "AddGetPromptDetailTool", "AddGetResourceDetailTool", "AddGetMcpTool" })
                 type.GetMethod(method, flags).Invoke(service, null);
             var snapshot = new McpDiscoverySnapshot(infos.Values);
             type.GetField("discoverySnapshot", flags).SetValue(service, snapshot);
-            var systemGroup = Json.Parse(Response(snapshot, "/groups"))["groups"][0];
-            Check(systemGroup["tag"].Value == "system" && systemGroup["counts"]["tools"].AsInt == 4, "四个系统工具归入 system");
+            var systemGroup = Json.Parse(Response(snapshot, "/groups"))["namespaces"][McpDiscoverySnapshot.RootNamespace];
+            Check(systemGroup != null && systemGroup.Count == 3, "三个内置门面归入保留命名空间 _");
             // Legacy MCP list endpoints are intentionally kept working; the Skill
             // discovery endpoints are an alternative, not a replacement.
             foreach (string method in new[] { "HandleToolsList", "HandlePromptsList", "HandleResourcesList" })
@@ -488,7 +501,7 @@ namespace UniMcp
                 "1", new JsonClass { { "name", new JsonData("disabled") } }
             }));
             Check(missingPrompt["error"]["code"].AsInt == -32602, "prompts/get 拒绝快照外提示词");
-            foreach (string name in new[] { "async_call", "get_prompt", "get_resource", "search_tool" })
+            foreach (string name in new[] { "get_prompt", "get_resource", "get_tool" })
             {
                 var schema = Json.Parse(Response(snapshot, "/tools/" + name + "/schema"))["inputSchema"];
                 Check(schema["type"].Value == "object" && schema["properties"].Count > 0 && schema["required"].Count > 0, "内置工具完整 schema: " + name);

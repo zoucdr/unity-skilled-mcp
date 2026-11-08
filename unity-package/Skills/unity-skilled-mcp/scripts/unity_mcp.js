@@ -455,7 +455,7 @@ function schemaNames(args) {
 function help(command) {
   const usage = {
     discover: 'discover（显式重新确认工程及实例绑定；不重放操作）',
-    status: 'status REQUEST_ID --instance-id INSTANCE_ID\n  查询 accepted/running/completed/failed/unknown；unknown 不证明未执行。',
+    status: 'status REQUEST_ID --instance-id INSTANCE_ID\n  查询 accepted/running/completed/failed/interrupted/unknown；结论落盘，Unity 重启后同一 ID 仍可查。unknown 不证明未执行。',
     groups: 'groups',
     list: 'list [--kind tools|prompts|resources]',
     details: 'details (--tag TAG | --members JSON数组 | --members-file FILE | --members-stdin)\n  去重成员上限由 discovery 的 max_details 决定（默认32，0不限数量），响应最多 65536 字节；禁止全量选择；标签从 groups 获取。',
@@ -600,7 +600,10 @@ async function execute(args) {
   }
   if (args.command === 'groups') {
     const result = await requestHttp(base + '/groups', args.timeout);
-    if (!isObject(result) || !Array.isArray(result.groups) || !responseDetailsLimit(result, info.max_details)
+    // v2 契约用 tags 索引；服务尚未域重载时仍返回旧 groups 数组，过渡期两者皆接受。
+    const hasTags = isObject(result) && isObject(result.tags);
+    const hasLegacyGroups = isObject(result) && Array.isArray(result.groups);
+    if (!isObject(result) || !(hasTags || hasLegacyGroups) || !responseDetailsLimit(result, info.max_details)
         || result.max_response_bytes !== MAX_RESPONSE_BYTES) throw new ClientError('groups 响应格式或限制无效。', 5);
     logInfo('组详情数量限制：' + (info.max_details === 0 ? '不限数量' : info.max_details) + '；仍受 65536 字节与禁止全集规则约束。');
     return result;

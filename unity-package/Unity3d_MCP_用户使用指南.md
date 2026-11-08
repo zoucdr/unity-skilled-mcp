@@ -158,11 +158,12 @@ Unity Skilled MCP采用独特的双层调用架构：
 AI指令 → FacadeTools → MethodTools → Unity API
 ```
 
-#### FacadeTools（门面工具，内置 4 个，可在工具页单独开关）
-- **async_call**：异步调用门面；结论落盘到 `ProjectSettings/UnitySkilledMcpAsyncResults.asset`，Unity 重启后可按原 `id` 取回（`type=in` 启动 / `type=out` 取结论）
-- **search_tool**：按 `type=list/detail` 查询工具目录与单个工具定义
+#### FacadeTools（门面工具，内置 3 个，可在工具页单独开关）
+- **get_tool**：按 `type=list/detail` 查询工具目录与单个工具定义
 - **get_prompt**：按名称读取一个已启用提示词的正文
 - **get_resource**：按 URI 读取一个已注册且启用资源的正文；内部复用 `resources/read` 的读取实现，只接受 `/resources` 目录中的 URI（`resource://<名称>` 亦可），返回 `contents`（text / blob）
+
+三者同构：`get_prompt` / `get_resource` 分别是 `prompts/get`、`resources/read` 的 `tools/call` 兜底，`get_tool` 是 `tools/list` + `tools/get` 的兜底，只供不支持对应原语或裁掉了 `tools/list` 描述的客户端使用；`tools/list` 已全量发布时它们并非必需。
 
 #### MethodTools（功能工具）
 40+ 专业工具，按 **8 个功能分组**组织（分组由模块的 `GroupEn` / `GroupZh` 决定，即 `groups` 命令返回的标签）：
@@ -210,15 +211,12 @@ EnqueueTask(() => {
 **对应的MCP调用：**
 ```json
 {
-  "func": "async_call",
-  "args": {
-    "func": "hierarchy_create",
-    "args": {
-      "name": "Player",
-      "source": "primitive",
-      "primitive_type": "Cube",
-      "position": [0, 1, 0]
-    }
+  "name": "hierarchy_create",
+  "arguments": {
+    "name": "Player",
+    "source": "primitive",
+    "primitive_type": "Cube",
+    "position": [0, 1, 0]
   }
 }
 ```
@@ -233,16 +231,14 @@ EnqueueTask(() => {
 **对应的MCP调用：**
 ```json
 {
-  "func": "async_call",
-  "args": {
-    "func": "edit_component",
-    "args": {
-      "path": "Player",
-      "component_type": "Transform",
-      "action": "set_component_propertys",
-      "properties": {
-        "scale": [2, 2, 2]
-      }
+  "name": "edit_component",
+  "arguments": {
+    "path": "Player",
+    "component_type": "Transform",
+    "action": "set_component_propertys",
+    "properties": {
+      "scale": [2, 2, 2]
+    }
     }
   }
 }
@@ -503,7 +499,7 @@ Renderer数量: 89
 
 2. **多步操作交给技能脚本**
    ```
-   批量门面已移除；用技能库 API 顺序调用，耗时任务交给 async_call 落盘取回
+   批量门面已移除；用技能库 API 顺序调用。任意工具调用都会落盘，超过等待阈值时先返回 running + task_id
    ```
 
 3. **优化Unity编辑器**
@@ -547,7 +543,7 @@ Renderer数量: 89
 ### Q8：如何编排多步操作？
 **A：**
 1. `batch_call` / `sync_call` 已移除，直接在技能脚本里逐次调用 `分组.动作` 工具
-2. 耗时任务用 `async_call`（`type=in` 启动、`type=out` 取结论，结论落盘且重启可查）
+2. 耗时任务照常直接调用：超过等待阈值（默认 10s，`UserSettings/McpLocalSettings.asset` 的 `_toolEarlyReturnSeconds` 可调）时，响应变为 `status=running` 并带 `task_id` 与 `query_path`，工具继续执行；用 `/requests/<task_id>` 或 `system.tasks` 查结论，Unity 重启后仍可查（结论落盘 `ProjectSettings/UnitySkilledMcpTasks.asset`）
 3. 按依赖关系顺序编排，避免单次操作过多
 4. 必要时在操作前暂停自动刷新
 

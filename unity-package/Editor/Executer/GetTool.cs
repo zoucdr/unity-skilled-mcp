@@ -6,14 +6,15 @@ using UniMcp.Models;
 namespace UniMcp.Executer
 {
     /// <summary>
-    /// 搜索/查询工具：获取当前 MCP 支持的所有工具列表及二级工具详情。
+    /// 工具定义门面：与 get_prompt / get_resource 同组，供只会 tools/call 的客户端
+    /// 查询工具目录与单个工具定义（等价于 tools/list 与 tools/get 的兜底）。
     /// 支持两种查询类型：
     ///   - type = "list"       → 返回所有工具的名称与描述概览
-    ///   - type = "detail"     → 返回指定工具的完整详情（含参数键与预览）
+    ///   - type = "detail"     → 返回指定工具的完整详情（含参数键与 Schema）
     /// </summary>
-    public sealed class SearchTool : McpTool
+    public sealed class GetTool : McpTool
     {
-        public override string ToolName => "search_tool";
+        public override string ToolName => "get_tool";
 
         public override void HandleCommand(JsonNode ctx, Action<JsonNode> callback)
         {
@@ -42,7 +43,7 @@ namespace UniMcp.Executer
             }
             catch (Exception ex)
             {
-                McpLogger.LogError($"[SearchTool] Command execution failed: {ex.Message}");
+                McpLogger.LogError($"[GetTool] Command execution failed: {ex.Message}");
                 callback(Response.Error($"Internal error: {ex.Message}"));
             }
         }
@@ -72,7 +73,7 @@ namespace UniMcp.Executer
         }
 
         /// <summary>
-        /// 获取指定工具的详情，包括参数键列表和状态树预览。
+        /// 获取指定工具的详情，包括参数键列表与状态树预览。
         /// </summary>
         private void HandleDetail(JsonNode ctx, Action<JsonNode> callback)
         {

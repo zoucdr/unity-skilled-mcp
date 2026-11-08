@@ -27,8 +27,9 @@ agent_created: true
 - 目录查询允许错连，但 stderr 只给简短警告。`call`、`prompt`、`resource` 与所有同源 `request`（包括未知 GET）必须先匹配预期工程，再发送 `X-Mcp-Expected-Project: encodeURIComponent(path)` 与 `X-Mcp-Instance-Id`。跨源 `request` 不发送这些头，任何大小写的手工注入均拒绝。
 - `Client` 在匹配后锁定 discovery 的 `instance_id`；后续发现实例漂移即拒绝，不自动重放。显式 `discover()` / CLI `discover` 表示重新确认匹配工程的新实例，不执行旧操作。CLI 跨进程须传 `--instance-id ID` 保持绑定；库可在构造或 `configure` 时传 `instance_id`。
 - 每次 `call` 自动生成 `params.request_id`；可用 `call NAME --request-id ID`，或 `client.call(name, args, { request_id: ID })` / `callTool` / `callSkill` 第三参数显式指定。失败异常与 CLI 错误包含 `request_id`、`instance_id`、`query_path`；HTTP 非 2xx 保留服务正文，库异常另含 `body`、`status`。
-- `status REQUEST_ID --instance-id INSTANCE_ID`、`client.requestStatus(id, instanceId)` 或顶层 `requestStatus` 查询 `GET /requests/{id}?instance_id=...`。库省略实例参数时用已有绑定；可查询旧实例而不更新绑定。状态为 `accepted/running/completed/failed/unknown`；`unknown` 不证明未执行，`failed` 不证明无副作用。台账限于实例且有容量、结果预算与过期限制。
-- 同实例同 ID 同参数不重复执行，异参数冲突；重复响应可能是台账状态而非原工具内容。超时或断连先查询，不自动换 ID 重放，更不重跑整个序列。
+- `status REQUEST_ID --instance-id INSTANCE_ID`、`client.requestStatus(id, instanceId)` 或顶层 `requestStatus` 查询 `GET /requests/{id}?instance_id=...`。库省略实例参数时用已有绑定；可查询旧实例而不更新绑定。状态为 `accepted/running/completed/failed/interrupted/unknown`；`unknown` 不证明未执行，`failed` 不证明无副作用。结论落盘于 `ProjectSettings/UnitySkilledMcpTasks.asset`，**Unity 重启或域重载后同一 ID 仍可查**；带 `from_previous_session` 者来自上一会话，`interrupted` 表示重启前未完。
+- 同实例同 ID 同参数不重复执行，异参数冲突；重复响应可能是台账状态而非原工具内容。若该 ID 在落盘库里已有终态，服务端直接回放结论（`replayed:true`）而不执行工具；`interrupted` 则以 `-32004` 要求换新 ID 重跑。超时或断连先查询，不自动换 ID 重放，更不重跑整个序列。
+- 单次 `call` 超过等待阈值（默认 10 秒）即返回成功语义之 `{status:"running", task_id, query_path}`，工具继续执行并在完成时落盘；照 `query_path` 取结论即可，勿因未见结果而重发。
 
 ```sh
 node scripts/unity_mcp.js --expected-project /path/to/UnityProject discover
@@ -51,7 +52,7 @@ node scripts/unity_mcp.js details --members-stdin < selection.json
 ```
 
 - 凡 `NAME_*` / `URI_FROM_LIST` / `TAG` 皆占位符，须换成 `groups` / `list` 返回之实成员。示例非可用清单。
-- `TAG` 取自 `groups` 返回，禁猜标签。`GET /groups` 返 `{groups:[{tag,label,counts:{tools,prompts,resources}}],max_details:N,max_response_bytes:65536}`；`N` 由服务端启动配置定。
+- `TAG` 取自 `groups` 返回，禁猜标签。`GET /groups` 返 `{namespaces:{prefix:[action,...]},tags:{tag:[prefix|"@全名",...]},labels:{tag:中文名},prompts:[name,...],resources:[uri,...],max_details:N,max_response_bytes:65536}`；`N` 由服务端启动配置定。`namespaces` 为全局能力树（只收工具），每个工具名只出现一次；全名还原规则：`prefix + "." + action`，`prefix` 为 `_` 时全名即 `action`。`tags` 为反查索引：值为 `prefix` 表该 tag 覆盖此前缀下全部工具；值为 `"@全名"` 表只覆盖这一个工具（单个 action 显式打 tag 时出现）；空数组表该 tag 下无工具（如 `prompts` / `resources` 组）。`labels` 只列与 tag 不同的中文分组名，其余 label 即 tag 本身。某 tag 工具数 = 各 `prefix` 项展开的 action 总数 + `"@全名"` 项数。目录层据此即可判断各组用途，无须先取整份 `/tools`；`details --tag` 仍只按 `tag` 选择，禁以 `prefix` 或 `action` 代替工具全名。
 - `list --kind tools|prompts|resources` 默认 `tools`，仅取对应 HTTP 目录。`/tools` 保持原目录；`/prompts` 返 `{prompts:[{name,description,tags}],count}`；`/resources` 返 `{resources:[{uri,name,description,mimeType,tags}],count}`。
 - 只选本次任务所需成员。`selection.json` 内容是 **members 数组本身**，非 `{members:...}` 包装。可混三类：工具/提示词仅含 `kind,name`，资源仅含 `kind,uri`；URI 原样传递，不作 HTTP 地址访问。
 - `details` 之 `--tag` 与三种 `--members` 输入互斥，须且只须择一。发一次 `POST /capabilities/details`，请求仅 `{tag:TAG}` 或 `{members:[...]}`；返 `{items:[各类详情],count,max_details:N}`。按类型及名称/URI 去重后不得过 `N` 项；响应至多 65536 UTF-8 字节。
@@ -113,7 +114,7 @@ const summary = await unity.workflowContext('TASK_NAME', 'TASK_DESCRIPTION', asy
 - `pickFrom` 为伪代码，表「由调用方依目录与 schema 决定」，非库函数。工具名须出 `find` / `list --kind tools`，参数只依 `schema` / `schemas` 传。示例无真实工具名，勿照抄参数。
 - `callSkill` 返 MCP `result`；`callTool` 返完整 JSON-RPC 信封；`callSkillText` 拼 `content[*].text`；`callSkillJson` 再解析为 JSON，失败抛错。
 - `workflowContext` 只作**调用记录与汇总**：块内 `callSkill` 自动记入 `wf.calls`，含参数、结果或错误码与耗时。失败照常外抛，**不重试、不回滚、不自动重放**。`wf.summary()` 块内外皆可调用。
-- 每次调用仍重读 INI 并验 `/discovery`，不缓存端口，但锁定实例；服务重启须显式 `discover` 重新确认，禁止自动跟随重放。库模式默认静默 stderr，错连或连接变更给简短警告（`verbose: true` 才出完整信息）。所有方法皆 `async`，须 `await`；异常为 `ClientError`（含 `.code`，同 CLI 退出码）。
+- 每次调用仍重读 INI 并验 `/discovery`，不缓存端口，但锁定实例；域重载与脚本重编译**不更换实例标识**（存于编辑器 SessionState），故不必重新 `discover`、也无需重取工具与 Schema；只有 Unity 进程重启才会漂移，那时须显式 `discover` 重新确认，禁止自动跟随重放。库模式默认静默 stderr，错连或连接变更给简短警告（`verbose: true` 才出完整信息）。所有方法皆 `async`，须 `await`；异常为 `ClientError`（含 `.code`，同 CLI 退出码）。
 - 多连接或自定义配置用 `new Client({ ini, timeout, verbose })`；方法名 `discover / groups / list / find / details / schema / schemas / call / prompt / resource / request`。顶层函数清单见脚本末 `module.exports`。
 - 安全边界同 CLI：禁全集、拒未注册 URI、守 `max_details` 与 64 KiB；`request` 绝对外发地址仍须用户明确授权。库不得绕过 SKILL.md 任何规则。
 
@@ -150,9 +151,9 @@ node scripts/unity_mcp.js resource URI
 
 - 资源 URI 唯目录中已注册者可用；`resource://名称` 只是按名别名，服务端最终只解 `file://` / `http://` / `https://`，他 scheme 一律拒。
 - 资源无订阅推送：内容变更须重新 `resource` 读取；`file://` 按修改时间失效缓存，`http(s)://` 缓存 30 分钟，故一次读到之值不等于当下最新。
-- `tools/call` 有超时上限，大或慢之资源勿经 `call` 之门面取，宜直接 `resource`（`resources/read`）；技能客户端本就走后者。
+- `tools/call` 逾等待阈值即改回 `running` + `task_id`（成功语义，非错误），工具仍在执行；大或慢之资源勿经 `call` 取，宜直接 `resource`（`resources/read`），技能客户端本就走后者。
 - 凡按条件筛选、限量或按类型读取之结果，只述本次返回集合，**不证全局无此类条目**。返回为空或不符预期，先核本次生效之筛选条件是否与返回所标一致，勿据此断言「无警告」「无错误」。
-- 写资源类调用可能因编辑器主线程导入而丢失响应；**响应丢失不表未执行**。先以只读手段核实产物或状态，再决定是否续行未执行之步；勿盲目重放整段序列。域重载会清空请求台账，故 `status` 返回 `unknown` 亦**不证明未执行**；核实产物宜比对修改时间，勿只看文件存在，更勿把工具返回的 `success:false` 当成网络失败吞掉。
+- 写资源类调用可能因编辑器主线程导入而丢失响应；**响应丢失不表未执行**。先以只读手段核实产物或状态，再决定是否续行未执行之步；勿盲目重放整段序列。域重载会清空内存台账，但落盘任务库仍在，故 `status` 通常仍有记录；只有从未进入执行的 ID 才回 `unknown`，**`unknown` 亦不证明未执行**。核实产物宜比对修改时间，勿只看文件存在，更勿把工具返回的 `success:false` 当成网络失败吞掉。
 
 ## 多步访问
 

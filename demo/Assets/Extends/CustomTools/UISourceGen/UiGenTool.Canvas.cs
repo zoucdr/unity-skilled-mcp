@@ -27,7 +27,7 @@ namespace UniMcp.UiGen
         // ----------------------------------------------------------------- draw
 
         [ToolAction("draw", "canvas=require", "output_dir", "base_name", "format", "quality",
-                    "name_suffix", "supersample", "select_asset")]
+                    "name_suffix", "supersample", "select_asset", Background = true)]
         private object ActionDraw(JsonClass args)
         {
             JsonNode canvasNode = UiParser.Get(args, "canvas");
@@ -127,7 +127,10 @@ namespace UniMcp.UiGen
             if (UiParser.GetBool(args, "select_asset", false))
             {
 #if UNITY_EDITOR
-                Selection.activeObject = AssetDatabase.LoadAssetAtPath<UnityEngine.Object>(rel);
+                CoroutineRunner.Enqueue(() =>
+                {
+                    Selection.activeObject = AssetDatabase.LoadAssetAtPath<UnityEngine.Object>(rel);
+                });
 #endif
             }
 
@@ -138,7 +141,7 @@ namespace UniMcp.UiGen
 
         // ---------------------------------------------------------------- batch
 
-        [ToolAction("draw_batch", "canvases=require", "output_dir", "format", "quality", "supersample")]
+        [ToolAction("draw_batch", "canvases=require", "output_dir", "format", "quality", "supersample", Background = true)]
         private object ActionDrawBatch(JsonClass args)
         {
             JsonNode listNode = UiParser.Get(args, "canvases");
@@ -210,7 +213,7 @@ namespace UniMcp.UiGen
 
         // ------------------------------------------------------------------ pdf
 
-        [ToolAction("pdf", "canvases=require", "output_dir", "base_name")]
+        [ToolAction("pdf", "canvases=require", "output_dir", "base_name", Background = true)]
         private object ActionPdf(JsonClass args)
         {
             JsonNode listNode = UiParser.Get(args, "canvases");
@@ -294,7 +297,7 @@ namespace UniMcp.UiGen
         // -------------------------------------------------------------- measure
 
         [ToolAction("measure", "text", "font_size", "font_path", "font_family", "bold",
-                    "letter_spacing", "text_scale_x", "path")]
+                    "letter_spacing", "text_scale_x", "path", Background = true)]
         private object ActionMeasure(JsonClass args)
         {
             string text = UiParser.GetString(args, "text", null);
@@ -387,7 +390,7 @@ namespace UniMcp.UiGen
         // ----------------------------------------------------------------- svg
 
         [ToolAction("svg", "path=require", "output_dir", "base_name", "width", "height",
-                    "fill", "stroke", "stroke_width", "supersample")]
+                    "fill", "stroke", "stroke_width", "supersample", Background = true)]
         private object ActionSvg(JsonClass args)
         {
             string pathData = UiParser.GetString(args, "path", null);
@@ -548,27 +551,39 @@ namespace UniMcp.UiGen
         private void ImportAssets(IEnumerable<string> rels)
         {
 #if UNITY_EDITOR
-            AssetDatabase.DisallowAutoRefresh();
-            try
+            // 资源导入仍在主线程执行，但排到下一帧，不阻塞后台渲染或当前调用。
+            var snapshot = new List<string>(rels);
+            CoroutineRunner.Enqueue(() =>
             {
-                foreach (string rel in rels)
+                AssetDatabase.DisallowAutoRefresh();
+                try
                 {
-                    if (string.IsNullOrEmpty(rel)) continue;
-                    if (rel.EndsWith(".png", StringComparison.OrdinalIgnoreCase)
-                        || rel.EndsWith(".jpg", StringComparison.OrdinalIgnoreCase)
-                        || rel.EndsWith(".webp", StringComparison.OrdinalIgnoreCase)
-                        || rel.EndsWith(".bmp", StringComparison.OrdinalIgnoreCase)
-                        || rel.EndsWith(".gif", StringComparison.OrdinalIgnoreCase)
-                        || rel.EndsWith(".json", StringComparison.OrdinalIgnoreCase)
-                        || rel.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase))
-                        AssetDatabase.ImportAsset(ProjectPath(rel),
-                            ImportAssetOptions.ForceUpdate | ImportAssetOptions.ForceSynchronousImport);
+                    // 逐文件 ForceSynchronousImport 每次约 600ms；批量编辑模式把多次导入合成一次刷新，
+                    // 避免后台渲染虽已异步、主线程仍被资源导入独占数秒。
+                    AssetDatabase.StartAssetEditing();
+                    try
+                    {
+                        foreach (string rel in snapshot)
+                        {
+                            if (string.IsNullOrEmpty(rel)) continue;
+                            if (rel.EndsWith(".png", StringComparison.OrdinalIgnoreCase)
+                                || rel.EndsWith(".jpg", StringComparison.OrdinalIgnoreCase)
+                                || rel.EndsWith(".webp", StringComparison.OrdinalIgnoreCase)
+                                || rel.EndsWith(".bmp", StringComparison.OrdinalIgnoreCase)
+                                || rel.EndsWith(".gif", StringComparison.OrdinalIgnoreCase)
+                                || rel.EndsWith(".json", StringComparison.OrdinalIgnoreCase)
+                                || rel.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase))
+                                AssetDatabase.ImportAsset(AssetDbPath(rel),
+                                    ImportAssetOptions.ForceUpdate | ImportAssetOptions.ForceSynchronousImport);
+                        }
+                    }
+                    finally { AssetDatabase.StopAssetEditing(); }
                 }
-            }
-            finally
-            {
-                EditorApplication.delayCall += () => AssetDatabase.AllowAutoRefresh();
-            }
+                finally
+                {
+                    EditorApplication.delayCall += () => AssetDatabase.AllowAutoRefresh();
+                }
+            });
 #endif
         }
 

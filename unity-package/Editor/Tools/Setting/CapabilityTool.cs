@@ -48,7 +48,7 @@ namespace UniMcp.Tools
                 new MethodStr("name", L.T(
                     "Target name. Tools use the full 'group.action' name; prompts use their name; resources accept name or URI.",
                     "目标名称。工具用完整的 '分组.动作' 名；提示词用其名称；资源可传名称或 URI。"))
-                    .AddExamples("texgen.render", "search_tool"),
+                    .AddExamples("texgen.render", "get_tool"),
 
                 new MethodBool("enabled", L.T(
                     "Enable (true) or disable (false) the target. Used by action='set'.",
@@ -301,8 +301,8 @@ namespace UniMcp.Tools
                             return Response.Error(L.T(
                                 "Enabling every tool at once is ambiguous; pass a 'name' or a group prefix such as 'texgen'.",
                                 "一次性启用全部工具过于宽泛；请传入 'name' 或分组前缀（如 'texgen'）。"));
-                        // 声明式目录 + 4 个内置门面（async_call / get_prompt / get_resource / search_tool）。
-                        if (!ConfirmAll(ToolCatalog.Count + 4, args["confirm"]?.Value))
+                        // 声明式目录 + 3 个内置门面（get_prompt / get_resource / get_tool）。
+                        if (!ConfirmAll(ToolCatalog.Count + 3, args["confirm"]?.Value))
                             return Response.Error(L.T(
                                 "Refused: disabling every tool requires confirm='DISABLE_ALL'.",
                                 "已拒绝：禁用全部工具需传 confirm='DISABLE_ALL'。"));

@@ -10,8 +10,8 @@
 /[Pp]rojectSettings/ProjectSetting.asset
 /[Pp]rojectSettings/BurstAotSettings_Android.asset
 /[Pp]rojectSettings/TimelineSettings.asset
-# async_call conclusions are per-machine runtime output, not source
-/[Pp]rojectSettings/UnitySkilledMcpAsyncResults.asset
+# Tool-call task records are per-machine runtime output, not source
+/[Pp]rojectSettings/UnitySkilledMcpTasks.asset
 /UMotionData/
 
 /.vs/*
@@ -31,3 +31,11 @@
 /Assets/FigmaCache
 /Assets/Pics
 /Assets/Meshes
+
+# Generated image / preview folders (local tool output, not source)
+/Assets/UISourceGen/
+/Assets/UISourceGen.meta
+/Assets/TVScreen/
+/Assets/TVScreen.meta
+/Assets/CamryXV80_HiFi/
+/Assets/CamryXV80_HiFi.meta

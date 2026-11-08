@@ -28,6 +28,8 @@ namespace UniMcp
         public object Owner;
         /// <summary>True when the owner is an ITargetedTool that must resolve a target first.</summary>
         public bool NeedsTarget;
+        /// <summary>True when the handler runs on a worker thread (see ToolActionAttribute.Background).</summary>
+        public bool Background;
 
         public string Description => L.T(DescriptionEn, DescriptionZh);
         public string GroupName => L.T(GroupEn, GroupZh);

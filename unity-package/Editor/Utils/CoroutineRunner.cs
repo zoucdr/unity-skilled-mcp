@@ -64,6 +64,17 @@ namespace UniMcp
         }
 
         /// <summary>
+        /// Queue an action to run on the Unity main thread during the next editor update.
+        /// Safe to call from a worker thread; ProcessQueue drains the queue under the same lock.
+        /// Used to marshal background tool results back before touching any Unity API.
+        /// </summary>
+        public static void Enqueue(System.Action action)
+        {
+            if (action == null) return;
+            lock (_lock) _actions.Enqueue(action);
+        }
+
+        /// <summary>
         /// 处理队列中的任务
         /// </summary>
         private static void ProcessQueue()

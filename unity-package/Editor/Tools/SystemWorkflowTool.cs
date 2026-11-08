@@ -29,9 +29,23 @@ namespace UniMcp.Tools
 
         [ToolAction("tasks", "task_id")]
         private object Query(JsonClass a) => ExtensionSafety.Run(() => {
-            if (a.ContainsKey("task_id")) { var t = Find(ExtensionSafety.Text(a, "task_id")); return ExtensionSafety.Ok(State(t)); }
-            AsyncCallResultStore.Instance.EnsureOrphansMarked();
-            return ExtensionSafety.Ok(new { batches = Tasks.Values.Select(State).ToArray(), legacy_async = AsyncCallResultStore.Instance.All().Select(e => new { e.id, e.func, e.status, e.error, e.startedAt, e.completedAt, cancellable = false }).ToArray() });
+            if (a.ContainsKey("task_id")) {
+                string id = ExtensionSafety.Text(a, "task_id");
+                BatchTask batch;
+                if (Tasks.TryGetValue(id, out batch)) return ExtensionSafety.Ok(State(batch));
+                // 工具调用的 task_id（request_id）：结论已落盘，Unity 重启后仍可读。
+                var persisted = ToolTaskStore.Instance.Query(id);
+                if (persisted != null) return ExtensionSafety.Ok(persisted);
+                throw new ArgumentException("未找到该 task_id：既不在本域批任务中，也不在落盘任务库中");
+            }
+            ToolTaskStore.Instance.EnsureOrphansMarked();
+            return ExtensionSafety.Ok(new {
+                batches = Tasks.Values.Select(State).ToArray(),
+                tool_calls = ToolTaskStore.Instance.All().Select(e => new {
+                    task_id = e.id, tool = e.tool, status = e.status, error = e.error,
+                    started_at = e.startedAt, completed_at = e.completedAt, cancellable = false
+                }).ToArray()
+            });
         });
 
         [ToolAction("cancel", "task_id=require")]
@@ -118,7 +132,7 @@ namespace UniMcp.Tools
             }
             task.completed = DateTime.UtcNow.ToString("o"); AddAudit(task.id, task.status, task.error);
         }
-        private static BatchTask Find(string id) { BatchTask t; if (!Tasks.TryGetValue(id, out t)) throw new ArgumentException("当前域没有此批任务；历史async_call仅支持查询，不支持取消"); return t; }
+        private static BatchTask Find(string id) { BatchTask t; if (!Tasks.TryGetValue(id, out t)) throw new ArgumentException("当前域没有此批任务；工具调用任务只能查询，不能取消"); return t; }
         private static object State(BatchTask t) => new { t.id, t.status, t.error, t.created, t.completed, count = t.operations.Length, cancellable = t.status == "queued" };
         private static void AddAudit(string id, string operation, object detail) { while (Audit.Count >= 200) Audit.Dequeue(); Audit.Enqueue(new { time = DateTime.UtcNow.ToString("o"), task_id = id, operation, detail }); }
     }

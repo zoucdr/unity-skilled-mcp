@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using UnityEditor;
@@ -494,7 +494,7 @@ namespace UniMcp.Gui
                 EditorGUILayout.Space(8);
             }
 
-            // 内置门面工具（async_call / get_prompt / get_resource / search_tool）单独一组
+            // 内置门面工具（get_prompt / get_resource / get_tool）单独一组
             if (builtins.Count > 0)
             {
                 DrawBuiltinGroup(builtins, localSettings);
@@ -758,7 +758,7 @@ namespace UniMcp.Gui
         }
 
         /// <summary>
-        /// 绘制内置门面工具分组（async_call / get_prompt / get_resource / search_tool）。
+        /// 绘制内置门面工具分组（get_prompt / get_resource / get_tool）。
         /// </summary>
         private static void DrawBuiltinGroup(IReadOnlyList<ToolInfo> builtins, McpLocalSettings localSettings)
         {

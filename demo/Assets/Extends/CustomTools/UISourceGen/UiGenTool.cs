@@ -27,8 +27,21 @@ namespace UniMcp.UiGen
 
         private const string DefaultOutDir = "Assets/UISourceGen";
 
+        // Application.dataPath 只能主线程读取。ToolCatalog 在主线程反射调用 CreateKeys 时预热，
+        // 之后后台渲染线程只读缓存，避免 Unity API 跨线程异常。
+        private static string _dataPath;
+        private static string DataPath
+        {
+            get
+            {
+                if (_dataPath == null) _dataPath = Application.dataPath;
+                return _dataPath;
+            }
+        }
+
         protected override MethodKey[] CreateKeys()
         {
+            if (_dataPath == null) _dataPath = Application.dataPath;
             return new MethodKey[]
             {
                 new MethodObj("screen", L.T("Screen description: {name,width,height,theme,controls:[...]}.", "界面描述：{name,width,height,theme,controls:[...]}"), false),
@@ -67,7 +80,7 @@ namespace UniMcp.UiGen
         }
 
         // ---------------------------------------------------------------- render
-        [ToolAction("render", "screen=require", "output_dir", "base_name", "preview", "supersample", "select_asset")]
+        [ToolAction("render", "screen=require", "output_dir", "base_name", "preview", "supersample", "select_asset", Background = true)]
         private object ActionRender(JsonClass args)
         {
             JsonNode screenNode = UiParser.Get(args, "screen");
@@ -132,21 +145,34 @@ namespace UniMcp.UiGen
             catch (Exception e) { result.Warnings.Add("layout failed: " + e.Message); }
 
 #if UNITY_EDITOR
-            AssetDatabase.DisallowAutoRefresh();
-            try
+            // AssetDatabase / Selection / delayCall 只能在主线程调用；渲染本身在后台线程完成。
+            var writtenSnapshot = new List<string>(written);
+            bool selectAsset = UiParser.GetBool(args, "select_asset", false);
+            CoroutineRunner.Enqueue(() =>
             {
-                foreach (string rel in written)
+                AssetDatabase.DisallowAutoRefresh();
+                try
                 {
-                    if (rel.EndsWith(".png", StringComparison.OrdinalIgnoreCase) || rel.EndsWith(".json", StringComparison.OrdinalIgnoreCase))
-                        AssetDatabase.ImportAsset(ProjectPath(rel), ImportAssetOptions.ForceUpdate | ImportAssetOptions.ForceSynchronousImport);
+                    // 逐文件 ForceSynchronousImport 每次约 600ms；批量编辑模式把多次导入合成一次刷新。
+                    AssetDatabase.StartAssetEditing();
+                    try
+                    {
+                        foreach (string rel in writtenSnapshot)
+                        {
+                            if (rel.EndsWith(".png", StringComparison.OrdinalIgnoreCase) || rel.EndsWith(".json", StringComparison.OrdinalIgnoreCase))
+                                // AssetDatabase 只接受工程相对路径；ProjectPath 返回的是磁盘绝对路径。
+                                AssetDatabase.ImportAsset(AssetDbPath(rel), ImportAssetOptions.ForceUpdate | ImportAssetOptions.ForceSynchronousImport);
+                        }
+                    }
+                    finally { AssetDatabase.StopAssetEditing(); }
                 }
-            }
-            finally
-            {
-                EditorApplication.delayCall += () => AssetDatabase.AllowAutoRefresh();
-            }
-            if (UiParser.GetBool(args, "select_asset", false))
-                Selection.activeObject = AssetDatabase.LoadAssetAtPath<UnityEngine.Object>(previewRel);
+                finally
+                {
+                    EditorApplication.delayCall += () => AssetDatabase.AllowAutoRefresh();
+                }
+                if (selectAsset)
+                    Selection.activeObject = AssetDatabase.LoadAssetAtPath<UnityEngine.Object>(previewRel);
+            });
 #endif
 
             var data = new JsonClass();
@@ -165,7 +191,7 @@ namespace UniMcp.UiGen
         }
 
         // ---------------------------------------------------------------- batch
-        [ToolAction("batch", "screens=require", "output_dir", "preview", "supersample")]
+        [ToolAction("batch", "screens=require", "output_dir", "preview", "supersample", Background = true)]
         private object ActionBatch(JsonClass args)
         {
             JsonNode screensNode = UiParser.Get(args, "screens");
@@ -421,6 +447,23 @@ namespace UniMcp.UiGen
             return string.IsNullOrEmpty(name) ? dir : dir + "/" + name;
         }
 
+        /// <summary>工程相对路径（AssetDatabase 专用）。written 里的 rel 已是 Assets/... 形式。</summary>
+        private static string AssetDbPath(string rel)
+        {
+            if (string.IsNullOrEmpty(rel)) return rel;
+            string p = rel.Replace('\\', '/');
+            if (p.StartsWith("Assets/", StringComparison.OrdinalIgnoreCase)
+                || p.StartsWith("Packages/", StringComparison.OrdinalIgnoreCase)) return p;
+            if (Path.IsPathRooted(p))
+            {
+                string root = DataPath.Replace('\\', '/');
+                if (p.StartsWith(root, StringComparison.OrdinalIgnoreCase))
+                    return "Assets/" + p.Substring(root.Length).TrimStart('/');
+                return p;
+            }
+            return "Assets/" + p.TrimStart('/');
+        }
+
         private static string ProjectPath(string assetsPath)
         {
             assetsPath = assetsPath.Replace('\\', '/');
@@ -430,9 +473,9 @@ namespace UniMcp.UiGen
                 // drops the leading separator and makes Combine treat the rest as
                 // rooted, which silently redirects every write to the drive root.
                 string tail = assetsPath.Length > 7 ? assetsPath.Substring(7) : string.Empty;
-                return Path.Combine(Application.dataPath, tail).Replace('\\', '/');
+                return Path.Combine(DataPath, tail).Replace('\\', '/');
             }
-            string projectRoot = Directory.GetParent(Application.dataPath)?.FullName ?? Application.dataPath;
+            string projectRoot = Directory.GetParent(DataPath)?.FullName ?? DataPath;
             return Path.Combine(projectRoot, assetsPath).Replace('\\', '/');
         }
 

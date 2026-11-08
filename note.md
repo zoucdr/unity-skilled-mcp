@@ -1,6 +1,76 @@
 # 最近修改说明（2026-11-07）
 
-> 最新一轮：**扩展工具去掉 `_workflow` 后缀，优先共用已有前缀；旧工具不变**。文首表格为当前注册名，其后章节为历史记录，不追溯改写。其后章节为历史记录，早期描述的 `DefineTools` / `*.Tools.cs` / 状态树架构与旧工具名（`hierarchy_create` / `edit_gameobject` / `code_runner` 等）均已失效。本文件只记录改动，不是完整项目文档；完整用法见 `SKILL.md` 与 `README.md`。
+> 最新一轮：**第三个门面改名 `get_tool`，并把实例标识挪到 `SessionState`，域重载不再触发重新发现**。`get_prompt` / `get_resource` / `get_tool` 三个兜底入口从此同名同构；脚本重编译、进出 Play Mode 不再更换 `instance_id`，客户端无需重新 `discover`、重取工具与 Schema，只有 Unity 进程重启才会漂移。任意 `tools/call` 完成后结论写入 `ProjectSettings/UnitySkilledMcpTasks.asset`，Unity 重启后同一 `request_id` 仍可查；超过等待阈值（默认 10s）先返回成功语义的 `{status:"running", task_id, query_path}`。文首表格为当前注册名，其后章节为历史记录，不追溯改写。早期描述的 `DefineTools` / `*.Tools.cs` / 状态树架构与旧工具名（`hierarchy_create` / `edit_gameobject` / `code_runner` 等）均已失效。本文件只记录改动，不是完整项目文档；完整用法见 `SKILL.md` 与 `README.md`。
+
+## 本轮：门面改名 get_tool，热重载不再漂移
+
+> 用户：「为何门面工具里面是 get_resource、get_prompt，而工具是 search_tool，名字咋还有区别，现在的流程是啥，为啥还要有 search_tool 这个东西，另外 unity 一热重载，应该不要触发 ai 重新获取工具列表和详情。」
+
+### 一、为什么原来不一致
+
+- `get_prompt` / `get_resource` 是 MCP 原语 `prompts/get`、`resources/read` 的 tools/call 兜底版，名字刻意沿用原语动词；`search_tool` 是 `tools/list` + `tools/get` 的兜底，却按"动作"取名，且它并不做搜索（只有 `type=list` 全量枚举与 `type=detail` 按名取详情）。`async_call` 移除后同组只剩三个，不统一暴露出来。
+
+### 二、两条通路与 search_tool 的真实位置
+
+| 通路 | 流程 | 结论 |
+| --- | --- | --- |
+| MCP 客户端 | `initialize` → `tools/list` → `tools/call` | `tools/list` 全量发布 518 项 / 302 KB，客户端本地已有全部定义，门面冗余 |
+| 技能脚本 / GUI | `/discovery` → `/groups` → `/tools` → `/tools/{name}/schema` → `tools/call` | 功能被 REST 端点完全覆盖，门面同样冗余 |
+
+- 唯一仍站得住的场景：`EnableDescriptions=false`（省 token 模式）时 `tools/list` 剥掉描述，客户端只能靠 `type=detail` 把参数说明要回来。
+- 决策：保留门面但改名 `get_tool`，与另外两个同构；`tools/list` 维持全量（302 KB 由客户端缓存，只在重连时重传），不瘦身。
+
+### 三、改动
+
+- `Editor/Executer/SearchTool.cs` → `GetTool.cs`（保留原 `.meta` guid），类名 `SearchTool` → `GetTool`，`ToolName` → `get_tool`；描述改为"按名称获取工具定义"。
+- `McpService`：`AddSearchMcpTool()` → `AddGetMcpTool()`，注册名与 `GetEnabledToolNames()` 同步；`CapabilityTool` 示例名、`McpServiceGUI` 分组注释、`docs/index.html`、用户使用指南、`McpDiscoveryTests` 断言（含反射调用的方法名）一并更新。
+- **未加兼容别名**：工具名以 `tools/list` 为准，旧名直接消失。
+- `McpConnectionInfo`：`InstanceId` 由 static 初始化器的 Guid 改为存 `Editor.SessionState`（键 `UniMcp.InstanceId`），`[InitializeOnLoadMethod] RestoreInstanceId()` 在每次域加载后取回；删除从未被调用的 `RenewInstanceId()`。
+- 新增 `McpConnectionInfo.DomainId`（每次域加载新生成）：`ToolTaskStore.EnsureOrphansMarked` 与 `Query` 的 `from_previous_session` 改按域判定，条目新增 `domainId` 字段（旧记录回退比对 `instanceId`）。这样**热重载保住客户端绑定，同时把被重载杀死的 running 任务标成 `interrupted`**。
+- 修重放缺陷：跨重载回放时账本结论原被写成 `{"replayed":true}` 占位符，同会话第三次查该 id 只剩占位符；现在账本写入落盘库里的真实结论，`failed` 状态一并透传。
+
+### 四、实机验证（Unity 2021.3.45f2c1）
+
+- 连续 5 次 `engine.recompile`，`/discovery` 的 `instance_id` 恒为 `7350a064a641451c8fd543bbc79123e8`。
+- 上一域遗留 `running` 记录 → 重载后 `interrupted` 且 `from_previous_session:true`；已完成记录跨重载仍 `completed`。
+- 同 id 重发（重载后）0.13s 回放；再次同 id 走账本，返回完整结论而非占位符。
+- `tools/list` = 518，`/tools` 含 `get_tool` 且不再有 `search_tool`；`get_tool type=list` 返回 515 个声明式工具。
+- 编译 0 error / 0 warning；`McpDiscoveryTests.RunAll()` 通过；JS `node --test` 66/66。
+- `SKILL.md` 同步：域重载与脚本重编译不换实例标识，不必重新 `discover`、不必重取工具与 Schema；只有 Unity 进程重启才漂移。
+
+## 历史：移除 async_call，调用通道自带落盘与提前返回
+
+> 用户：「unity 工具调用执行，还加了个 async_call，不过他貌似没啥用了，能不能移除掉。然后确保正常工具的调用返回能进任务保存（和异步调用一样，当前任务落盘，并支持及时重启 unity 也能查状态），如果是异步任务耗时比较久，unity 内的工具也可以自动提前返回任务信息，带上任务 id。」
+
+### 一、移除 async_call
+
+- 删除 `Editor/Executer/AsyncCall.cs(.meta)`、`Editor/Model/AsyncCallResultStore.cs(.meta)`；内置入口收敛为 **3 个**（`get_prompt` / `get_resource` / `get_tool`），实时目录 518 项。
+- `McpService`：去掉 `AddAsyncMcpTool()` 与 `GetEnabledToolNames()` 里的注册、`AdaptToolArguments()` 的专用分支、执行记录里的 `async_call.<func>` 特判；`CapabilityTool` 的拒绝阈值同步为 `ToolCatalog.Count + 3`。
+- `McpDiscoveryTests` 内置断言改为 3；原「`groups[0].counts`」断言早已过时（`/groups` 现输出 `namespaces` / `tags`），改为校验保留命名空间 `_` 恰好 3 项。
+
+### 二、正常调用结论落盘
+
+- 新增 `Editor/Model/ToolTaskStore.cs`（`ScriptableSingleton`，`ProjectSettings/UnitySkilledMcpTasks.asset`）：字段 `id / tool / args / status / resultJson / error / instanceId / startedAt / completedAt`；`running | completed | failed | interrupted`；上限 100 条、单条结论 512 KiB、参数 8 KiB、结论总预算 4 MiB，超预算先清最旧结论并留状态。
+- `McpService` 在 `tools/call` 的入队处 `MarkRunning`、工具回调收尾处 `Complete`（同时写内存账本），绑定失败/内部异常时 `Interrupt`；因此**提前返回的调用同样会落盘**。
+- `/requests/{id}` 改为 `QueryTaskState`：落盘库优先（状态、工具名、起止时间、结论齐全），库内没有才回落内存账本；跨会话返回 `recorded_by_instance` 与 `from_previous_session`。
+- `Start()` 预热单例并调用 `EnsureOrphansMarked()`：只把**非本会话**的 `running` 标记为 `interrupted`（`instanceId` 比对），避免把当前正在执行的任务误判；该清理原先只在 `async_call` 入口执行，服务重启后 `/requests/` 查不到，故前移到启动流程。
+- 读取路径加锁（`entries` 的读与写都在 `gate` 内），长任务占住主线程时后台仍能查到 `running`。
+- 跨会话重放保护：`ledger.Accept` 返回 `accepted` 后先查落盘库，若同一 `request_id` 已有终态则直接回放（`replayed:true`）不再执行；`interrupted` 以 `-32004` 要求换新 id。避免 Unity 重启后客户端重试造成副作用二次执行。
+
+### 三、长耗时工具提前返回
+
+- `tools/call` 的 10s 错误超时改为**成功语义的提前返回**：`{success:true, status:"running", task_id, tool, waited_seconds, persisted:true, query_path, message}`，包在标准 `content[].text` 里；工具继续在主线程执行，完成时自动落盘。
+- 阈值可在 `UserSettings/McpLocalSettings.asset` 的 `_toolEarlyReturnSeconds` 调整（默认 10，范围 1–600，非法值回退默认）。
+- `system.tasks` 的 `task_id` 现在同时支持批任务与工具调用任务：先查批任务，再查落盘库；无参数时列表里新增 `tool_calls`（原 `legacy_async` 字段移除）。
+
+### 四、实机验证（Unity 2021.3.45f2c1）
+
+- 编译 **0 error / 0 warning**；`McpDiscoveryTests.RunAll()` PASS（顺带补齐安装提示词里缺失的 INI 路径与 `SKILL.md` 指向，两处既有断言失败）；JS `node --test` **66/66**。
+- `/tools` 518 项且无 `async_call`；常规调用后 `UnitySkilledMcpTasks.asset` 立即出现 `completed` 记录。
+- 12s / 60s / 90s 长调用：10s 返回 `status=running` + `task_id`，完成后 `/requests/{id}` 得到完整结论；运行中查询也能拿到 `running`。
+- 强杀编辑器后重启：同一 id 仍返回 `completed` 与 `from_previous_session=true`；伪造旧会话 `running` 记录在重启后被标记 `interrupted`。
+- 重启后用同一 `request_id` 重发：0.13s 直接 `replayed:true` 回放，未二次执行（原本要 12s）。
+- 任务库加入 `demo/.gitignore`（本机运行时产物，不入库）；旧的 `UnitySkilledMcpAsyncResults.asset` 已删除。
 
 ## 本轮：12 个扩展模块（尚未提交）
 
