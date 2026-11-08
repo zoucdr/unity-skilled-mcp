@@ -53,9 +53,9 @@ node scripts/unity_bridge.js details --members-stdin < selection.json
 ```
 
 - 凡 `NAME_*` / `URI_FROM_LIST` / `TAG` 皆占位符，须换成 `groups` / `list` 返回之实成员。示例非可用清单。
-- `TAG` 取自 `groups` 返回，禁猜标签。`GET /groups` 返 `{namespaces:{prefix:[action,...]},tags:{tag:[prefix|"@全名",...]},labels:{tag:中文名},prompts:[name,...],resources:[uri,...],max_details:N,max_response_bytes:65536}`；`N` 由服务端启动配置定。`namespaces` 为全局能力树（只收工具），每个工具名只出现一次；全名还原规则：`prefix + "." + action`，`prefix` 为 `_` 时全名即 `action`。`tags` 为反查索引：值为 `prefix` 表该 tag 覆盖此前缀下全部工具；值为 `"@全名"` 表只覆盖这一个工具（单个 action 显式打 tag 时出现）；空数组表该 tag 下无工具（如 `prompts` / `resources` 组）。`labels` 只列与 tag 不同的中文分组名，其余 label 即 tag 本身。某 tag 工具数 = 各 `prefix` 项展开的 action 总数 + `"@全名"` 项数。目录层据此即可判断各组用途，无须先取整份 `/tools`；`details --tag` 仍只按 `tag` 选择，禁以 `prefix` 或 `action` 代替工具全名。
-- `list --kind tools|prompts|resources` 默认 `tools`，仅取对应 HTTP 目录。`/tools` 保持原目录；`/prompts` 返 `{prompts:[{name,description,tags}],count}`；`/resources` 返 `{resources:[{uri,name,description,mimeType,tags}],count}`。
-- 只选本次任务所需成员。`selection.json` 内容是 **members 数组本身**，非 `{members:...}` 包装。可混三类：工具/提示词仅含 `kind,name`，资源仅含 `kind,uri`；URI 原样传递，不作 HTTP 地址访问。
+- `TAG` 取自 `groups` 返回，禁猜标签。`GET /groups` 返 `{namespaces:{prefix:[action,...]},tags:{tag:[prefix|"@全名",...]},labels:{tag:中文名},prompts:[name,...],resources:[name,...],max_details:N,max_response_bytes:65536}`；`N` 由服务端启动配置定。`namespaces` 为全局能力树（只收工具），每个工具名只出现一次；全名还原规则：`prefix + "." + action`，`prefix` 为 `_` 时全名即 `action`。`tags` 为反查索引：值为 `prefix` 表该 tag 覆盖此前缀下全部工具；值为 `"@全名"` 表只覆盖这一个工具（单个 action 显式打 tag 时出现）；空数组表该 tag 下无工具（如 `prompts` / `resources` 组）。`labels` 只列与 tag 不同的中文分组名，其余 label 即 tag 本身。某 tag 工具数 = 各 `prefix` 项展开的 action 总数 + `"@全名"` 项数。目录层据此即可判断各组用途，无须先取整份 `/tools`；`details --tag` 仍只按 `tag` 选择，禁以 `prefix` 或 `action` 代替工具全名。
+- `list --kind tools|prompts|resources|all` 默认 `tools`，仅取对应 HTTP 目录；`--kind all` 一次返回三类 `{tools,prompts,resources,counts}`。`/tools` 保持原目录；`/prompts` 返 `{prompts:[{name,description,tags}],count}`；`/resources` 返 `{resources:[{uri,name,description,mimeType,tags}],count}`。
+- 只选本次任务所需成员。`selection.json` 内容是 **members 数组本身**，非 `{members:...}` 包装。可混三类：工具/提示词仅含 `kind,name`，资源仅含 `kind,uri`；URI 原样传递，不作 HTTP 地址访问。`/groups` 只发资源名，故资源成员亦可写成 `{"kind":"resource","uri":"resource://<名称>"}`，服务端解析为注册 URI；确切 URI 以 `/resources` 目录为准。
 - `details` 之 `--tag` 与三种 `--members` 输入互斥，须且只须择一。发一次 `POST /capabilities/details`，请求仅 `{tag:TAG}` 或 `{members:[...]}`；返 `{items:[各类详情],count,max_details:N}`。按类型及名称/URI 去重后不得过 `N` 项；响应至多 65536 UTF-8 字节。
 - 禁空值、`all`、`*`、无选择、未知字段。禁一次取能力全集（纵未超数量）；单项可。是否全集、成员是否未知/禁用，服务端判之。组超限或全集选择返 HTTP 400，未知/禁用成员返 404。客户端不预取目录以判全集；失败即止，不回退、不拆组、不重试。
 - 资源详情仅注册定义，不隐式读内容；看正文须显式 `resource URI`。旧 MCP `tools/list` / `prompts/list` / `resources/list` 为兼容既有客户端保留，本技能不自动调；唯 `prompt` / `resource` / `call` 走 `prompts/get` / `resources/read` / `tools/call`。不遍历全部 schema，不循环分组变相取全集。
@@ -155,12 +155,12 @@ const summary = await unity.workflowContext('TASK_NAME', 'TASK_DESCRIPTION', asy
 
 ```sh
 node scripts/unity_bridge.js find QUERY
-node scripts/unity_bridge.js find QUERY --kind tools|prompts|resources
+node scripts/unity_bridge.js find QUERY --kind tools|prompts|resources|all
 node scripts/unity_bridge.js prompt NAME
 node scripts/unity_bridge.js resource URI
 ```
 
-- `find` 只取一次对应目录，按 `name` / `uri` / `description` / `tags` 作大小写不敏感子串匹配，返 `{kind,query,matches,count,total}`。不取详情、不读正文、不调 MCP 协议。关键字 1-128 字符，不含首尾空白与控制字符；以 `-` 开头时用 `--` 分隔。默认 `tools`，`--kind` 可选 `prompts` / `resources`。命中不即可取详情，仍以 `details` / `schema` 结果为准。
+- `find` 按 `name` / `uri` / `description` / `tags` 作大小写不敏感子串匹配。不带 `--kind` 或 `--kind all` 时**同时搜索工具、提示词、资源三类目录**，返 `{kind:"all",query,matches,count,total,breakdown}`，每条命中附 `category` 标明所属类目；指定单一 `--kind` 时返 `{kind,query,matches,count,total}`。不取详情、不读正文、不调 MCP 协议。关键字 1-128 字符，不含首尾空白与控制字符；以 `-` 开头时用 `--` 分隔。命中不即可取详情，仍以 `details` / `schema` 结果为准。
 - `details` 只给注册定义。用提示词/资源须 `prompt` / `resource`：先取一次 `/prompts` 或 `/resources` 目录验成员，再发一次 `prompts/get` / `resources/read`，响应须含 `messages` / `contents` 数组。
 - 名称与 URI 须出 `list --kind prompts` / `list --kind resources`，勿猜。`resource` 只受**目录中已注册**之 URI；服务端 `resources/read` 兼容任意 `http://`、`file://` URI，本技能刻意禁此用法，以免绕过 `request` 外发授权。`prompt` 不传参数，服务端现只按名称返模板正文。
 - 目录缺失、成员未注册、响应缺 `messages` / `contents`，立即报错。不重试，不回退 `request` 自拼 JSON-RPC。

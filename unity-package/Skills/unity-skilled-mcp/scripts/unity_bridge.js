@@ -457,12 +457,12 @@ function help(command) {
     discover: 'discover（显式重新确认工程及实例绑定；不重放操作）',
     status: 'status REQUEST_ID --instance-id INSTANCE_ID\n  查询 accepted/running/completed/failed/interrupted/unknown；结论落盘，Unity 重启后同一 ID 仍可查。unknown 不证明未执行。',
     groups: 'groups',
-    list: 'list [--kind tools|prompts|resources]',
+    list: 'list [--kind tools|prompts|resources|all]',
     details: 'details (--tag TAG | --members JSON数组 | --members-file FILE | --members-stdin)\n  去重成员上限由 discovery 的 max_details 决定（默认32，0不限数量），响应最多 65536 字节；禁止全量选择；标签从 groups 获取。',
     schema: 'schema NAME',
     schemas: 'schemas NAME [NAME ...] | schemas (--names JSON数组 | --names-file FILE | --names-stdin)\n  一次获取多个工具的完整 Schema；去重后上限由 max_details 决定（默认32，0不限数量），响应最多 65536 字节；禁止全量选择。',
     call: 'call NAME [--args JSON | --args-file FILE | --args-stdin]',
-    find: 'find QUERY [--kind tools|prompts|resources]\n  在目录摘要中按名称/描述/标签/URI 做本地关键字过滤，不拉取详情；默认 tools。',
+    find: 'find QUERY [--kind tools|prompts|resources|all]\n  在目录摘要中按名称/描述/标签/URI 做本地关键字过滤，不拉取详情；不带 --kind 或 --kind all 时同时搜索工具+提示词+资源三类。',
     prompt: 'prompt NAME\n  名称必须来自 list --kind prompts；读取 prompts/get 的消息正文，不隐式调用旧目录接口。',
     resource: 'resource URI\n  URI 必须来自 list --kind resources；读取 resources/read 内容，拒绝未注册的 http/file URI。',
     request: 'request TARGET [--method GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS]\n  [--header NAME:VALUE ...] [--data JSON | --data-file FILE | --data-stdin]',
@@ -480,7 +480,7 @@ function help(command) {
 }
 
 function parseArgs(argv) {
-  const args = { ini: path.join(os.homedir(), '.unity-mcp', 'skill.ini'), timeout: 15, headers: [], method: 'GET', kind: 'tools', targets: [] };
+  const args = { ini: path.join(os.homedir(), '.unity-mcp', 'skill.ini'), timeout: 15, headers: [], method: 'GET', kind: 'tools', kindExplicit: false, targets: [] };
   let positionalOnly = false;
   for (let i = 0; i < argv.length; i++) {
     const token = argv[i];
@@ -512,7 +512,7 @@ function parseArgs(argv) {
       } else if (flag === '--tag') {
         if (args.tag !== undefined) throw new ClientError('--tag 只能指定一次。', 2);
         args.tag = value;
-      } else if (flag === '--kind') args.kind = value;
+      } else if (flag === '--kind') { args.kind = value; args.kindExplicit = true; }
       else if (flag === '--expected-project') args.expected_project = value;
       else if (flag === '--instance-id') args.instance_id = value;
       else if (flag === '--request-id') args.request_id = requestId(value);
@@ -539,7 +539,7 @@ function parseArgs(argv) {
   }
   if (!Number.isFinite(args.timeout) || args.timeout <= 0) throw new ClientError('--timeout 必须为正有限数。', 2);
   if (!['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'].includes(args.method)) throw new ClientError('不支持的 HTTP 方法。', 2);
-  if (!['tools', 'prompts', 'resources'].includes(args.kind)) throw new ClientError('--kind 仅允许 tools、prompts、resources。', 2);
+  if (!['tools', 'prompts', 'resources', 'all'].includes(args.kind)) throw new ClientError('--kind 仅允许 tools、prompts、resources、all。', 2);
   return args;
 }
 
@@ -609,9 +609,19 @@ async function execute(args) {
     return result;
   }
   if (args.command === 'list') {
-    const result = await requestHttp(args.kind === 'tools' ? info.tools_url : base + '/' + args.kind, args.timeout);
-    if (!isObject(result) || !Array.isArray(result[args.kind])) throw new ClientError(args.kind + ' 响应缺少目录列表。', 5);
-    return result;
+    if (args.kind !== 'all') {
+      const result = await requestHttp(args.kind === 'tools' ? info.tools_url : base + '/' + args.kind, args.timeout);
+      if (!isObject(result) || !Array.isArray(result[args.kind])) throw new ClientError(args.kind + ' 响应缺少目录列表。', 5);
+      return result;
+    }
+    const combined = { kind: 'all' };
+    for (const k of ['tools', 'prompts', 'resources']) {
+      const result = await requestHttp(k === 'tools' ? info.tools_url : base + '/' + k, args.timeout);
+      if (!isObject(result) || !Array.isArray(result[k])) throw new ClientError(k + ' 响应缺少目录列表。', 5);
+      combined[k] = result[k];
+    }
+    combined.counts = { tools: combined.tools.length, prompts: combined.prompts.length, resources: combined.resources.length };
+    return combined;
   }
   if (args.command === 'details') {
     const limit = info.max_details;
@@ -651,12 +661,29 @@ async function execute(args) {
   }
   if (args.command === 'find') {
     const query = payload.query;
-    const entries = await directory(info, args, args.kind);
     const needle = query.toLowerCase();
-    const matches = entries.filter(item => isObject(item) && [item.name, item.uri, item.description,
+    // 不带 --kind 或显式 --kind all 时，同时搜索工具、提示词、资源三类目录。
+    const searchKinds = (!args.kindExplicit || args.kind === 'all')
+      ? ['tools', 'prompts', 'resources'] : [args.kind];
+    const matchItem = item => isObject(item) && [item.name, item.uri, item.description,
       ...(Array.isArray(item.tags) ? item.tags : [])]
-      .some(value => typeof value === 'string' && value.toLowerCase().includes(needle)));
-    return { kind: args.kind, query, matches, count: matches.length, total: entries.length };
+      .some(value => typeof value === 'string' && value.toLowerCase().includes(needle));
+    if (searchKinds.length === 1) {
+      const entries = await directory(info, args, searchKinds[0]);
+      const matches = entries.filter(matchItem);
+      return { kind: searchKinds[0], query, matches, count: matches.length, total: entries.length };
+    }
+    const matches = [];
+    const breakdown = {};
+    let total = 0;
+    for (const k of searchKinds) {
+      const entries = await directory(info, args, k);
+      const found = entries.filter(matchItem).map(item => Object.assign({ category: k }, item));
+      breakdown[k] = { count: found.length, total: entries.length };
+      matches.push(...found);
+      total += entries.length;
+    }
+    return { kind: 'all', query, matches, count: matches.length, total, breakdown };
   }
   if (args.command === 'prompt') {
     const name = payload.name;
@@ -780,7 +807,7 @@ class Client {
   async discover() { return this._exec('discover'); }
   async groups() { return this._exec('groups'); }
   async list(kind = 'tools') { return this._exec('list', { kind }); }
-  async find(query, kind = 'tools') { return this._exec('find', { target: query, kind }); }
+  async find(query, kind = 'all') { return this._exec('find', { target: query, kind, kindExplicit: true }); }
   async schema(name) { return this._exec('schema', { target: name }); }
   async schemas(names) {
     return this._exec('schemas', { targets: Array.isArray(names) ? names : [names] });
@@ -877,7 +904,7 @@ async function workflowContext(name, description, fn, options = {}) {
 const connectionInfo = () => getClient().discover();
 const getGroups = () => getClient().groups();
 const listCapabilities = (kind = 'tools') => getClient().list(kind);
-const findCapabilities = (query, kind = 'tools') => getClient().find(query, kind);
+const findCapabilities = (query, kind = 'all') => getClient().find(query, kind);
 const getDetails = options => getClient().details(options);
 const getSchema = name => getClient().schema(name);
 const getSchemas = names => getClient().schemas(names);
