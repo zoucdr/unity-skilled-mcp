@@ -16,7 +16,7 @@ Unity Skilled MCP runs its service inside the Unity Editor and exposes a large s
 - **Tools, prompts, and resources:** browse each catalog, retrieve a tagged group, or request a task-specific mixed set.
 - **Automatic local connection discovery:** Unity writes the active service information to `~/.unity-mcp/skill.ini` whenever the service starts successfully.
 - **Configurable detail limits:** the per-request item limit is configurable in Unity; the response is also capped at 64 KiB, and full-catalog detail requests are rejected.
-- **Single runtime:** one dependency-free Node.js 18+ client (`scripts/unity_mcp.js`); no language selection in Unity or in the INI.
+- **Two equivalent clients:** dependency-free `scripts/unity_bridge.js` (Node.js 18+) and `scripts/unity_bridge.py` (Python 3.8+); same subcommands, flags, exit codes and function names. No language selection in Unity or in the INI.
 - **Legacy MCP compatibility:** existing clients can continue using the original MCP list, call, prompt, and resource operations.
 - **Engine-level control:** build the player, switch platforms, manage build scenes, read or change engine settings, inspect compilation, and control the editor selection and active tool.
 - **Unity-safe execution:** editor operations are dispatched through the Unity Editor's main-thread execution flow.
@@ -25,7 +25,7 @@ Unity Skilled MCP runs its service inside the Unity Editor and exposes a large s
 
 ```text
 AI agent
-  └─ Unity Skill (SKILL.md + unity_mcp.js)
+  └─ Unity Skill (SKILL.md + unity_bridge.js / unity_bridge.py)
        ├─ Reads ~/.unity-mcp/skill.ini and validates the active service
        ├─ Discovers short summaries and selected capability definitions over HTTP
        └─ Invokes the requested operation through the client script
@@ -103,28 +103,28 @@ Typical commands, run from the Skill folder:
 
 ```sh
 # Confirm project and service metadata
-node scripts/unity_mcp.js discover
+node scripts/unity_bridge.js discover
 
 # Browse groups and short catalogs
-node scripts/unity_mcp.js groups
-node scripts/unity_mcp.js list --kind tools
-node scripts/unity_mcp.js list --kind prompts
-node scripts/unity_mcp.js list --kind resources
+node scripts/unity_bridge.js groups
+node scripts/unity_bridge.js list --kind tools
+node scripts/unity_bridge.js list --kind prompts
+node scripts/unity_bridge.js list --kind resources
 
 # Load one group or a curated mixed set
-node scripts/unity_mcp.js details --tag hierarchy-management
-node scripts/unity_mcp.js details --members-file selection.json
+node scripts/unity_bridge.js details --tag hierarchy-management
+node scripts/unity_bridge.js details --members-file selection.json
 
 # Load a single tool definition, or several at once, then call it
-node scripts/unity_mcp.js schema hierarchy_search
-node scripts/unity_mcp.js schemas hierarchy_search hierarchy_apply
-node scripts/unity_mcp.js schemas --names-file names.json
-node scripts/unity_mcp.js call hierarchy_search --args-file args.json
+node scripts/unity_bridge.js schema hierarchy_search
+node scripts/unity_bridge.js schemas hierarchy_search hierarchy_apply
+node scripts/unity_bridge.js schemas --names-file names.json
+node scripts/unity_bridge.js call hierarchy_search --args-file args.json
 
 # Filter catalogs locally, or use a listed prompt/resource
-node scripts/unity_mcp.js find camera --kind tools
-node scripts/unity_mcp.js prompt NAME
-node scripts/unity_mcp.js resource URI
+node scripts/unity_bridge.js find camera --kind tools
+node scripts/unity_bridge.js prompt NAME
+node scripts/unity_bridge.js resource URI
 ```
 
 The tag in `details --tag` must come from the live group catalog. A `selection.json` file contains the members array itself, for example:
@@ -150,7 +150,7 @@ The client requires Node.js 18+ and no third-party packages. Consult [`SKILL.md`
 The script is dual-purpose: the CLI above and a zero-dependency CommonJS library. `require(...)` it and call functions with native objects instead of assembling JSON strings or spawning a process — useful when an agent wants to script a multi-step workflow itself. Library calls go through the same `execute()` path as the CLI, so INI/discovery validation, `max_details`, the 64 KiB cap, catalog whitelists, no-retry and exit codes are all preserved.
 
 ```js
-const unity = require('./scripts/unity_mcp.js');
+const unity = require('./scripts/unity_bridge.js');
 unity.configure({ timeout: 15 });
 const catalog = await unity.listCapabilities('tools');
 const { name, args } = pickFrom(catalog, await unity.getSchema(name));
@@ -173,10 +173,10 @@ Every task follows the same order: `discover` → `groups` / `list` / `find` →
 The package source contains tool categories for engine operations, animation, UI Toolkit, cameras, effects, Test Runner, modeling and C# execution, among others. That inventory is a description of the source tree, **not** a runtime guarantee; see [`SKILL.md`](unity-package/Skills/unity-skilled-mcp/SKILL.md) for the full contract. Optional packages are resolved through reflection, so the package still compiles when they are absent and only the affected tool returns an explicit `not installed` error.
 
 ```sh
-node scripts/unity_mcp.js discover
-node scripts/unity_mcp.js list --kind tools
-node scripts/unity_mcp.js schema NAME_FROM_LIST
-node scripts/unity_mcp.js call NAME_FROM_LIST --args-file args.json
+node scripts/unity_bridge.js discover
+node scripts/unity_bridge.js list --kind tools
+node scripts/unity_bridge.js schema NAME_FROM_LIST
+node scripts/unity_bridge.js call NAME_FROM_LIST --args-file args.json
 ```
 
 ## HTTP discovery API
@@ -307,7 +307,7 @@ unity-package/Skills/unity-skilled-mcp/tests/  Client regression tests
 From `unity-package/Skills/unity-skilled-mcp/`:
 
 ```sh
-node --test tests/test_unity_mcp.js
+node --test tests/test_unity_bridge.js
 ```
 
 ## Troubleshooting

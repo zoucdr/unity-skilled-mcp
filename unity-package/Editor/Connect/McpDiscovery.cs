@@ -84,7 +84,7 @@ namespace UniMcp
 
         private void PublishConnectionInfo()
         {
-            // 技能源目录供技能侧直接定位 SKILL.md 与 unity_mcp.js；解析失败时为 null（INI 仍照常发布）。
+            // 技能源目录供技能侧直接定位 SKILL.md 与 unity_bridge.js；解析失败时为 null（INI 仍照常发布）。
             string skillDir = null;
             try { skillDir = UniMcp.Gui.McpServiceStatusWindow.SkillFolderPath; }
             catch (Exception ex) { LogWarning("[UniMcp] 解析技能目录失败（INI 不发布 skill_dir）: " + ex.Message); }

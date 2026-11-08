@@ -29,6 +29,8 @@ namespace UniMcp
             string path = UniMcp.Gui.McpServiceStatusWindow.SkillFolderPath;
             Check(!string.IsNullOrEmpty(path) && Directory.Exists(path), "技能目录可通过 GUID 解析为实际路径");
             Check(File.Exists(Path.Combine(path, "SKILL.md")), "技能目录包含 SKILL.md");
+            Check(File.Exists(Path.Combine(path, "scripts", "unity_bridge.js")), "技能目录包含 JS 客户端");
+            Check(File.Exists(Path.Combine(path, "scripts", "unity_bridge.py")), "技能目录包含 Python 客户端");
             string prompt = UniMcp.Gui.McpServiceStatusWindow.BuildSkillInstallPrompt();
             Check(prompt.Contains(path, StringComparison.Ordinal), "安装提示词包含技能绝对路径");
             Check(prompt.Contains(".unity-mcp/skill.ini", StringComparison.Ordinal), "安装提示词说明 INI 位置");

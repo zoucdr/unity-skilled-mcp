@@ -1,6 +1,74 @@
 # 最近修改说明（2026-11-07）
 
-> 最新一轮：**第三个门面改名 `get_tool`，并把实例标识挪到 `SessionState`，域重载不再触发重新发现**。`get_prompt` / `get_resource` / `get_tool` 三个兜底入口从此同名同构；脚本重编译、进出 Play Mode 不再更换 `instance_id`，客户端无需重新 `discover`、重取工具与 Schema，只有 Unity 进程重启才会漂移。任意 `tools/call` 完成后结论写入 `ProjectSettings/UnitySkilledMcpTasks.asset`，Unity 重启后同一 `request_id` 仍可查；超过等待阈值（默认 10s）先返回成功语义的 `{status:"running", task_id, query_path}`。文首表格为当前注册名，其后章节为历史记录，不追溯改写。早期描述的 `DefineTools` / `*.Tools.cs` / 状态树架构与旧工具名（`hierarchy_create` / `edit_gameobject` / `code_runner` 等）均已失效。本文件只记录改动，不是完整项目文档；完整用法见 `SKILL.md` 与 `README.md`。
+> 名称注记：客户端脚本原名 `unity_mcp.js` / `unity_mcp.py`，测试原名 `test_unity_mcp.*`，已于 2026-11-08 统一更名为 `unity_bridge.*`。下文含历史章节均用新名，端口、INI 节名（`[unity3d-skilled-mcp]`）与协议未变。
+
+> 最新一轮：**客户端脚本更名为 `unity_bridge.js` / `unity_bridge.py`**（连同 `tests/test_unity_bridge.*`），内容与契约不变，仅名称与引用同步；Python 模块名随之改为 `import unity_bridge`。上一轮：**补齐 `scripts/unity_bridge.py`，与 `unity_bridge.js` 同契约、同名函数；并在技能文档中禁止运行期阅读客户端源码**。两个客户端子命令、选项、退出码、输出形态一致，Python 端另收 snake_case 别名；`SKILL.md` 只用一小节说明「换成 `python scripts/unity_bridge.py` 即可」，不重复调用与参数篇幅。上一轮：**第三个门面改名 `get_tool`，并把实例标识挪到 `SessionState`，域重载不再触发重新发现**。`get_prompt` / `get_resource` / `get_tool` 三个兜底入口从此同名同构；脚本重编译、进出 Play Mode 不再更换 `instance_id`，客户端无需重新 `discover`、重取工具与 Schema，只有 Unity 进程重启才会漂移。任意 `tools/call` 完成后结论写入 `ProjectSettings/UnitySkilledMcpTasks.asset`，Unity 重启后同一 `request_id` 仍可查；超过等待阈值（默认 10s）先返回成功语义的 `{status:"running", task_id, query_path}`。文首表格为当前注册名，其后章节为历史记录，不追溯改写。早期描述的 `DefineTools` / `*.Tools.cs` / 状态树架构与旧工具名（`hierarchy_create` / `edit_gameobject` / `code_runner` 等）均已失效。本文件只记录改动，不是完整项目文档；完整用法见 `SKILL.md` 与 `README.md`。
+
+## 本轮：客户端脚本更名为 unity_bridge
+
+> 用户：「unity_mcp.js 和 py，修改名字为 unity_bridge」。
+
+### 一、改名映射（内容未动）
+
+| 旧名 | 新名 | 说明 |
+| --- | --- | --- |
+| `scripts/unity_mcp.js` | `scripts/unity_bridge.js` | `git mv`，`.meta` 的 guid 原样保留（`0f414e85…`） |
+| `scripts/unity_mcp.py` | `scripts/unity_bridge.py` | 新增文件，`mv` 后重建 `.meta` |
+| `tests/test_unity_mcp.js` | `tests/test_unity_bridge.js` | 测试随之改名，内部 `CLI` 路径同步 |
+| `tests/test_unity_mcp.py` | `tests/test_unity_bridge.py` | 内部 `SCRIPT` 路径与 `import unity_bridge` 同步 |
+
+不换概念，只换名字：端口、`[unity3d-skilled-mcp]` INI 节、`/discovery`、`/requests/{id}`、`X-Mcp-*` 头、`skill_dir` 语义、子命令与选项全部不变。Python 模块名随文件名变为 `import unity_bridge`；`contextvars` 键（`unity_bridge_quiet` / `unity_bridge_workflow`）与 `--version` 输出同步。
+
+### 二、引用同步（14 个文件、219 处）
+
+- 执行与注册：`unity_bridge.js` 用法串与库注释、`unity_bridge.py` 的 `prog` / `description` / 文档串。
+- Unity 侧：`McpDiscovery.cs` 的 `skill_dir` 注释、`McpDiscoveryTests.cs` 的两条「客户端必须存在」断言、`McpServiceStatusWindow.cs` 的安装提示词。
+- 文档：`SKILL.md`（铁律、连接、命令示例、Python 小节、库示例、回归测试命令）、`README.md`、`README.zh-CN.md`（含「两个等价实现」表述修正与目录树）、`docs/index.html`、`docs/ra2_allied_build.js`（示例客户端路径）、用户使用指南。
+
+### 三、验证
+
+- `node --test tests/test_unity_bridge.js`：**66/66**
+- `python tests/test_unity_bridge.py`：**36/36**（含「与 JS 导出名一一对应」用例，改名后仍全绿）
+- `python scripts/unity_bridge.py --help` / `--version` 正常，`usage: unity_bridge.py`
+- Unity 2021.3.45f2c1：`AssetDatabase.Refresh` 后重编译 **0 error / 0 warning**；`McpDiscoveryTests.RunAll()` → 「服务发现自检通过」（含两条新名断言）
+- 真机 `localhost:8000`：`discover`、`engine.recompile`、`engine.get_compilation`、`call`、`status` 全部经新脚本通过，`instance_id` 仍为 `7350a064…`（改名不影响绑定）
+
+## 本轮：补充 Python 客户端 unity_bridge.py（与 JS 同契约）
+
+> 用户：「ai 有时候更擅长写 py 脚本，目前 unity-skill-mcp 技能里面有 unity-mcp.js 我需要再实现一套 unity-mcp.py，并提供一样的函数名，在技能主网文档中说明。并禁止 ai 在运行时去读取这两个脚本文件，接口说明写到 Skill.md 尽量只是说明 unity-mcp.py 也能工作，不是和 unity-mcp.js 一样用大量篇幅说明调用和参数。」
+
+### 一、新增 `scripts/unity_bridge.py`
+
+| 维度 | 做法 |
+| --- | --- |
+| 依赖 | 仅标准库（`urllib`、`http.server` 测试用），Python 3.8+，无第三方包 |
+| 子命令 | 与 JS 完全一致：`discover / groups / list / find / details / schema / schemas / call / prompt / resource / request / status` |
+| 选项 | `--ini` `--timeout` 置于子命令前；`--expected-project` `--instance-id` `--verbose` 前后皆可；`call` 另有 `--request-id`；`details` 有 `--tag` 与 `--members[-file|-stdin]`；`request` 有 `--method` `--header` `--data[-file|-stdin]` |
+| 退出码 | 0/2/3/4/5/6/130，与 JS 逐项相同；错误文案同源 |
+| 函数名 | 25 个 JS 导出名全部同名保留（`Client` / `configure` / `getClient` / `connectionInfo` / `listCapabilities` / `callSkill` / `workflowContext` / `resultText` / `normalizeRequestTarget` / `DEFAULT_MAX_DETAILS` 等），另加 snake_case 别名（`connection_info` / `call_skill` / `workflow_context` …），两种写法都可调 |
+| 实现路径 | CLI 与库共用唯一 `execute(args)`，无第二套校验；与 JS 一样「同一套 INI 读取 → discovery 校验 → 绑定 → 上限/白名单 → 单次请求」 |
+
+关键移植点（照抄 JS 语义，避免两套行为）：
+
+- `bind()`：错工程只警告（目录查询）或拒绝（`call` / `prompt` / `resource` / 同源 `request`）；实例漂移直接 `EXIT_PARAM` 且不重放。
+- `--expected-project` 编码进 `X-Mcp-Expected-Project`，实例进 `X-Mcp-Instance-Id`；手工注入这两个头一律拒绝。
+- 只在 `call` 自动生成 `params.request_id`；失败异常补 `request_id` / `instance_id` / `query_path` 三字段。
+- `groups` 同时接受 v2 的 `namespaces` / `tags` 与旧 `groups` 数组；`details` / `schemas` 校验 `count == len(items)`、`max_details` 一致性与 64 KiB 上限。
+- `normalize_request_target`：绝对 URL 原样、单个 `/` 开头的路由、经 `EXEPATH` 还原的 MSYS 路径、裸路由补 `/`；`file://` 等其它协议原样透传给 URL 校验拒绝。
+- 每个 HTTP 操作走 `ProxyHandler({})` 的空代理 opener：**不读 `HTTP(S)_PROXY`**，与 JS 裸 socket 行为一致（否则本机请求可能被代理改写）。这是本轮实测发现并修掉的差异点。
+
+### 二、文档
+
+- `SKILL.md` 新增「Python 运行时（与 JS 等价）」四小节：只说明换前缀即得命令、何时选它、库模式函数名（含 snake_case）、校验同源；附 4 行 `import unity_bridge` 示例。不复制上文调用与参数说明。
+- 「铁律」新增一条：**禁读 `scripts/unity_bridge.js`、`scripts/unity_bridge.py`、`tests/`**，接口以 `SKILL.md` 与 `--help` 为准。
+- 连接章节改为「两个等价实现」；`README.md` / `README.zh-CN.md` / `docs/index.html` 的「唯一客户端」表述同步；状态窗口「复制技能安装提示词」补 Python 3.8+ 与子命令一致说明。
+- `McpDiscoveryTests` 增加两条断言：技能目录必须同时存在 JS 与 Python 客户端（防止再出现某一实现被悄悄删掉）。
+
+### 三、验证
+
+- `python tests/test_unity_bridge.py`：**36/36 通过**（新增 660 行夹具，覆盖发现校验、绑定与漂移、`status`、上限与互斥、目录过滤、错误码、MSYS 路径还原、库 API 与 JS 导出名一一对应、CLI 三种 JSON 输入）。
+- `node --test tests/test_unity_bridge.js`：**66/66** 不受影响；重编译 0 error / 0 warning；`McpDiscoveryTests.RunAll()` 通过（含两条新断言）。
+- 真机（Unity 2021.3.45f2c1，`localhost:8000`）：`discover` / `groups`（55 命名空间 / 57 tag）/ `list --kind prompts`（4 项）/ `find` / `schema` / `schemas` / `details --tag`（17 项）/ `prompt` / `resource` / `request groups`（裸路由与 `/groups` 均通）/ `call` + `status` 全部通过；`call` 后落盘 `completed`，与 JS 输出逐字段一致；库 API `workflow_context` 正确记录 1 成功 1 失败。
 
 ## 本轮：门面改名 get_tool，热重载不再漂移
 
@@ -139,7 +207,7 @@
 
 - 实测分组分布：8 组（另 `Uncategorized` 为属性默认值，非实际分组）。
 - 编译：`dotnet build demo/UniMcp.Editors.csproj -t:Rebuild` → **0 warning / 0 error**，DLL 重建时间与当前一致。
-- 回归：`node --test tests/test_unity_mcp.js` → **59/59 pass**。
+- 回归：`node --test tests/test_unity_bridge.js` → **59/59 pass**。
 - HTML：`div` 290/290、`section` 10/10、`ul` 18/18 全部平衡。
 
 ---
@@ -420,7 +488,7 @@
 - 只改 `unity-package/Skills/unity3d-skill/SKILL.md`，未动 README、docs、Unity 源码与客户端脚本。
 - 全篇改短句、去浮辞与重复修饰（约 16.5 KB → 14.7 KB，说明正文压缩约 13%）。代码块 7 处共 38 行、CLI/JS 示例、API 对照表、路径、命令、数字、错误码、退出码、URI 结构一律原样保留；所有否定约束（禁全集、不重试、不截断、不回退、不自动分批、不绕过、授权要求）未删。
 - 顺手修掉上一轮遗留的措辞：「自定义 INI 也须先读取以选择解释器」→「自定义 INI 亦须先读取以校验连接」。运行时已只有 JS，不应再出现「选择解释器」。
-- 验证：`node --test tests/test_unity_mcp.js` 64/64；`git diff --check`；代码块逐行比对无缺失；关键约束词全部在；`dist/unity3d-skill.zip` 重建后 10 项、无 `.py`、包内 SKILL.md 与源文件字节一致、`testzip()=None`。
+- 验证：`node --test tests/test_unity_bridge.js` 64/64；`git diff --check`；代码块逐行比对无缺失；关键约束词全部在；`dist/unity3d-skill.zip` 重建后 10 项、无 `.py`、包内 SKILL.md 与源文件字节一致、`testzip()=None`。
 
 ---
 
@@ -439,19 +507,19 @@
 
 | 位置 | 改动 |
 | --- | --- |
-| 技能包 | 删除 `scripts/unity_mcp.py`(+`.meta`)、`tests/test_unity_mcp.py`(+`.meta`)；`SKILL.md` / README / docs 只保留 `require('./scripts/unity_mcp.js')` 与 `node --test` |
+| 技能包 | 删除 `scripts/unity_bridge.py`(+`.meta`)、`tests/test_unity_bridge.py`(+`.meta`)；`SKILL.md` / README / docs 只保留 `require('./scripts/unity_bridge.js')` 与 `node --test` |
 | `McpLocalSettings.cs` | 删除 `_scriptLanguage` 字段、`ScriptLanguage` 属性、`NormalizeScriptLanguage()` 及 `OnEnable` 中的归一化调用 |
 | `McpDiscovery.cs` | `McpConnectionInfo` 删除 `ScriptLanguage` 属性与 `scriptLanguage` 构造参数；`ToIni()` / `ToJson()` 不再写 `script_language`；`PublishConnectionInfo` 改用 `maxDetails:` 命名参数 |
-| `McpServiceStatusWindow.cs` | 删除语言下拉框 `DrawScriptLanguageConfiguration()` 及调用；「复制技能安装提示词」只提 `SKILL.md` + `unity_mcp.js` + Node.js 18+，并说明 INI 只发布 `max_details` 等启动配置 |
+| `McpServiceStatusWindow.cs` | 删除语言下拉框 `DrawScriptLanguageConfiguration()` 及调用；「复制技能安装提示词」只提 `SKILL.md` + `unity_bridge.js` + Node.js 18+，并说明 INI 只发布 `max_details` 等启动配置 |
 | INI | 服务启动时不再写 `script_language`；客户端只读 `base_url` / `port` / `max_details`，旧 INI 残留字段被忽略（测试用例已覆盖） |
 | 测试 | `McpDiscoveryTests` 改为断言 INI/discovery **不含** `script_language`；JS 用例改为「旧 INI 的 script_language 被忽略」 |
 
 - 保留项：Unity 侧的 `python_runner` 工具是 MCP 能力（在编辑器里执行 Python 脚本），与技能客户端语言无关，**未删除**；`McpService.cs` 的 `.py` MIME 处理同理。
-- `dist/unity3d-skill.zip` 重建：14 项 → **10 项**，包内无 `.py`，`SKILL.md` / `unity_mcp.js` / `test_unity_mcp.js` 与源文件字节一致，`testzip()=None`。
+- `dist/unity3d-skill.zip` 重建：14 项 → **10 项**，包内无 `.py`，`SKILL.md` / `unity_bridge.js` / `test_unity_bridge.js` 与源文件字节一致，`testzip()=None`。
 
 **3) 验证**
 
-- `node --test tests/test_unity_mcp.js`：**64/64 通过**；`git diff --check` 通过；4 个改动过的 C# 文件词法括号未闭合 0 / 错配 0；`docs/index.html` 9 类标签开闭计数全等。
+- `node --test tests/test_unity_bridge.js`：**64/64 通过**；`git diff --check` 通过；4 个改动过的 C# 文件词法括号未闭合 0 / 错配 0；`docs/index.html` 9 类标签开闭计数全等。
 - 实机联调未做：当前 `localhost:8000/discovery` 返回 502，Unity 服务不在线。需重启 Unity（重新编译 C#）后再验：状态窗口无语言下拉、INI 不含 `script_language`、`schema hierarchy_create` 等描述为局部坐标/完整层级路径、`object_delete confirm` 为显式授权语义。重启前 `~/.unity-mcp/skill.ini` 仍残留旧 `script_language=js`，客户端会忽略，不影响使用。
 
 ---
@@ -466,7 +534,7 @@
 
 **问题 1（修复）**：上一轮实测发现 Windows Git Bash / MSYS 会把 `request /groups` 的 `/groups` 自动转成 `C:/…/PortableGit/groups`，导致 URL 校验失败。原来只在 `SKILL.md` 写了规避说明，本轮在代码里根治：
 
-- `unity_mcp.js` / `unity_mcp.py` 新增 `normalizeRequestTarget` / `normalize_request_target`。按环境变量 `EXEPATH`（指向 `<Git 根>/bin`）精确剥离根前缀，把转换后的本地路径还原成 `/ROUTE`；无法还原的盘符路径明确报错并给出提示，绝不当作 URL 访问。
+- `unity_bridge.js` / `unity_bridge.py` 新增 `normalizeRequestTarget` / `normalize_request_target`。按环境变量 `EXEPATH`（指向 `<Git 根>/bin`）精确剥离根前缀，把转换后的本地路径还原成 `/ROUTE`；无法还原的盘符路径明确报错并给出提示，绝不当作 URL 访问。
 - 同时支持**省略前导斜杠的裸路由**（`request groups`、`request capabilities/details`），从根上避开 shell 转换；绝对 http/https URL 与 CMD / PowerShell / POSIX shell 行为不变。
 - 保留既有安全校验：`//host`、`file://`、凭据、片段、空白、控制字符、反斜杠仍被拒绝；路由规范化在 discovery 之前完成，非法输入零网络请求。
 
@@ -501,9 +569,9 @@
 **调用示例**
 
 ```sh
-node scripts/unity_mcp.js call code_runner --args '{"action":"probe","mode":"runtime"}'
-node scripts/unity_mcp.js call code_runner --args '{"action":"execute","mode":"runtime","code":"return 1+1;"}'
-node scripts/unity_mcp.js call code_runner --args '{"action":"execute","mode":"dll","code":"..."}'
+node scripts/unity_bridge.js call code_runner --args '{"action":"probe","mode":"runtime"}'
+node scripts/unity_bridge.js call code_runner --args '{"action":"execute","mode":"runtime","code":"return 1+1;"}'
+node scripts/unity_bridge.js call code_runner --args '{"action":"execute","mode":"dll","code":"..."}'
 ```
 
 **边界**：任意代码在 Editor 主线程同步执行，无超时、沙箱、事务与回滚；编译冷启动可能超过客户端默认 15 秒，用全局 `--timeout 60`。CodeDOM 不可用时明确报错并指引 `mode=dll`，不自动降级、不重试。
@@ -539,7 +607,7 @@ node scripts/unity_mcp.js call code_runner --args '{"action":"execute","mode":"d
 - 名称 / URI / 关键字的格式校验统一提前到 `discover()` 之前，非法输入零网络请求。
 - 抽出 `rpcEnvelope` / `rpcResult` / `rpcCall` / `directory` 公共层，`call` 改为复用；`prompt` / `resource` 只在用户显式调用时才走原协议，不自动调用 `tools/list`、`prompts/list`、`resources/list`。
 
-改动文件：`scripts/unity_mcp.js`、`scripts/unity_mcp.py`、`tests/test_unity_mcp.js`、`tests/test_unity_mcp.py`、`SKILL.md`。
+改动文件：`scripts/unity_bridge.js`、`scripts/unity_bridge.py`、`tests/test_unity_bridge.js`、`tests/test_unity_bridge.py`、`SKILL.md`。
 
 ## 二、同一阶段的服务端与工具补齐
 
@@ -590,7 +658,7 @@ node scripts/unity_mcp.js call code_runner --args '{"action":"execute","mode":"d
 
 | 项目 | 结果 |
 | --- | --- |
-| `node --test tests/test_unity_mcp.js` | 57 / 57 通过（本轮 +9） |
+| `node --test tests/test_unity_bridge.js` | 57 / 57 通过（本轮 +9） |
 | `python -B -m unittest discover -s tests -p 'test_*.py'` | 41 / 41 通过（本轮 +8） |
 | `git diff --check` | 通过 |
 | C# 词法括号配对、action/leaf/handler 一致性 | 全部通过 |

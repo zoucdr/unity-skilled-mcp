@@ -927,7 +927,7 @@ namespace UniMcp.Gui
                 "",
                 "用法与安全边界见技能目录下的 SKILL.md。",
                 "",
-                "客户端脚本 scripts/unity_mcp.js 无第三方依赖，需 Node.js 18+。"
+                "客户端脚本 scripts/unity_bridge.js 或 scripts/unity_bridge.py 均无第三方依赖，需 Node.js 18+ 或 Python 3.8+；子命令与函数名一致。"
             });
         }
 

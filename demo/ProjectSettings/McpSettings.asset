@@ -12,14 +12,10 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: de0742dc2c88ab945ad76eba22076d21, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  subSettings: []
+  subSettings:
+  - rid: 3545164306768461824
+  - rid: 3545164331217321984
   configurablePrompts:
-  - _name: test_prompt_wb_20261106
-    _description: "WorkBuddy \u5B89\u88C5 unity-skilled-mcp \u540E\u9A8C\u8BC1\u7528\u6D4B\u8BD5\u63D0\u793A\u8BCD"
-    _promptText: "\u8FD9\u662F\u4E00\u4E2A\u7531 WorkBuddy \u901A\u8FC7 capability.save
-      \u6DFB\u52A0\u7684\u6D4B\u8BD5\u63D0\u793A\u8BCD\uFF0C\u7528\u4E8E\u9A8C\u8BC1
-      unity-skilled-mcp \u7684\u300C\u53D1\u73B0\u2192\u53D6\u5B9A\u4E49\u2192\u8C03\u7528\u300D\u6D41\u7A0B\u662F\u5426\u53EF\u7528\u3002"
-    _keys: []
   - _name: scene_describe_full
     _description: "\u5168\u7EF4\u5EA6\u573A\u666F\u63CF\u8FF0\uFF1A\u628A\u53C2\u8003\u56FE\u6216
       Unity \u573A\u666F\u8F6C\u6210\u53EF\u76F4\u63A5\u9A71\u52A8\u4E09\u7EF4\u590D\u523B\u7684\u7ED3\u6784\u5316\u89C4\u683C\uFF0C\u8986\u76D6\u57FA\u51C6\u3001\u5E03\u5C40\u3001\u4F53\u91CF\u3001\u6750\u8D28\u3001\u7EFF\u5316\u3001\u5149\u7167\u3001\u76F8\u673A\u3001\u540E\u671F\u3001\u906E\u6321\u4E0E\u4E0D\u786E\u5B9A\u6027\u5171
@@ -193,14 +189,34 @@ MonoBehaviour:
       \u6570\u503C\u5BA1\u8BA1\u4E09\u9879\u5DEE\u503C = 0\uFF1B\n- \u591A\u89D2\u5EA6\u622A\u56FE\u65E0\u7ED3\u6784\u6027\u5DEE\u5F02\uFF1B\n-
       \u660E\u786E\u8BF4\u660E\u4ECD\u662F\u4F4E\u6A21\u7A0B\u5E8F\u5316\u590D\u523B\uFF0C\u4E0E\u7167\u7247\u7EA7\u5728\u53CD\u5C04/\u900F\u5149/AO/\u540E\u671F\u4E0A\u7684\u5DEE\u8DDD\u3002"
     _keys: []
-  configurableResources:
-  - _name: test_resource_wb_20261106
-    _description: "WorkBuddy \u5B89\u88C5 unity-skilled-mcp \u540E\u9A8C\u8BC1\u7528\u6D4B\u8BD5\u8D44\u6E90"
-    _url: https://example.com/test-guide.md
-    _mimeType: text/markdown
-    _unityObject: {fileID: 0}
-    _sourceType: 0
-    _cachedUrl: 
+  configurableResources: []
   references:
     version: 2
-    RefIds: []
+    RefIds:
+    - rid: 3545164306768461824
+      type: {class: FigmaSettings, ns: UniMcp, asm: Assembly-CSharp-Editor}
+      data:
+        _default_download_path: Assets/UI/Figma
+        _figma_assets_path: Assets/FigmaAssets
+        _figma_preview_path: Assets/FigmaAssets/Previews
+        auto_download_images: 1
+        image_scale: 2
+        auto_convert_to_sprite: 1
+        preview_max_size: 100
+        engineSupportEffect:
+          roundCorner: 0
+          roundCornerPrompt: 
+          outLineImg: 0
+          outLinePrompt: 
+          gradientImg: 0
+          gradientPrompt: 
+        _selectedUIType: 0
+        _aiPromptDataList: []
+    - rid: 3545164331217321984
+      type: {class: McpUISettings, ns: UniMcp, asm: Assembly-CSharp-Editor}
+      data:
+        _selectedUIType: 0
+        _commonSpriteFolders: []
+        _commonTextureFolders: []
+        _commonFontFolders: []
+        _serializedUITypeData: []

@@ -13,7 +13,7 @@ const fs = require('fs');
 const path = require('path');
 
 const REPO = path.resolve(__dirname, '..');
-const CLIENT = path.join(REPO, 'unity-package/Skills/unity-skilled-mcp/scripts/unity_mcp.js');
+const CLIENT = path.join(REPO, 'unity-package/Skills/unity-skilled-mcp/scripts/unity_bridge.js');
 const unity = require(CLIENT);
 const PROJECT = path.join(REPO, 'demo').replace(/\\/g, '/');
 unity.configure({ expected_project: PROJECT, timeout: 120 });

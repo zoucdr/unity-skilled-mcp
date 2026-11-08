@@ -467,7 +467,7 @@ function help(command) {
     resource: 'resource URI\n  URI 必须来自 list --kind resources；读取 resources/read 内容，拒绝未注册的 http/file URI。',
     request: 'request TARGET [--method GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS]\n  [--header NAME:VALUE ...] [--data JSON | --data-file FILE | --data-stdin]',
   };
-  return '用法：node scripts/unity_mcp.js [--ini PATH] [--timeout SECONDS] '
+  return '用法：node scripts/unity_bridge.js [--ini PATH] [--timeout SECONDS] '
     + (usage[command] || 'discover|groups|list|find|details|schema|schemas|call|prompt|resource|request')
     + '\n--expected-project PATH 显式指定工程，否则从 cwd 向上寻找 Unity 根；--instance-id ID 锁定实例。'
     + '\n--verbose 才打印完整连接；call 可用 --request-id ID，失败凭 status 查询，不重放。'
@@ -701,7 +701,7 @@ async function main() {
 }
 
 // ---------------------------------------------------------------------------
-// 作为代码库使用：require('../scripts/unity_mcp.js')
+// 作为代码库使用：require('../scripts/unity_bridge.js')
 // 所有库函数复用上面的 execute()，因此与 CLI 共享同一套 INI 读取、discovery
 // 校验、数量/字节上限、目录白名单、不重试与错误码，不存在两套实现。
 // ---------------------------------------------------------------------------

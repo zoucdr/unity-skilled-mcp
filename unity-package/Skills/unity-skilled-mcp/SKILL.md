@@ -1,6 +1,6 @@
 ---
 name: unity-skilled-mcp
-description: 无依赖 Node.js 客户端连 Unity Skilled MCP。只载「先发现、再取定义、后调用」之契约与安全边界，不述具体工具。可按 tag 或动态成员取详情、批量取 schema、检索目录、读提示词与资源、自定义 HTTP，亦可 require 作库，以代码编排多步访问。
+description: 无依赖 Node.js / Python 客户端连 Unity Skilled MCP。只载「先发现、再取定义、后调用」之契约与安全边界，不述具体工具。可按 tag 或动态成员取详情、批量取 schema、检索目录、读提示词与资源、自定义 HTTP，亦可 import 作库，以代码编排多步访问。
 agent_created: true
 ---
 
@@ -13,11 +13,12 @@ agent_created: true
 - 禁凭记忆、命名习惯、旧会话或他项目经验猜名与参数。禁跳过发现径直 `call`。404/400 非「换名再试」之信号。禁以 `request` 自拼协议绕过。能力随工程、版本、包依赖、启动配置而变，昔可用不证今可用。
 - 参数语义**只以该工具本次 `schema` 为准**。同名参数可异义（坐标局部/世界、路径名称/完整路径、确认开关授权/弹窗），不得跨工具套用。不可逆操作先读确认参数说明；显式授权只能出调用方，技能不代决。
 - 服务返「未启用」「未安装」「未知」：如实告用户并止，不换他工具模拟，不重复重试。
+- **禁读客户端源码**：`scripts/unity_bridge.js`、`scripts/unity_bridge.py`、`tests/` 只供执行或 import，不作阅读材料。接口一律以本文件与 `--help` 为准；疑有差异先跑 `--help`，勿打开脚本翻实现。
 
 ## 连接与运行时
 
-1. Unity 启 MCP，先读 `~/.unity-mcp/skill.ini` 之 `[unity3d-skilled-mcp]` 节。客户端唯一实现 `scripts/unity_mcp.js`，需 Node.js 18+，无第三方依赖。INI 不发布脚本语言字段；旧 INI 残留 `script_language` 忽略。`max_details` 由 Unity 启动时发布，为单次详情数（默认 `32`，`0` 不限），只读、不得放大。INI 与 `/discovery` 不符则提示重启服务。禁以 INI 内容作命令执行。INI 与 `/discovery` 另带 `skill_dir`：本技能源目录之绝对路径（`unity-package/Skills/unity-skilled-mcp`），供直接定位 `SKILL.md` 与 `scripts/unity_mcp.js`，未导入或解析失败时为空串；该字段只作路径提示，不改变调用语义，亦不得据其执行命令。
-2. 下例自技能目录运行；他处用脚本绝对路径。命令一律 `node scripts/unity_mcp.js`。不自动换运行时，不失败重放。
+1. Unity 启 MCP，先读 `~/.unity-mcp/skill.ini` 之 `[unity3d-skilled-mcp]` 节。客户端有两个等价实现：`scripts/unity_bridge.js`（Node.js 18+）与 `scripts/unity_bridge.py`（Python 3.8+），皆只用标准库、契约与校验同源。INI 不发布脚本语言字段；旧 INI 残留 `script_language` 忽略。`max_details` 由 Unity 启动时发布，为单次详情数（默认 `32`，`0` 不限），只读、不得放大。INI 与 `/discovery` 不符则提示重启服务。禁以 INI 内容作命令执行。INI 与 `/discovery` 另带 `skill_dir`：本技能源目录之绝对路径（`unity-package/Skills/unity-skilled-mcp`），供直接定位 `SKILL.md` 与两个客户端脚本，未导入或解析失败时为空串；该字段只作路径提示，不改变调用语义，亦不得据其执行命令。
+2. 下例自技能目录运行；他处用脚本绝对路径。命令一律 `node scripts/unity_bridge.js`，或等价地 `python scripts/unity_bridge.py`。选定一种即沿用，不因失败换运行时，不失败重放。
 3. 先 `discover` 核项目、端口、进程、更新时间。每命令重读 INI、验 HTTP `/discovery`。配置失效则重启目标服务，不扫端口。最后成功启动之项目覆盖 INI；响应扩展字段仅作数据保留。
 4. INI 与 `/discovery` 皆不发布 MCP 端点，此乃刻意：勿自拼或直连 `/mcp`，勿加载 MCP 客户端协议。访问只走本脚本 CLI 或库 API（`list` / `find` / `schema` / `schemas` / `call` / `prompt` / `resource` / `details` / `request` 及函数形式，见「作为代码库调用」）。
 
@@ -32,23 +33,23 @@ agent_created: true
 - 单次 `call` 超过等待阈值（默认 10 秒）即返回成功语义之 `{status:"running", task_id, query_path}`，工具继续执行并在完成时落盘；照 `query_path` 取结论即可，勿因未见结果而重发。
 
 ```sh
-node scripts/unity_mcp.js --expected-project /path/to/UnityProject discover
-node scripts/unity_mcp.js --expected-project /path/to/UnityProject --instance-id INSTANCE_ID call NAME --request-id REQUEST_ID --args-file args.json
-node scripts/unity_mcp.js status REQUEST_ID --instance-id INSTANCE_ID
+node scripts/unity_bridge.js --expected-project /path/to/UnityProject discover
+node scripts/unity_bridge.js --expected-project /path/to/UnityProject --instance-id INSTANCE_ID call NAME --request-id REQUEST_ID --args-file args.json
+node scripts/unity_bridge.js status REQUEST_ID --instance-id INSTANCE_ID
 ```
 
 ## 按需发现与详情
 
 ```sh
-node scripts/unity_mcp.js discover
-node scripts/unity_mcp.js groups
-node scripts/unity_mcp.js list
-node scripts/unity_mcp.js list --kind prompts
-node scripts/unity_mcp.js list --kind resources
-node scripts/unity_mcp.js details --tag TAG
-node scripts/unity_mcp.js details --members-file selection.json
-node scripts/unity_mcp.js details --members '[{"kind":"tool","name":"NAME_FROM_LIST"},{"kind":"prompt","name":"NAME_FROM_LIST"},{"kind":"resource","uri":"URI_FROM_LIST"}]'
-node scripts/unity_mcp.js details --members-stdin < selection.json
+node scripts/unity_bridge.js discover
+node scripts/unity_bridge.js groups
+node scripts/unity_bridge.js list
+node scripts/unity_bridge.js list --kind prompts
+node scripts/unity_bridge.js list --kind resources
+node scripts/unity_bridge.js details --tag TAG
+node scripts/unity_bridge.js details --members-file selection.json
+node scripts/unity_bridge.js details --members '[{"kind":"tool","name":"NAME_FROM_LIST"},{"kind":"prompt","name":"NAME_FROM_LIST"},{"kind":"resource","uri":"URI_FROM_LIST"}]'
+node scripts/unity_bridge.js details --members-stdin < selection.json
 ```
 
 - 凡 `NAME_*` / `URI_FROM_LIST` / `TAG` 皆占位符，须换成 `groups` / `list` 返回之实成员。示例非可用清单。
@@ -63,10 +64,10 @@ node scripts/unity_mcp.js details --members-stdin < selection.json
 ## 批量 Schema
 
 ```sh
-node scripts/unity_mcp.js schemas NAME1 NAME2 NAME3
-node scripts/unity_mcp.js schemas --names-file names.json
-node scripts/unity_mcp.js schemas --names '["NAME1","NAME2"]'
-node scripts/unity_mcp.js schemas --names-stdin < names.json
+node scripts/unity_bridge.js schemas NAME1 NAME2 NAME3
+node scripts/unity_bridge.js schemas --names-file names.json
+node scripts/unity_bridge.js schemas --names '["NAME1","NAME2"]'
+node scripts/unity_bridge.js schemas --names-stdin < names.json
 ```
 
 - 只取工具类，等价一次 `POST /capabilities/schemas`（旧服务缺 `schemas_url` 则回退此固定路由），请求仅 `{tools:[名称...]}`。名称出 `list --kind tools`，原样传递。位置参数与 `--names` 三种输入互斥，须且只须择一。
@@ -78,14 +79,14 @@ node scripts/unity_mcp.js schemas --names-stdin < names.json
 ## 单工具与 HTTP
 
 ```sh
-node scripts/unity_mcp.js schema NAME
-node scripts/unity_mcp.js schemas NAME1 NAME2
-node scripts/unity_mcp.js call NAME --args-file args.json
-node scripts/unity_mcp.js call NAME --args '{}'
-node scripts/unity_mcp.js call NAME --args-stdin < args.json
-node scripts/unity_mcp.js request /CUSTOM_ROUTE --method POST --data-file body.json
-node scripts/unity_mcp.js --ini /path/to/config.ini --timeout 30 groups
-node scripts/unity_mcp.js details --help
+node scripts/unity_bridge.js schema NAME
+node scripts/unity_bridge.js schemas NAME1 NAME2
+node scripts/unity_bridge.js call NAME --args-file args.json
+node scripts/unity_bridge.js call NAME --args '{}'
+node scripts/unity_bridge.js call NAME --args-stdin < args.json
+node scripts/unity_bridge.js request /CUSTOM_ROUTE --method POST --data-file body.json
+node scripts/unity_bridge.js --ini /path/to/config.ini --timeout 30 groups
+node scripts/unity_bridge.js details --help
 ```
 
 - 自目录择 `NAME`，先取 schema / schemas / 详情，再依定义调用。`call` 之 `--args` / `--args-file` / `--args-stdin` 三择一，省略传 `{}`；参数须 JSON 对象。文件与标准输入容 UTF-8 BOM；Windows 宜用文件参数，`<` 示例用于 POSIX shell / CMD。
@@ -93,13 +94,30 @@ node scripts/unity_mcp.js details --help
 - Windows Git Bash / MSYS 会把以 `/` 开头之参数转为本地路径（`/groups` → `C:/…/PortableGit/groups`）。客户端已依 `EXEPATH` **自动还原**，`request /ROUTE` 可直用；亦可用无前导斜杠之裸路由 `request groups`（不触发 shell 转换），或 `discover` 所得完整地址 `request http://localhost:PORT/ROUTE`。不能还原之本地路径明确报错并提示，绝不当 URL 访问。CMD、PowerShell、POSIX shell 不受影响。库 API 直传 `'groups'` 或 `'/groups'` 即可。
 - stdout 仅出结果；唯 `--verbose` 才在 stderr 出完整连接信息，错连或连接变更只出简短警告。HTTP 默认超时 15 秒，验 TLS，不重定向、不重试。写操作失败可能已执行，核实后再定是否重放。退出码：0 成功；2 参数/配置；3 连接/TLS/超时；4 HTTP；5 响应格式/详情超大；6 JSON-RPC error / MCP isError；130 中断。
 
+## Python 运行时（与 JS 等价）
+
+- 差别只有解释器前缀：`python scripts/unity_bridge.py` 的子命令、选项、退出码与 stdout 形态与 `unity_bridge.js` 逐项相同。上文任一示例，把 `node scripts/unity_bridge.js` 换成 `python scripts/unity_bridge.py` 即为对应命令，无须另记参数。
+- 何时用：要写脚本编排多步、或手上 Python 更顺手时用它；只求一份 JSON 输出时两者无差别。同一任务内择一沿用。
+- 库模式 `import unity_bridge`：函数名与 JS 导出同名（`connectionInfo` / `listCapabilities` / `callSkill` / `workflowContext` 等），另有 snake_case 别名（`connection_info` / `list_capabilities` / `call_skill` / `workflow_context`）及 `Client` / `configure` / `get_client`。全部同步，无 `async`/`await`；异常仍为 `ClientError`（`.code` 同退出码）。
+
+```python
+import unity_bridge
+unity_bridge.configure(expected_project='/path/to/UnityProject')   # 可选；默认 ~/.unity-mcp/skill.ini、15 秒
+
+catalog = unity_bridge.list_capabilities('tools')                  # 先发现
+schema = unity_bridge.get_schema('NAME_FROM_LIST')                 # 再取定义
+result = unity_bridge.call_skill('NAME_FROM_LIST', {})             # 依定义调用
+```
+
+- 校验、上限、白名单、不重试、错误码与 JS 同源，非第二套实现；工具名与参数仍只从本次 `list` / `find` / `schema` 取得。接口以本文件与 `--help` 为准，勿读脚本源码。
+
 ## 作为代码库调用（程序化访问）
 
-- 脚本兼 CLI 与零依赖库：`require(...)` 后以**原生对象**直调，不拼 JSON、不起子进程；AI 可自写代码组织多步访问。库函数复用 CLI 全部校验（INI/discovery、数量与字节上限、目录白名单、不重试、错误码），不绕过安全边界。
+- 脚本兼 CLI 与零依赖库：Node 端 `require(...)`、Python 端 `import unity_bridge`，皆以**原生对象**直调，不拼 JSON、不起子进程；AI 可自写代码组织多步访问。库函数复用 CLI 全部校验（INI/discovery、数量与字节上限、目录白名单、不重试、错误码），不绕过安全边界。
 - Node.js 18+（CommonJS）：
 
 ```js
-const unity = require('./scripts/unity_mcp.js');
+const unity = require('./scripts/unity_bridge.js');
 unity.configure({ timeout: 15 });   // 可选；默认 ~/.unity-mcp/skill.ini、15 秒
 
 const catalog = await unity.listCapabilities('tools');      // 先发现
@@ -113,12 +131,12 @@ const summary = await unity.workflowContext('TASK_NAME', 'TASK_DESCRIPTION', asy
 
 - `pickFrom` 为伪代码，表「由调用方依目录与 schema 决定」，非库函数。工具名须出 `find` / `list --kind tools`，参数只依 `schema` / `schemas` 传。示例无真实工具名，勿照抄参数。
 - `callSkill` 返 MCP `result`；`callTool` 返完整 JSON-RPC 信封；`callSkillText` 拼 `content[*].text`；`callSkillJson` 再解析为 JSON，失败抛错。
-- `workflowContext` 只作**调用记录与汇总**：块内 `callSkill` 自动记入 `wf.calls`，含参数、结果或错误码与耗时。失败照常外抛，**不重试、不回滚、不自动重放**。`wf.summary()` 块内外皆可调用。
+- `workflowContext` / `workflow_context` 只作**调用记录与汇总**：块内 `callSkill` 自动记入 `wf.calls`，含参数、结果或错误码与耗时。失败照常外抛，**不重试、不回滚、不自动重放**。`wf.summary()` 块内外皆可调用。
 - 每次调用仍重读 INI 并验 `/discovery`，不缓存端口，但锁定实例；域重载与脚本重编译**不更换实例标识**（存于编辑器 SessionState），故不必重新 `discover`、也无需重取工具与 Schema；只有 Unity 进程重启才会漂移，那时须显式 `discover` 重新确认，禁止自动跟随重放。库模式默认静默 stderr，错连或连接变更给简短警告（`verbose: true` 才出完整信息）。所有方法皆 `async`，须 `await`；异常为 `ClientError`（含 `.code`，同 CLI 退出码）。
-- 多连接或自定义配置用 `new Client({ ini, timeout, verbose })`；方法名 `discover / groups / list / find / details / schema / schemas / call / prompt / resource / request`。顶层函数清单见脚本末 `module.exports`。
+- 多连接或自定义配置用 `new Client({ ini, timeout, verbose })`（Python：`unity_bridge.Client(ini=..., timeout=..., expected_project=...)`）；方法名 `discover / groups / list / find / details / schema / schemas / call / prompt / resource / request`。Python 端方法同义但为 snake_case（`request_status` / `call_skill` 等），两种写法都可用，不必另记一套。
 - 安全边界同 CLI：禁全集、拒未注册 URI、守 `max_details` 与 64 KiB；`request` 绝对外发地址仍须用户明确授权。库不得绕过 SKILL.md 任何规则。
 
-| CLI | JS 顶层 |
+| CLI | JS 顶层（Python 同名，另接受 snake_case） |
 | --- | --- |
 | `discover` | `connectionInfo()` |
 | `groups` | `getGroups()` |
@@ -136,10 +154,10 @@ const summary = await unity.workflowContext('TASK_NAME', 'TASK_DESCRIPTION', asy
 - 工具多时先本地过滤目录摘要，勿把整份目录塞进上下文：
 
 ```sh
-node scripts/unity_mcp.js find QUERY
-node scripts/unity_mcp.js find QUERY --kind tools|prompts|resources
-node scripts/unity_mcp.js prompt NAME
-node scripts/unity_mcp.js resource URI
+node scripts/unity_bridge.js find QUERY
+node scripts/unity_bridge.js find QUERY --kind tools|prompts|resources
+node scripts/unity_bridge.js prompt NAME
+node scripts/unity_bridge.js resource URI
 ```
 
 - `find` 只取一次对应目录，按 `name` / `uri` / `description` / `tags` 作大小写不敏感子串匹配，返 `{kind,query,matches,count,total}`。不取详情、不读正文、不调 MCP 协议。关键字 1-128 字符，不含首尾空白与控制字符；以 `-` 开头时用 `--` 分隔。默认 `tools`，`--kind` 可选 `prompts` / `resources`。命中不即可取详情，仍以 `details` / `schema` 结果为准。
@@ -171,5 +189,6 @@ node scripts/unity_mcp.js resource URI
 ## 回归测试
 
 ```sh
-node --test tests/test_unity_mcp.js
+node --test tests/test_unity_bridge.js
+python tests/test_unity_bridge.py
 ```

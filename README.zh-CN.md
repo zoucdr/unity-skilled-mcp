@@ -25,7 +25,7 @@
 >
 > **状态树（StateTree）已彻底移除**：`StateTree` / `StateTreeBuilder` / `StateTreeContext` / `StateMethodBase` / `DualStateMethodBase` / `Selector/` 全部删除。工具类为**无状态树的普通类**，直接以 `[ToolModule]` + `[ToolAction]` 声明。旧的「大工具 + `action` 分派」名称（`hierarchy_create`、`edit_gameobject`、`code_runner` 等）已失效，不再提供兼容别名。
 >
-> 技能客户端只有 `unity_mcp.js`（Node.js 18+）；INI 与 Unity 设置中不再有脚本语言选项。批量调用接口 `batch_call` 与技能 `calls` / `callMany` 已移除，多步操作请用技能库 API 自行编排。
+> 技能客户端有两个等价实现：`unity_bridge.js`（Node.js 18+）与 `unity_bridge.py`（Python 3.8+），子命令、选项、退出码与函数名一致；INI 与 Unity 设置中不再有脚本语言选项。批量调用接口 `batch_call` 与技能 `calls` / `callMany` 已移除，多步操作请用技能库 API 自行编排。
 
 ## 系统概述
 
@@ -56,7 +56,7 @@ Unity Skilled MCP 是一个 AI–Unity 集成系统：它在 Unity 编辑器内�
 
 ```
 AI 客户端（Cursor / Claude / Trae）
-  └─ Unity 轻量技能（SKILL.md + unity_mcp.js）
+  └─ Unity 轻量技能（SKILL.md + unity_bridge.js / unity_bridge.py）
        ├─ 读 ~/.unity-mcp/skill.ini，校验在线服务
        ├─ 经 HTTP 发现短目录，按需读取所选能力定义
        └─ 经客户端脚本发起调用
@@ -67,7 +67,7 @@ AI 客户端（Cursor / Claude / Trae）
 
 系统自上而下：
 1. **AI 客户端层**：Cursor、Claude、Trae 等 AI 助手
-2. **技能层**：`SKILL.md` 契约 + `unity_mcp.js` 客户端
+2. **技能层**：`SKILL.md` 契约 + `unity_bridge.js` / `unity_bridge.py` 客户端
 3. **MCP 协议层**：Unity 内置 MCP 服务器（HTTP + JSON-RPC 2.0）
 4. **执行层**：消息队列 → Editor 主线程 → Unity API
 5. **工具层**：43 个工具模块（364 个动作）+ 3 个内置入口（demo 另含 7 个自定义工具模块示例）；任意 tools/call 的结论都落盘，长耗时调用先返回 task_id
@@ -342,7 +342,7 @@ INI 只含本地连接元数据与启动设置，**不发布 `mcp_url`**，也�
 批量调用接口已移除。需要连续执行多个调用时，用技能的 JS 库 API 自己写循环：先取定义、再按次序逐次 `callSkill`；遇错是否继续、失败后重放哪些步骤，都由调用方代码决定。每次调用独立校验 INI 与 discovery，写操作不自动回滚。
 
 ```js
-const unity = require('./scripts/unity_mcp.js');
+const unity = require('./scripts/unity_bridge.js');
 const catalog = await unity.listCapabilities('tools');
 for (const step of await planFromCatalog(catalog)) {
   await unity.callSkill(step.name, step.args);
@@ -377,26 +377,26 @@ MCP 协议会向 AI 提供完整工具列表与 Schema，工具较多时**占用
 ### 技能命令示例
 
 ```sh
-node scripts/unity_mcp.js discover
-node scripts/unity_mcp.js groups
-node scripts/unity_mcp.js list --kind tools
-node scripts/unity_mcp.js find camera --kind tools
-node scripts/unity_mcp.js schema NAME_FROM_LIST
-node scripts/unity_mcp.js schemas NAME1 NAME2
-node scripts/unity_mcp.js details --tag TAG_FROM_GROUPS
-node scripts/unity_mcp.js call NAME_FROM_LIST --args-file args.json
-node scripts/unity_mcp.js prompt NAME
-node scripts/unity_mcp.js resource URI
+node scripts/unity_bridge.js discover
+node scripts/unity_bridge.js groups
+node scripts/unity_bridge.js list --kind tools
+node scripts/unity_bridge.js find camera --kind tools
+node scripts/unity_bridge.js schema NAME_FROM_LIST
+node scripts/unity_bridge.js schemas NAME1 NAME2
+node scripts/unity_bridge.js details --tag TAG_FROM_GROUPS
+node scripts/unity_bridge.js call NAME_FROM_LIST --args-file args.json
+node scripts/unity_bridge.js prompt NAME
+node scripts/unity_bridge.js resource URI
 ```
 
 所有 `NAME_FROM_LIST` / `TAG_FROM_GROUPS` / `URI` 均为占位符，必须换成 `list` / `groups` / `find` 返回的实际成员。
 
 ### 脚本作为库调用
 
-`unity_mcp.js` 既是 CLI 也是零依赖 CommonJS 库，`require(...)` 后可用原生对象直接调用，让 AI 自己写代码组织多步访问。
+`unity_bridge.js` 既是 CLI 也是零依赖 CommonJS 库，`require(...)` 后可用原生对象直接调用，让 AI 自己写代码组织多步访问。
 
 ```js
-const unity = require('./scripts/unity_mcp.js');
+const unity = require('./scripts/unity_bridge.js');
 unity.configure({ timeout: 15 });
 const catalog = await unity.listCapabilities('tools');
 const { name, args } = pickFrom(catalog, await unity.getSchema(name));
@@ -423,14 +423,16 @@ const summary = await unity.workflowContext('TASK', 'DESCRIPTION', async wf => {
 unity-package/Skills/unity-skilled-mcp/
 ├── SKILL.md                    # 连接、命令与安全说明
 ├── scripts/
-│   └── unity_mcp.js            # 唯一客户端，Node.js 18+，无依赖
-└── tests/                      # 客户端回归测试
+│   ├── unity_bridge.js            # 客户端（Node.js 18+），只用标准库
+│   └── unity_bridge.py            # 等价客户端（Python 3.8+），同名函数
+└── tests/                      # 客户端回归测试（JS 与 Python 各一套）
 ```
 
 运行回归测试：
 
 ```sh
-node --test tests/test_unity_mcp.js
+node --test tests/test_unity_bridge.js
+python tests/test_unity_bridge.py
 ```
 
 ---

@@ -208,7 +208,8 @@
                         <div class="layer-title">技能层（Skill）</div>
                         <div class="layer-items">
                             <span class="layer-item">SKILL.md：连接与调用流程</span>
-                            <span class="layer-item">unity_mcp.js（Node.js 18+）</span>
+                            <span class="layer-item">unity_bridge.js（Node.js 18+）</span>
+                            <span class="layer-item">unity_bridge.py（Python 3.8+，等价）</span>
                         </div>
                     </div>
                     <div class="arch-arrow">↓</div>
@@ -433,7 +434,7 @@
                     <h3>文件结构与运行方式</h3>
                     <ul>
                         <li><code>SKILL.md</code>：唯一入口说明，只写连接、发现、调用与安全边界，不内联具体工具能力。</li>
-                        <li><code>scripts/unity_mcp.js</code>：唯一客户端，Node.js 18+，无第三方依赖。</li>
+                        <li><code>scripts/unity_bridge.js</code> 与 <code>scripts/unity_bridge.py</code>：两个等价客户端（Node.js 18+ / Python 3.8+），只用标准库，子命令、选项、退出码与函数名一致。</li>
                         <li>工具名、参数与可用性必须由 <code>discover</code> → <code>list</code> / <code>find</code> → <code>schema</code> 现场发现；文档中的名字不代表当前服务存在。</li>
                         <li>INI 不再发布 <code>script_language</code>，Unity 端也没有脚本语言选项。</li>
                     </ul>
@@ -443,29 +444,29 @@
                     <h3>客户端命令</h3>
                     <div class="code-block">
                         <pre><code><span class="comment"># 1. 核对连接（读 INI，再验证 /discovery）</span>
-node scripts/unity_mcp.js discover
+node scripts/unity_bridge.js discover
 
 <span class="comment"># 2. 先看有哪些组和目录</span>
-node scripts/unity_mcp.js groups
-node scripts/unity_mcp.js list --kind tools
+node scripts/unity_bridge.js groups
+node scripts/unity_bridge.js list --kind tools
 
 <span class="comment"># 3. 取参数：按标签组，或本次动态成员（名称来自目录）</span>
-node scripts/unity_mcp.js details --tag TAG_FROM_GROUPS
-node scripts/unity_mcp.js details --members-file selection.json
+node scripts/unity_bridge.js details --tag TAG_FROM_GROUPS
+node scripts/unity_bridge.js details --members-file selection.json
 
 <span class="comment"># 4. 取工具 Schema（单个或批量）后调用</span>
-node scripts/unity_mcp.js schema NAME_FROM_LIST
-node scripts/unity_mcp.js schemas NAME1 NAME2
-node scripts/unity_mcp.js call NAME_FROM_LIST --args-file args.json
+node scripts/unity_bridge.js schema NAME_FROM_LIST
+node scripts/unity_bridge.js schemas NAME1 NAME2
+node scripts/unity_bridge.js call NAME_FROM_LIST --args-file args.json
 
 <span class="comment"># 5. 目录检索与正文读取，多步访问由库 API 编排</span>
-node scripts/unity_mcp.js find QUERY --kind tools
-node scripts/unity_mcp.js prompt NAME
-node scripts/unity_mcp.js resource URI
+node scripts/unity_bridge.js find QUERY --kind tools
+node scripts/unity_bridge.js prompt NAME
+node scripts/unity_bridge.js resource URI
 
 <span class="comment"># 6. 文档不预设能力：任何工具都先发现、再取定义</span>
-node scripts/unity_mcp.js list --kind tools
-node scripts/unity_mcp.js schemas NAME1 NAME2</code></pre>
+node scripts/unity_bridge.js list --kind tools
+node scripts/unity_bridge.js schemas NAME1 NAME2</code></pre>
                     </div>
                 </div>
 
@@ -483,7 +484,7 @@ node scripts/unity_mcp.js schemas NAME1 NAME2</code></pre>
                     <p>脚本既是 CLI 也是零依赖 CommonJS 库。require 后可用原生对象直接调用，让 AI 自己写代码组织多步访问；库函数复用 CLI 的全部校验与安全边界。</p>
                     <div class="code-block">
                         <pre><code><span class="comment">// Node.js 18+（CommonJS）；先从目录与 schema 决定工具</span>
-const unity = require('./scripts/unity_mcp.js');
+const unity = require('./scripts/unity_bridge.js');
 unity.configure({ timeout: 15 });
 const catalog = await unity.listCapabilities('tools');
 const { name, args } = pickFrom(catalog, await unity.getSchema(name));
@@ -507,7 +508,7 @@ const summary = await unity.workflowContext('TASK', 'DESCRIPTION', async functio
                         <li>当前服务注册了哪些工具，取决于 Unity 版本、工程、已安装包与启动设置；文档或旧会话里出现过的名字不代表它现在可用。</li>
                         <li>固定顺序：<code>discover</code> → <code>groups</code> / <code>list</code> / <code>find</code> → <code>details</code> / <code>schema</code> / <code>schemas</code> → <code>call</code>。</li>
                         <li>参数语义只以该工具本次 <code>schema</code> 为准；返回未启用、未安装或未知时如实告知并停止，不换名猜、不重试、不用 <code>request</code> 绕过。</li>
-                        <li>INI 不发布 MCP 端点；客户端固定为 <code>scripts/unity_mcp.js</code>（Node.js 18+），不再有脚本语言选项。</li>
+                        <li>INI 不发布 MCP 端点；客户端固定为 <code>scripts/unity_bridge.js</code>（Node.js 18+），不再有脚本语言选项。</li>
                     </ul>
                 </div>
 
@@ -790,8 +791,8 @@ max_details=32</code></pre>
                         <h3>开始使用</h3>
                         <div class="code-block">
                             <pre><code><span class="comment">// 技能链路：先核对连接，再按需读取</span>
-node scripts/unity_mcp.js discover
-node scripts/unity_mcp.js list
+node scripts/unity_bridge.js discover
+node scripts/unity_bridge.js list
 
 <span class="comment">// 直接对话也可以</span>
 <span class="string">"请帮我创建一个 Cube 对象"</span>
@@ -880,7 +881,7 @@ POST /capabilities/details
 { <span class="key">"method"</span>: <span class="string">"resources/read"</span>, <span class="key">"params"</span>: { <span class="key">"uri"</span>: <span class="string">"file://path/to/resource.yaml"</span> } }
 
 <span class="comment">// 技能命令：先校验目录，再读取正文</span>
-node scripts/unity_mcp.js resource file://path/to/resource.yaml</code></pre>
+node scripts/unity_bridge.js resource file://path/to/resource.yaml</code></pre>
                             </div>
                         </div>
                     </div>
@@ -924,7 +925,7 @@ GET /prompts
 { <span class="key">"method"</span>: <span class="string">"prompts/get"</span>, <span class="key">"params"</span>: { <span class="key">"name"</span>: <span class="string">"test_talk_step"</span> } }
 
 <span class="comment">// 技能命令：先校验目录，再取模板正文</span>
-node scripts/unity_mcp.js prompt test_talk_step</code></pre>
+node scripts/unity_bridge.js prompt test_talk_step</code></pre>
                             </div>
                         </div>
                     </div>

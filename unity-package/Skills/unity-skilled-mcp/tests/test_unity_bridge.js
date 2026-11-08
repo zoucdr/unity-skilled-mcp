@@ -8,7 +8,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
 
-const cli = path.resolve(__dirname, '../scripts/unity_mcp.js');
+const cli = path.resolve(__dirname, '../scripts/unity_bridge.js');
 const lib = require(cli);
 
 async function fixture(t) {
