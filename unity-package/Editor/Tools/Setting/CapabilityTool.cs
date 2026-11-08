@@ -25,7 +25,8 @@ namespace UniMcp.Tools
     /// All state here is editor-local: nothing is written outside ProjectSettings
     /// and UserSettings.
     /// </summary>
-    [ToolModule("capability", GroupEn = "System", GroupZh = "系统工具")]
+    [ToolModule("capability", GroupEn = "System", GroupZh = "系统工具",
+        Tags = new[] { "configuration", "capability-discovery", "settings" })]
     public class CapabilityTool : ToolModuleBase
     {
         public override string Description => L.T(
@@ -77,6 +78,20 @@ namespace UniMcp.Tools
                     "MIME type for the resource. Defaults to application/octet-stream.",
                     "资源的 MIME 类型。默认 application/octet-stream。"))
                     .SetDefault("application/octet-stream"),
+
+                new MethodStr("folder", L.T(
+                    "Folder for a folder-list resource (Assets/...). When set, 'url' is not required; matching assets are published as a group.",
+                    "选项列表资源的文件夹（Assets/...）。给出时无需 url，按类型筛选把命中资源发布为一组。"))
+                    .AddExample("Assets/Textures"),
+
+                new MethodStr("type_filter", L.T(
+                    "Type filter for a folder-list resource: t:Texture2D / Texture2D / png,jpg / *.png; empty = all files.",
+                    "选项列表的类型筛选：t:Texture2D / Texture2D / png,jpg / *.png；留空=全部文件。"))
+                    .AddExample("png,jpg"),
+
+                new MethodBool("recursive", L.T(
+                    "Include subfolders for a folder-list resource. Defaults to true.",
+                    "选项列表是否包含子文件夹，默认 true。")).SetDefault(true),
 
                 new MethodStr("argument_names", L.T(
                     "Comma-separated argument names when saving a prompt (optional).",
@@ -344,6 +359,7 @@ namespace UniMcp.Tools
             DescriptionZh = "新增或更新一个可配置的提示词或资源（写入 McpSettings.asset）。",
             Parameters = new[] {
                 "kind", "name", "description", "prompt_text", "url", "mime_type",
+                "folder", "type_filter", "recursive",
                 "argument_names", "argument_types", "argument_required"
             },
             Inject = new[] { "action=save" })]
@@ -378,15 +394,40 @@ namespace UniMcp.Tools
                     new JsonClass { { "kind", new JsonData("prompt") }, { "name", new JsonData(name) } });
             }
 
+            string mime = args["mime_type"]?.Value;
+            string defaultMime = string.IsNullOrWhiteSpace(mime) ? "application/octet-stream" : mime;
+
+            // 选项列表：给 folder 即按「文件夹 + 类型筛选」展开一组资源，无需 url。
+            string folder = args["folder"]?.Value;
+            if (!string.IsNullOrWhiteSpace(folder))
+            {
+                var group = new ConfigurableResource(name, args["description"]?.Value ?? "", "", defaultMime);
+                group.SourceType = UniMcp.ResourceSourceType.FolderList;
+                group.SetFolder(folder);
+                group.SetTypeFilter(args["type_filter"]?.Value ?? "");
+                group.SetRecursive(args["recursive"] == null || args["recursive"].AsBoolDefault(true));
+                settings.AddConfigurableResource(group);
+                settings.SaveSettings();
+                McpLocalSettings.Instance.SetResourceEnabled(name, true);
+                McpService.RefreshDiscovery();
+                int matched = group.EnumerateFolderResources().Count;
+                return Response.Success(
+                    L.T($"Folder list '{name}' saved ({matched} matched).",
+                        $"选项列表 '{name}' 已保存（命中 {matched} 个）。"),
+                    new JsonClass {
+                        { "kind", new JsonData("resource") }, { "name", new JsonData(name) },
+                        { "source_type", new JsonData("folder_list") }, { "folder", new JsonData(group.Folder) },
+                        { "type_filter", new JsonData(group.TypeFilter) }, { "matched", new JsonData(matched) }
+                    });
+            }
+
             string url = args["url"]?.Value;
             if (string.IsNullOrWhiteSpace(url))
                 return Response.Error(L.T(
                     "'url' is required when saving a resource.",
                     "保存资源时 'url' 必填。"));
 
-            string mime = args["mime_type"]?.Value;
-            var resource = new ConfigurableResource(name, args["description"]?.Value ?? "", url,
-                string.IsNullOrWhiteSpace(mime) ? "application/octet-stream" : mime);
+            var resource = new ConfigurableResource(name, args["description"]?.Value ?? "", url, defaultMime);
             settings.AddConfigurableResource(resource);
             settings.SaveSettings();
             McpLocalSettings.Instance.SetResourceEnabled(name, true);

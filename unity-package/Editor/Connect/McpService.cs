@@ -953,10 +953,7 @@ namespace UniMcp
                             return new Type[0];
                         }
                     })
-                    .Where(type => !type.IsAbstract &&
-                                   !type.IsInterface &&
-                                   typeof(IRes).IsAssignableFrom(type) &&
-                                   type != typeof(ConfigurableResource))
+                    .Where(IsScannableResource)
                     .ToList();
 
                 Log($"[UniMcp] 找到 {resourceTypes.Count} 个实现IRes接口的类型");
@@ -1003,6 +1000,30 @@ namespace UniMcp
                     }
                 }
 
+                // IResList：一个类发布整组资源，数量随工程变化时不必为每一项写一个类。
+                var listTypes = FindImplementations<IResList>("ResourceList");
+                Log($"[UniMcp] 找到 {listTypes.Count} 个实现IResList接口的类型");
+
+                foreach (var listType in listTypes)
+                {
+                    try
+                    {
+                        Log($"[UniMcp] 尝试创建ResourceList实例: {listType.FullName}");
+                        var list = Activator.CreateInstance(listType) as IResList;
+                        if (list == null)
+                        {
+                            LogWarning($"[UniMcp] 无法将 {listType.Name} 转换为IResList");
+                            continue;
+                        }
+
+                        RegisterResourceList(listType, list);
+                    }
+                    catch (Exception ex)
+                    {
+                        LogError($"[UniMcp] 创建ResourceList实例失败 {listType.Name}: {ex.Message}\n{ex.StackTrace}");
+                    }
+                }
+
                 // 合并用户经 GUI / capability 工具配置的资源。
                 // 这些对象是 ConfigurableResource 实例，反射扫描时被显式排除，
                 // 必须在此显式登记，否则"配置了却不发布"。
@@ -1021,6 +1042,117 @@ namespace UniMcp
             {
                 LogError($"[UniMcp] Resources发现过程中发生错误: {ex.Message}\n{ex.StackTrace}");
             }
+        }
+
+        /// <summary>
+        /// 反射发现时可作为「用户可实例化 provider」的类型：必须在程序集外可见
+        /// （IsVisible 会连带检查所有外层类型），且带公开无参构造。
+        /// 否则测试桩、内部 helper 也会被 Activator.CreateInstance 误发布到真实注册表。
+        /// </summary>
+        internal static bool IsDiscoverableProvider(Type type)
+        {
+            return type != null
+                && !type.IsAbstract
+                && !type.IsInterface
+                && type.IsVisible
+                && type.GetConstructor(Type.EmptyTypes) != null;
+        }
+
+        /// <summary>
+        /// 反射扫描时能当作"单资源实现类"实例化的类型：
+        /// 排除配置项（由设置面板合并）与 IResList 展开后的运行期条目（无无参构造、按组注册）。
+        /// </summary>
+        internal static bool IsScannableResource(Type type)
+        {
+            return IsDiscoverableProvider(type)
+                && typeof(IRes).IsAssignableFrom(type)
+                && type != typeof(ConfigurableResource)
+                && type != typeof(ListedResource);
+        }
+
+        /// <summary>
+        /// 扫描所有程序集里实现 T 的具体类型。只收程序集外可见且带公开无参构造的
+        /// 类型（见 IsDiscoverableProvider），测试桩/内部 helper 不发布。
+        /// 单个程序集取类型失败只记警告，不影响其余程序集；返回顺序不保证。
+        /// </summary>
+        private List<Type> FindImplementations<T>(string kindLabel)
+        {
+            var found = new List<Type>();
+            foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
+            {
+                try
+                {
+                    foreach (var type in assembly.GetTypes())
+                    {
+                        if (!IsDiscoverableProvider(type)) continue;
+                        if (!typeof(T).IsAssignableFrom(type)) continue;
+                        found.Add(type);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    LogWarning($"[UniMcp] 无法获取程序集 {assembly.GetName().Name} 的{kindLabel}类型: {ex.Message}");
+                }
+            }
+            return found;
+        }
+
+        /// <summary>
+        /// 展开一个 IResList：逐项补齐组级 MimeType，跳过缺 URL 的条目，按 URL 注册。
+        /// 组内单项失败只跳过该项；整组列举抛错则整组跳过，均不影响其他资源。
+        /// </summary>
+        internal int RegisterResourceList(Type listType, IResList list)
+        {
+            string sourceName = listType == null ? "IResList" : listType.Name;
+            IEnumerable<ResItem> items;
+            try
+            {
+                items = list.GetResources();
+            }
+            catch (Exception ex)
+            {
+                LogError($"[UniMcp] IResList列举资源失败 {sourceName}: {ex.Message}\n{ex.StackTrace}");
+                return 0;
+            }
+
+            if (items == null)
+            {
+                LogWarning($"[UniMcp] IResList返回null，按空组处理: {sourceName}");
+                return 0;
+            }
+
+            string groupName = string.IsNullOrEmpty(list.GroupName) ? sourceName : list.GroupName;
+            string groupMimeType = list.MimeType;
+            int registered = 0;
+
+            foreach (var item in items)
+            {
+                if (item == null) continue;
+
+                if (string.IsNullOrEmpty(item.Url))
+                {
+                    LogWarning($"[UniMcp] 资源组 {groupName} 有条目缺少URL，跳过: {item.Name}");
+                    continue;
+                }
+
+                string mimeType = string.IsNullOrEmpty(item.MimeType) ? groupMimeType : item.MimeType;
+                if (string.IsNullOrEmpty(mimeType))
+                {
+                    LogWarning($"[UniMcp] 资源组 {groupName} 的条目 {item.Name} 缺少MimeType，使用默认值");
+                }
+
+                var resource = new ListedResource(item, mimeType, sourceName, groupName);
+                if (availableResources.ContainsKey(resource.Url))
+                {
+                    LogWarning($"[UniMcp] 资源组 {groupName} 的条目覆盖了同URL的已注册资源: {resource.Url}");
+                }
+
+                availableResources[resource.Url] = resource;
+                registered++;
+            }
+
+            Log($"[UniMcp] IResList注册完成 {sourceName}（{groupName}）：{registered} 个资源");
+            return registered;
         }
 
         /// <summary>
@@ -1066,6 +1198,26 @@ namespace UniMcp
                 foreach (var resource in configured)
                 {
                     if (resource == null) continue;
+
+                    // 选项列表：一个配置项展开成一组资源。
+                    // 只有「整组」开关在注册阶段生效——下游 IsResourceEnabled 只认条目名，看不到组名。
+                    // 逐项开关必须留给下游统一的发布过滤：若在此把禁用条目剔除，它就不会出现在
+                    // GetAllResources / 目录里，用户将无法再把它启用回来（禁用变不可逆）。
+                    if (resource.SourceType == ResourceSourceType.FolderList)
+                    {
+                        var localSettings = GetLocalSettings();
+                        if (localSettings != null && !localSettings.IsResourceEnabled(resource.Name)) continue;
+                        int matched = 0;
+                        foreach (var item in resource.EnumerateFolderResources())
+                        {
+                            availableResources[item.Url] = new ListedResource(
+                                item, item.MimeType, "ConfigurableResource", resource.Name);
+                            matched++;
+                        }
+                        Log($"[UniMcp] 已注册配置资源组 {resource.Name}：{matched} 个资源");
+                        continue;
+                    }
+
                     // UnityObject 类型需在主线程计算 URL；此处已在主线程。
                     resource.EnsureUrlCalculated();
                     string url = resource.Url;

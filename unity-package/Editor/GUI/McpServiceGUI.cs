@@ -35,6 +35,17 @@ namespace UniMcp.Gui
         // 服务未启动时 availablePrompts/availableResources 可能为空，这里保证至少自动发现一次
         private static bool codeDiscoveryTried = false;
 
+        // 选项列表命中预览缓存：IMGUI 每帧重绘多次，避免反复扫 AssetDatabase。
+        // key = 组名|文件夹|筛选|递归；任何配置变化即整体清空。
+        private static readonly Dictionary<string, FolderPreview> folderPreviewCache =
+            new Dictionary<string, FolderPreview>();
+
+        private sealed class FolderPreview
+        {
+            public int Count;
+            public string Text;
+        }
+
         // MIME类型下拉框使用的常用资源格式
         private static readonly string[] commonMimeTypes = new string[]
         {
@@ -295,6 +306,48 @@ namespace UniMcp.Gui
         }
 
         /// <summary>
+        /// 取一个前缀下所有工具共有的能力标签（ToolSpec.Tags 由 ToolCatalog 生成），
+        /// 仅用于工具集（模块）header。具体工具不展示标签。
+        /// </summary>
+        private static string[] SharedTags(List<ToolSpec> specs)
+        {
+            if (specs == null || specs.Count == 0) return new string[0];
+            IEnumerable<string> shared = specs[0].Tags ?? new string[0];
+            foreach (var spec in specs.Skip(1))
+                shared = shared.Intersect(spec.Tags ?? new string[0], StringComparer.Ordinal);
+            return shared.ToArray();
+        }
+
+        /// <summary>
+        /// 在工具集（模块）header 的行尾绘制能力标签。超过 maxShown 个只列前几个并以 +N 收尾，
+        /// tooltip 保留完整列表；标签右对齐、固定宽度，避免与折叠标题互相挤压。
+        /// </summary>
+        private static void DrawHeaderTags(IEnumerable<string> tags, float width, int maxShown = 3)
+        {
+            var all = (tags ?? Enumerable.Empty<string>())
+                .Where(t => !string.IsNullOrWhiteSpace(t))
+                .Distinct(StringComparer.Ordinal)
+                .OrderBy(t => t, StringComparer.Ordinal)
+                .ToArray();
+            if (all.Length == 0) return;
+
+            string shown = string.Join(" ", all.Take(maxShown).Select(t => "#" + t));
+            if (all.Length > maxShown) shown += "  +" + (all.Length - maxShown);
+
+            var style = new GUIStyle(EditorStyles.miniLabel)
+            {
+                fontSize = 9,
+                alignment = TextAnchor.MiddleRight,
+                clipping = TextClipping.Clip,
+                normal = { textColor = new Color(0.62f, 0.8f, 1f) },
+                padding = new RectOffset(4, 6, 0, 0)
+            };
+            var content = new GUIContent("🏷 " + shown,
+                L.T("Capability tags", "能力标签") + ":\n" + string.Join("\n", all.Select(t => "#" + t)));
+            EditorGUILayout.LabelField(content, style, GUILayout.Width(width));
+        }
+
+        /// <summary>
         /// 绘制工具树：分组 → 工具模块（前缀）→ 内含子函数 → 各自参数。
         /// 一步到位展示“一个模块内含哪些函数、每个函数有哪些参数”，
         /// 数据源为声明式 ToolCatalog（一个动作即一个工具），另附内置门面工具。
@@ -533,7 +586,8 @@ namespace UniMcp.Gui
             GUIStyle moduleStyle = new GUIStyle(EditorStyles.foldout)
             {
                 fontStyle = FontStyle.Bold,
-                fontSize = 12
+                fontSize = 12,
+                clipping = TextClipping.Clip
             };
             Color moduleColor = allEnabled ? new Color(0.6f, 0.85f, 0.65f)
                 : (anyEnabled ? new Color(0.9f, 0.8f, 0.45f) : new Color(0.9f, 0.55f, 0.55f));
@@ -546,6 +600,10 @@ namespace UniMcp.Gui
                 groupFoldouts[moduleKey],
                 $"📦 {prefix}  ·  {sourceClass}  ({L.T("functions", "函数")}: {specs.Count})",
                 true, moduleStyle);
+
+            // 标签只在工具集（模块）行显示，且贴在行尾；FlexibleSpace 撑开标题与标签之间的空隙
+            GUILayout.FlexibleSpace();
+            DrawHeaderTags(SharedTags(specs), 240f);
 
             EditorGUILayout.EndHorizontal();
 
@@ -1384,13 +1442,27 @@ namespace UniMcp.Gui
                             settings2.SaveSettings();
                         }
 
-                        // 来源类型
-                        EditorGUI.BeginChangeCheck();
-                        UniMcp.ResourceSourceType newSourceType = (UniMcp.ResourceSourceType)EditorGUILayout.EnumPopup(L.T("Source Type", "来源类型"), resource.SourceType);
-                        if (EditorGUI.EndChangeCheck())
+                        // 来源类型（枚举顺序：Url / UnityObject / FolderList）
+                        var sourceLabels = new[]
                         {
-                            resource.SourceType = newSourceType;
+                            L.T("URL", "URL 链接"),
+                            L.T("Unity Object", "Unity 对象"),
+                            L.T("Folder + Type Filter", "文件夹 + 类型筛选")
+                        };
+                        EditorGUI.BeginChangeCheck();
+                        int sourceIndex = (int)resource.SourceType;
+                        if (sourceIndex < 0 || sourceIndex >= sourceLabels.Length) sourceIndex = 0;
+                        int newSourceIndex = EditorGUILayout.Popup(L.T("Source Type", "来源类型"), sourceIndex, sourceLabels);
+                        if (EditorGUI.EndChangeCheck() && newSourceIndex != sourceIndex)
+                        {
+                            resource.SourceType = (UniMcp.ResourceSourceType)newSourceIndex;
+                            // 首次切到文件夹组时给个可用默认值，否则命中 0 个难以理解
+                            if (resource.SourceType == UniMcp.ResourceSourceType.FolderList
+                                && string.IsNullOrEmpty(resource.Folder))
+                                resource.SetFolder("Assets");
                             settings2.SaveSettings();
+                            folderPreviewCache.Clear();
+                            McpService.RefreshDiscovery();
                         }
 
                         // 根据来源类型显示不同字段
@@ -1404,7 +1476,7 @@ namespace UniMcp.Gui
                                 settings2.SaveSettings();
                             }
                         }
-                        else // UnityObject
+                        else if (resource.SourceType == UniMcp.ResourceSourceType.UnityObject)
                         {
                             EditorGUI.BeginChangeCheck();
                             Object newObject = EditorGUILayout.ObjectField(L.T("Unity Object", "Unity对象"), resource.UnityObject, typeof(Object), false);
@@ -1421,6 +1493,87 @@ namespace UniMcp.Gui
                                 EditorGUILayout.TextField("URL", resource.Url);
                                 EditorGUI.EndDisabledGroup();
                             }
+                        }
+                        else // FolderList：文件夹 + 类型筛选 → 一组资源
+                        {
+                            EditorGUI.BeginChangeCheck();
+                            string newFolder = EditorGUILayout.TextField(
+                                L.T("Folder (Assets/...)", "文件夹 (Assets/...)"), resource.Folder);
+                            if (EditorGUI.EndChangeCheck())
+                            {
+                                resource.SetFolder(newFolder);
+                                settings2.SaveSettings();
+                                folderPreviewCache.Clear();
+                                McpService.RefreshDiscovery();
+                            }
+
+                            // 支持从 Project 窗口直接拖文件夹
+                            EditorGUI.BeginChangeCheck();
+                            string pickPath = resource.Folder.StartsWith("Assets", StringComparison.OrdinalIgnoreCase)
+                                ? resource.Folder : "Assets";
+                            var folderAsset = AssetDatabase.LoadAssetAtPath<DefaultAsset>(pickPath);
+                            var picked = EditorGUILayout.ObjectField(
+                                L.T("Pick Folder", "选择文件夹"), folderAsset, typeof(DefaultAsset), false);
+                            if (EditorGUI.EndChangeCheck() && picked != null)
+                            {
+                                string pickedPath = AssetDatabase.GetAssetPath(picked);
+                                if (AssetDatabase.IsValidFolder(pickedPath))
+                                {
+                                    resource.SetFolder(pickedPath);
+                                    settings2.SaveSettings();
+                                    folderPreviewCache.Clear();
+                                    McpService.RefreshDiscovery();
+                                }
+                            }
+
+                            EditorGUI.BeginChangeCheck();
+                            string newFilter = EditorGUILayout.TextField(
+                                L.T("Type Filter", "类型筛选"), resource.TypeFilter);
+                            if (EditorGUI.EndChangeCheck())
+                            {
+                                resource.SetTypeFilter(newFilter);
+                                settings2.SaveSettings();
+                                folderPreviewCache.Clear();
+                                McpService.RefreshDiscovery();
+                            }
+                            EditorGUILayout.HelpBox(
+                                L.T("t:Texture2D / Texture2D / png,jpg / *.png; empty = all files",
+                                    "t:Texture2D / Texture2D / png,jpg / *.png；留空=全部文件"),
+                                MessageType.None);
+
+                            EditorGUI.BeginChangeCheck();
+                            bool newRecursive = EditorGUILayout.Toggle(
+                                L.T("Include Subfolders", "包含子文件夹"), resource.Recursive);
+                            if (EditorGUI.EndChangeCheck())
+                            {
+                                resource.SetRecursive(newRecursive);
+                                settings2.SaveSettings();
+                                folderPreviewCache.Clear();
+                                McpService.RefreshDiscovery();
+                            }
+
+                            // 命中预览：配置时立即看到匹配到哪些资源
+                            string previewKey = resource.Name + "|" + resource.Folder + "|"
+                                                + resource.TypeFilter + "|" + resource.Recursive;
+                            FolderPreview preview;
+                            if (!folderPreviewCache.TryGetValue(previewKey, out preview))
+                            {
+                                var matches = resource.EnumerateFolderResources();
+                                string sample = string.Join(", ", matches.Take(5).Select(m => m.Name).ToArray());
+                                preview = new FolderPreview
+                                {
+                                    Count = matches.Count,
+                                    Text = matches.Count == 0
+                                        ? L.T("No matching assets. Check the folder and type filter.",
+                                              "未匹配到资源，请检查文件夹与类型筛选。")
+                                        : string.Format(
+                                            L.T("Matched {0} assets: {1}{2}", "命中 {0} 个资源：{1}{2}"),
+                                            matches.Count, sample, matches.Count > 5 ? " …" : "")
+                                };
+                                folderPreviewCache[previewKey] = preview;
+                            }
+                            EditorGUILayout.HelpBox(preview.Text,
+                                preview.Count == 0 ? MessageType.Warning : MessageType.Info);
                         }
 
                         // MIME类型 - 纯下拉选择（常用资源格式）
@@ -1716,6 +1869,11 @@ namespace UniMcp.Gui
                 allResources = McpService.GetAllResources();
             }
             var codeResources = allResources.Where(r => !(r is ConfigurableResource)).ToList();
+            // IResList 的条目按「来源类 + 组名」归拢成一个折叠项；单类资源仍逐项平铺。
+            var listGroups = codeResources.OfType<ListedResource>()
+                .GroupBy(r => r.SourceTypeName + "::" + r.GroupName, StringComparer.Ordinal)
+                .ToList();
+            var singleResources = codeResources.Where(r => !(r is ListedResource)).ToList();
 
             EditorGUILayout.Space(10);
 
@@ -1740,9 +1898,14 @@ namespace UniMcp.Gui
 
             var localSettings = McpService.GetLocalSettings();
 
-            for (int i = 0; i < codeResources.Count; i++)
+            foreach (var listGroup in listGroups)
             {
-                var resource = codeResources[i];
+                DrawCodeResourceListGroup(listGroup.First(), listGroup.ToList(), localSettings);
+            }
+
+            for (int i = 0; i < singleResources.Count; i++)
+            {
+                var resource = singleResources[i];
                 if (resource == null) continue;
 
                 string key = "coderesource::" + i;
@@ -1829,6 +1992,112 @@ namespace UniMcp.Gui
                 EditorGUILayout.EndVertical();
                 EditorGUILayout.Space(4);
             }
+        }
+
+        /// <summary>
+        /// 绘制一组 IResList 资源：外层一个折叠项（来源类 + 组名），组内逐项开关。
+        /// 开关键仍取资源名，与单类资源、可配置资源共用同一套启用状态。
+        /// </summary>
+        private static void DrawCodeResourceListGroup(ListedResource first, List<ListedResource> items, McpLocalSettings localSettings)
+        {
+            if (first == null || items == null || items.Count == 0) return;
+
+            string key = "coderesourcelist::" + first.SourceTypeName + "::" + first.GroupName;
+            if (!codeResourceFoldouts.ContainsKey(key)) codeResourceFoldouts[key] = false;
+
+            int enabledCount = items.Count(r => r != null && localSettings.IsResourceEnabled(r.Name));
+
+            EditorGUILayout.BeginVertical("box");
+            EditorGUILayout.BeginHorizontal();
+
+            GUIStyle classTagStyle = new GUIStyle(EditorStyles.miniLabel)
+            {
+                fontSize = 9,
+                normal = { textColor = new Color(0.6f, 0.8f, 1f) }
+            };
+            EditorGUILayout.LabelField($"class: {first.SourceTypeName}", classTagStyle, GUILayout.Width(150));
+
+            GUIStyle foldoutStyle = new GUIStyle(EditorStyles.foldout)
+            {
+                fontStyle = FontStyle.Bold,
+                fontSize = 11
+            };
+            Color foldoutColor = enabledCount == items.Count ? new Color(0.7f, 0.9f, 0.7f)
+                : enabledCount == 0 ? new Color(0.9f, 0.6f, 0.6f)
+                : new Color(0.95f, 0.85f, 0.6f);
+            foldoutStyle.normal.textColor = foldoutColor;
+            foldoutStyle.onNormal.textColor = foldoutColor;
+            foldoutStyle.focused.textColor = foldoutColor;
+            foldoutStyle.onFocused.textColor = foldoutColor;
+
+            codeResourceFoldouts[key] = EditorGUILayout.Foldout(
+                codeResourceFoldouts[key],
+                $"📦 {first.GroupName}（{enabledCount}/{items.Count}）",
+                true, foldoutStyle);
+
+            GUILayout.FlexibleSpace();
+
+            GUIStyle helpButtonStyle = new GUIStyle(EditorStyles.miniButton)
+            {
+                fontSize = 12,
+                fontStyle = FontStyle.Bold,
+                padding = new RectOffset(0, 0, 0, 0)
+            };
+            Color helpButtonOriginalBg = GUI.backgroundColor;
+            GUI.backgroundColor = new Color(0.6f, 0.8f, 1f, 0.7f);
+            if (GUILayout.Button("?", helpButtonStyle, GUILayout.Width(20), GUILayout.Height(18)))
+            {
+                PingSourceScript(first.SourceTypeName);
+            }
+            GUI.backgroundColor = helpButtonOriginalBg;
+
+            EditorGUILayout.EndHorizontal();
+
+            if (codeResourceFoldouts[key])
+            {
+                EditorGUI.indentLevel++;
+
+                GUIStyle itemLabelStyle = new GUIStyle(EditorStyles.miniLabel) { fontSize = 10 };
+                GUIStyle miniWrap = new GUIStyle(EditorStyles.wordWrappedMiniLabel)
+                {
+                    fontSize = 10,
+                    normal = { textColor = new Color(0.75f, 0.75f, 0.8f) }
+                };
+
+                foreach (var item in items)
+                {
+                    if (item == null) continue;
+
+                    bool enabled = localSettings.IsResourceEnabled(item.Name);
+
+                    EditorGUILayout.BeginHorizontal();
+
+                    Color toggleOriginalBg = GUI.backgroundColor;
+                    GUI.backgroundColor = enabled ? new Color(0.4f, 0.9f, 0.5f, 0.5f) : new Color(0.9f, 0.4f, 0.4f, 0.5f);
+                    Rect toggleRect = EditorGUILayout.GetControlRect(false, EditorGUIUtility.singleLineHeight, GUILayout.Width(22));
+                    bool newEnabled = EditorGUI.Toggle(toggleRect, enabled);
+                    GUI.backgroundColor = toggleOriginalBg;
+
+                    if (newEnabled != enabled)
+                    {
+                        localSettings.SetResourceEnabled(item.Name, newEnabled);
+                        McpService.RefreshDiscovery();
+                        string statusText = newEnabled ? L.T("enabled", "启用") : L.T("disabled", "禁用");
+                        Debug.Log($"[McpServiceGUI] {L.T("Listed resource", "列表资源")} '{item.Name}' {L.T("status changed to", "状态已更改为")}: {statusText}");
+                    }
+
+                    EditorGUILayout.LabelField(string.IsNullOrEmpty(item.Name) ? (item.Url ?? "") : item.Name, itemLabelStyle);
+
+                    EditorGUILayout.EndHorizontal();
+
+                    EditorGUILayout.LabelField((item.Url ?? "") + "  ·  " + (item.MimeType ?? ""), miniWrap);
+                }
+
+                EditorGUI.indentLevel--;
+            }
+
+            EditorGUILayout.EndVertical();
+            EditorGUILayout.Space(4);
         }
 
         /// <summary>

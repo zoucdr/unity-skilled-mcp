@@ -304,9 +304,12 @@ namespace UniMcp
             catalogs.Add("/prompts", Catalog("prompts", summaries));
 
             summaries = new JsonArray();
+            var resourceLabels = new List<string>();
             foreach (var resource in enabledResources.OrderBy(r => r.Url, StringComparer.Ordinal))
             {
                 var tags = GetTags(resource.GetType(), "resources");
+                // /groups 只发布名字：URL 属于详情层，简目里既长又容易被当成可直接访问的地址。
+                resourceLabels.Add(string.IsNullOrEmpty(resource.Name) ? resource.Url : resource.Name);
                 // 只访问注册定义，绝不读取 URL 对应的正文。
                 var full = new JsonClass {
                     { "uri", new JsonData(resource.Url) }, { "name", new JsonData(resource.Name ?? "") },
@@ -391,15 +394,15 @@ namespace UniMcp
                 .Where(k => k.StartsWith("prompt:", StringComparison.Ordinal))
                 .Select(k => k.Substring("prompt:".Length)).OrderBy(n => n, StringComparer.Ordinal))
                 promptNames.Add(new JsonData(name));
-            var resourceUris = new JsonArray();
-            foreach (var uri in capabilities.Keys
-                .Where(k => k.StartsWith("resource:", StringComparison.Ordinal))
-                .Select(k => k.Substring("resource:".Length)).OrderBy(u => u, StringComparer.Ordinal))
-                resourceUris.Add(new JsonData(uri));
+            // 资源同理只列名字（缺名时退回 URL），详情与正文仍按 /resources 目录里的 URI 取。
+            var resourceNameList = new JsonArray();
+            foreach (var name in resourceLabels
+                .Distinct(StringComparer.Ordinal).OrderBy(n => n, StringComparer.Ordinal))
+                resourceNameList.Add(new JsonData(name));
 
             catalogs.Add("/groups", new JsonClass {
                 { "namespaces", namespacesJson }, { "tags", tagsJson }, { "labels", labelsJson },
-                { "prompts", promptNames }, { "resources", resourceUris },
+                { "prompts", promptNames }, { "resources", resourceNameList },
                 { "max_details", new JsonData(MaxDetails) },
                 { "max_response_bytes", new JsonData(MaxResponseBytes) }
             }.ToString());
@@ -549,7 +552,18 @@ namespace UniMcp
                     string field = kind == "resource" ? "uri" : "name";
                     if (!member.ContainsKey(field) || !(member[field] is JsonData) || InvalidSelector(member[field].Value))
                         return Error("成员必须提供非空 " + field + "，禁止 all/* 和未知字段。");
-                    string key = kind + ":" + member[field].Value;
+                    string selector = member[field].Value;
+                    if (kind == "resource" && selector.StartsWith("resource://", StringComparison.Ordinal))
+                    {
+                        // /groups 只发布资源名，允许把名字写成 resource://<名称> 直接取详情。
+                        if (!resourceNames.TryGetValue(selector.Substring("resource://".Length), out var resolvedUri))
+                        {
+                            statusCode = 404;
+                            return Error("成员不存在或已禁用。");
+                        }
+                        selector = resolvedUri;
+                    }
+                    string key = kind + ":" + selector;
                     if (!capabilities.TryGetValue(key, out var capability))
                     {
                         statusCode = 404;

@@ -21,7 +21,88 @@ namespace UniMcp
             TestCapabilityModule();
             TestConnectionInfo();
             TestSkillInstallPrompt();
+            TestResourceList();
+            TestFolderResourceList();
             UnityEngine.Debug.Log("[UniMcp] 服务发现自检通过");
+        }
+
+        private sealed class FakeResourceList : IResList
+        {
+            public string GroupName => "测试组";
+            public string MimeType => "text/plain";
+            public bool ReturnNull;
+
+            public System.Collections.Generic.IEnumerable<ResItem> GetResources()
+            {
+                if (ReturnNull) return null;
+                return new[]
+                {
+                    new ResItem("file:///fake/a.yaml", "fake_a", "A 文件"),
+                    new ResItem("file:///fake/b.json", "fake_b", "B 文件", "application/json"),
+                    new ResItem("", "fake_no_url"),
+                    null
+                };
+            }
+        }
+
+        private static void TestResourceList()
+        {
+            var flags = System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic;
+            var type = typeof(McpService);
+            var service = (McpService)System.Runtime.Serialization.FormatterServices.GetUninitializedObject(type);
+            type.GetField("mainThreadId", flags).SetValue(service, System.Threading.Thread.CurrentThread.ManagedThreadId);
+            var registry = new System.Collections.Generic.Dictionary<string, IRes>();
+            type.GetField("availableResources", flags).SetValue(service, registry);
+
+            int registered = service.RegisterResourceList(typeof(FakeResourceList), new FakeResourceList());
+            Check(registered == 2 && registry.Count == 2, "IResList 逐项展开并跳过缺 URL 的条目");
+            var inherited = registry["file:///fake/a.yaml"] as ListedResource;
+            Check(inherited != null && inherited.MimeType == "text/plain", "条目未给 MimeType 时继承组级");
+            Check(registry["file:///fake/b.json"].MimeType == "application/json", "条目自带 MimeType 时不被组级覆盖");
+            Check(inherited != null && inherited.SourceTypeName == nameof(FakeResourceList)
+                && inherited.GroupName == "测试组", "展开后的条目保留来源类与组名，供面板归组");
+            Check(service.RegisterResourceList(typeof(FakeResourceList), new FakeResourceList { ReturnNull = true }) == 0,
+                "IResList 返回 null 按空组处理，不抛错");
+            // 展开后的条目也实现 IRes，但无无参构造，必须排除在单资源扫描之外，否则每次发现都报实例化失败。
+            Check(!McpService.IsScannableResource(typeof(ListedResource)), "IResList 展开条目不参与单资源反射扫描");
+            Check(!McpService.IsScannableResource(typeof(ConfigurableResource)), "可配置资源不参与单资源反射扫描");
+            Check(!McpService.IsDiscoverableProvider(typeof(FakeResourceList)), "私有嵌套测试桩不参与发现扫描，避免误发布到真实注册表");
+            Check(McpService.IsDiscoverableProvider(typeof(ConfigurableResource)), "公开且带公开无参构造的类型可被发现");
+        }
+
+        private static void TestFolderResourceList()
+        {
+            const string folder = "Assets/Extends/CustomResources";
+            var group = new ConfigurableResource("grp", "描述", "");
+            group.SourceType = ResourceSourceType.FolderList;
+
+            group.SetFolder("");
+            Check(group.EnumerateFolderResources().Count == 0, "选项列表未指定文件夹时返回空组");
+            group.SetFolder("Assets/__NotExist__");
+            Check(group.EnumerateFolderResources().Count == 0, "无效文件夹返回空组，不抛错");
+
+            group.SetFolder(folder);
+            group.SetTypeFilter("cs");
+            var cs = group.EnumerateFolderResources();
+            Check(cs.Count >= 2, "扩展名筛选命中 .cs 文件");
+            Check(cs.All(r => r.Url.EndsWith(".cs", StringComparison.Ordinal)), "扩展名筛选不混入其它类型");
+            Check(cs.All(r => r.Name.StartsWith("grp_", StringComparison.Ordinal)), "组内条目名带组名前缀");
+            Check(cs.Select(r => r.Name).Distinct().Count() == cs.Count, "组内条目名唯一");
+            Check(cs.All(r => r.MimeType == "text/plain"), ".cs 推断 MIME 为 text/plain");
+            Check(cs.All(r => r.Url.StartsWith("file://", StringComparison.Ordinal)), "条目 URL 为 file://");
+
+            group.SetTypeFilter("t:MonoScript");
+            Check(group.EnumerateFolderResources().Count >= 2, "t: 类型筛选走 AssetDatabase.FindAssets");
+
+            group.SetTypeFilter("");
+            group.SetRecursive(false);
+            Check(group.EnumerateFolderResources().Count >= cs.Count, "留空筛选取全部，关闭递归不报错");
+
+            // 绝对路径也应折算为 Assets 相对路径
+            string absolute = System.IO.Path.Combine(UnityEngine.Application.dataPath, "Extends/CustomResources").Replace('\\', '/');
+            group.SetFolder(absolute);
+            group.SetTypeFilter("cs");
+            Check(group.EnumerateFolderResources().Count >= 2, "绝对路径自动折算为 Assets 相对路径");
         }
 
         private static void TestSkillInstallPrompt()
@@ -181,6 +262,9 @@ namespace UniMcp
                 "整 prefix 命中时以 prefix 引用，无前缀工具归入保留命名空间");
             Check(tagsIndex["prompts"].Count == 0 && tagsIndex["resources"].Count == 0,
                 "无工具的纯提示词/资源组保留为空索引，仍可作 details --tag 的键");
+            Check(groupListing["resources"].Count == 1 && groupListing["resources"][0].Value == "foo",
+                "/groups 的资源简目只给名字，不给 URL");
+            Check(groupListing["prompts"][0].Value == "foo", "/groups 的提示词简目同样只给名字");
             Check(groupListing["labels"].Count == 1 && groupListing["labels"]["scene"].Value != "scene",
                 "中文分组名单独保留，与 tag 相同者省略");
             var namespaces = groupListing["namespaces"];
@@ -211,6 +295,8 @@ namespace UniMcp
             Check(detail["items"][0]["inputSchema"]["type"].Value == "object", "详情无参数 object");
             Check(detail["items"][1]["prompt_text"].Value == "提示正文" && detail["items"][1]["arguments"][0]["required"].AsBool, "提示正文及参数");
             Check(detail["items"][2].Count == 6 && detail["items"][2]["uri"].Value == "res://foo", "资源只有注册定义，不读取正文");
+            Check(Details(snapshot, "{\"members\":[{\"kind\":\"resource\",\"uri\":\"resource://foo\"}]}")["count"].AsInt == 1,
+                "资源详情接受 resource:// 名称别名（简目只发布名字）");
             prompt.SetPromptText("已改动");
             resource.SetDescription("已改动");
             Check(Details(snapshot, mixed).ToString() == detail.ToString(), "提示词资源快照不可变");
