@@ -367,13 +367,12 @@ function lintCSharp(code) {
       out.push({ level: 'warn', line: i + 1, rule: 'null-coalesce', msg: '工程若不是 C# 8+ 则 ?? 不可用；Unity 2020 之前会编译失败' });
     }
     if (/Newtonsoft|JsonConvert/.test(L)) {
-      out.push({ level: 'error', line: i + 1, rule: 'newtonsoft', msg: '工程无 Newtonsoft，改用 SimpleJson / JsonNode' });
+      // 别建议 SimpleJson：本工程没有该类型，写了会 CS0103 并级联出一堆假错误（见 semantics 第 16 条）
+      out.push({ level: 'error', line: i + 1, rule: 'newtonsoft', msg: '工程无 Newtonsoft / SimpleJson，不要运行时解析 JSON；把数据编成 C# 字面量（new float[] { 1f, 2f }）' });
     }
-    // 浮点索引写入数组：静默失败，最难查
-    if (/\[\s*[A-Za-z_][\w.\[\]]*\s*\*\s*0\.\d+\s*\]\s*=/.test(L) || /\bnew\s+Float(32)?Array\s*\(/.test(L) === false) {
-      if (/\[\s*[\w.]+\s*\*\s*0\.\d+[^\]]*\]\s*=/.test(L)) {
-        out.push({ level: 'error', line: i + 1, rule: 'float-index', msg: '浮点索引写入 TypedArray 会静默丢弃，索引必须 Math.round' });
-      }
+    // 浮点索引写入数组：静默失败，最难查。外层恒真条件是历史残留，直接单层判断
+    if (/\[\s*[\w.]+\s*\*\s*0\.\d+[^\]]*\]\s*=/.test(L)) {
+      out.push({ level: 'error', line: i + 1, rule: 'float-index', msg: '浮点索引写入 TypedArray 会静默丢弃，索引必须 Math.round' });
     }
   });
   return out;
@@ -395,6 +394,19 @@ function unwrap(res, tool) {
     throw new Error(`${tool} 返回失败：${detail}`);
   }
   return res && res.data !== undefined ? res.data : res;
+}
+
+/**
+ * C# 预检闸门：call() 每次提交 code.execute 前必过，纯同步、可离线单测。
+ * 只有显式 skipLint:true 才豁免；返回是否真的执行了预检。
+ */
+function guardCSharp(tool, args, opts) {
+  const o = opts || {};
+  if (String(tool).toLowerCase() !== 'code.execute' || o.skipLint === true) return false;
+  const cs = args && args.code;
+  if (typeof cs !== 'string' || !cs.length) return false;
+  assertLint(cs);
+  return true;
 }
 
 function isRunning(res) {
@@ -436,6 +448,9 @@ async function waitTask(id, opts) {
 async function call(tool, args, opts) {
   precheck(tool, args);
   const o = opts || {};
+  // C# 预检不可绕过：此前只有 runCode() 会 lint，而全项目所有调用都直接走
+  // call('code.execute', ...)，结果最大的 C# 片段从未被检查过。统一收口到这一层。
+  guardCSharp(tool, args, o);
   let raw;
   try {
     raw = await unity().callSkillJson(tool, args || {});
@@ -467,9 +482,8 @@ async function call(tool, args, opts) {
   return unwrap(raw, tool);
 }
 
-/** 执行一段 C#（code.execute），先做静态预检。 */
+/** 执行一段 C#（code.execute）。预检由 call() 统一执行，不再重复。 */
 async function runCode(code, opts) {
-  assertLint(code);
   const o = opts || {};
   const args = { code };
   if (o.usings) args.usings = o.usings;
@@ -501,7 +515,7 @@ function resolveOut(p, projectRoot) {
 
 module.exports = {
   configure, call, runCode, waitTask, ping,
-  precheck, lintCSharp, assertLint, unwrap, resolveOut,
+  precheck, lintCSharp, assertLint, guardCSharp, unwrap, resolveOut,
   resolveProject, loaderCandidates, isUnityProject, readIniSection,
   namespaceOf, LIMITS,
 };

@@ -16,11 +16,28 @@ const fs = require('fs');
 const path = require('path');
 const { execFileSync } = require('child_process');
 const mcp = require('../scripts/mcp');
+const PNG = require('../scripts/png');
+const lathe = require('../scripts/lathe');
 
 const EX = __dirname;
 const ASSET_DIR = path.join(EX, 'assets');
 const TEXTURE_FILES = ['mug_basecolor.png', 'mug_metallicgloss.png'];
 const UNITY_DIR = 'Assets/_FishMug';
+
+// 曲面几何参数。贴图宽高不从这里取，而是直接读实际 PNG（改了 .py 也不用手改这里）；
+// outerRadius / innerRadius 会由 lathe.assertCSharp 拿去和 C# 里的 pRim / pInner 静态比对。
+// 若改了 fish_mug.cs 的 HH / pOuter / UV 公式 / 扫掠绕序，必须同步改这里。
+const SPEC = {
+  radius: 0.80,             // 杯身主体半径（pOuter 中段），不是口沿最大 0.850
+  height: 1.15,             // 对应 C# 的 HH
+  basis: 'sin-cos',         // x = r·sinθ, z = r·cosθ
+  cameraSide: '-Z',
+  metallic: 0.4,            // mug_metallicgloss.png 里金色的金属度
+  hasReflectionProbe: false,
+  outerRadius: 0.850,       // C# pRim 首行
+  innerRadius: 0.814,       // C# pInner 首行
+  sweepVar: 'ht',           // 扫掠管三角形 list（杯身旋转体是 tl，绕序不同，不混检）
+};
 
 function parseArgs(argv) {
   const out = {};
@@ -28,6 +45,7 @@ function parseArgs(argv) {
     const a = argv[i];
     if (a === '--no-shot') { out.noShot = true; continue; }
     if (a === '--regen-texture') { out.regen = true; continue; }
+    if (a === '--verify') { out.verify = true; continue; }
     if (a.startsWith('--')) {
       const key = a.slice(2);
       const val = argv[i + 1] && !argv[i + 1].startsWith('--') ? argv[++i] : '';
@@ -46,6 +64,14 @@ function assertTextureAssets() {
   }
 }
 
+/** 提交 Unity 之前跑曲面护栏：纯离线，不改场景也不连 MCP。 */
+function guardCurvedSurface(csharp) {
+  const img = PNG.readPNG(path.join(ASSET_DIR, 'mug_basecolor.png'));
+  const rep = lathe.guard(Object.assign({}, SPEC, { texSize: [img.w, img.h], csharp }));
+  console.log('曲面护栏：' + rep.checks.map(c => (c.ok ? 'OK ' : 'FAIL ') + c.name).join(' | '));
+  return rep;
+}
+
 async function main() {
   const args = parseArgs(process.argv);
 
@@ -54,6 +80,10 @@ async function main() {
     execFileSync(py, [path.join(EX, 'fish_mug_texture.py')], { stdio: 'inherit' });
   }
   assertTextureAssets();
+
+  // 0. 先读 C# 并跑护栏。参数不对 / 代码里的铁律被改坏，在这里就停，不浪费 Unity 往返。
+  const code = fs.readFileSync(path.join(EX, 'fish_mug.cs'), 'utf8');
+  guardCurvedSurface(code);
 
   // 1. 解析工程根（显式 > 环境变量 > skill.ini > cwd/技能目录上溯）
   const project = mcp.resolveProject(args.project, { strict: false });
@@ -72,7 +102,6 @@ async function main() {
   console.log('贴图已同步到 ' + UNITY_DIR);
 
   // 3. 一次 code.execute 建网格 / 材质 / 灯光 / 相机并保存场景
-  const code = fs.readFileSync(path.join(EX, 'fish_mug.cs'), 'utf8');
   const built = await mcp.call('code.execute', {
     mode: 'runtime', code, timeout: 90,
     description: 'Build fish mug: lathe body + swept handle + materials + lights + camera',
@@ -82,7 +111,19 @@ async function main() {
   const logs = String(built.logs || '');
   console.log(logs.trim());
 
-  // 4. 用建模脚本回报的主相机名截图（相机名因工程而异，不能写死）
+  // 4. 可选：在线校验（submesh / 材质数 / 贴图宽高比 / 法线朝外）
+  if (args.verify) {
+    const V = require('../scripts/verify');
+    const res = await V.run({
+      profile: 'lathe', object: 'MugBodyMesh',
+      texture: UNITY_DIR + '/mug_basecolor.png', projectRoot: project,
+      radius: SPEC.radius, height: SPEC.height, expectSubMeshes: 3, noThrow: true,
+    });
+    console.log(V.report(res));
+    if (!res.ok) process.exitCode = 1;
+  }
+
+  // 5. 用建模脚本回报的主相机名截图（相机名因工程而异，不能写死）
   if (args.noShot) return;
   const hit = /cam=(\S+)/.exec(logs);
   const camName = args.camera || (hit ? hit[1] : 'Main Camera');

@@ -4,13 +4,18 @@
 // ---------- 0. 清场 ----------
 string[] oldObjs = { "MugBodyMesh", "MugHandleMesh", "MugGround", "MugKeyLight", "MugFillLight", "MugRimLight", "MugInnerLight" };
 for (int i = 0; i < oldObjs.Length; i++) { var g = GameObject.Find(oldObjs[i]); if (g != null) Object.DestroyImmediate(g); }
-// demo 场景自带的石砖墙 / 地面 / 灯 / 标定块会挡住画面，只禁用不删除
-string[] hideNames = { "StoneWall", "SW_Ground", "SW_KeyLight", "SW_FillLight", "CALIB_A", "Crate" };
-var allGo = Object.FindObjectsOfType<GameObject>();
-for (int i = 0; i < allGo.Length; i++) {
-    for (int k = 0; k < hideNames.Length; k++) {
-        if (allGo[i].name == hideNames[k]) { allGo[i].SetActive(false); break; }
-    }
+// 演示场景自带 / 其他流程残留的对象会挡住画面。只禁用不删除。
+// 不能只靠名单：曾漏掉过一个后加进来的 Monkey，俯视时正好坐在杯子里。
+// 兜底规则 = 凡是非 Mug* 且带 MeshRenderer 的根对象一律隐藏（相机、灯无 renderer，不受影响）。
+string[] hideNames = { "StoneWall", "SW_Ground", "SW_KeyLight", "SW_FillLight",
+                       "CALIB_A", "Crate", "Monkey" };
+var roots = UnityEngine.SceneManagement.SceneManager.GetActiveScene().GetRootGameObjects();
+for (int i = 0; i < roots.Length; i++) {
+    var g = roots[i];
+    bool named = false;
+    for (int k = 0; k < hideNames.Length; k++) if (g.name == hideNames[k]) { named = true; break; }
+    bool stray = !g.name.StartsWith("Mug") && g.GetComponentInChildren<MeshRenderer>(true) != null;
+    if (named || stray) g.SetActive(false);
 }
 
 string dir = "Assets/_FishMug";

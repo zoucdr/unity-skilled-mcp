@@ -25,8 +25,102 @@ const mcp = require('./mcp');
 const model = require('./model');
 const tex = require('./tex');
 const inspect = require('./inspect');
+const PNG = require('./png');
+const lathe = require('./lathe');
 
 function configure(opts) { return mcp.configure(opts); }
+
+/**
+ * 程序化曲面（旋转体 / 扫掠管）的在线校验。
+ * 与图集流水线的假设不同：这里是多 submesh + 柱面 UV + 无图集，
+ * 所以不查 uv_info 覆盖率，改查 submesh/材质数、贴图宽高比、外壁法线朝外比例。
+ */
+async function runLathe(o) {
+  const opt = o || {};
+  const checks = [];
+  const problems = [];
+  const add = (name, ok, detail) => {
+    checks.push({ name, ok, detail });
+    if (!ok) problems.push(`${name}：${detail}`);
+  };
+
+  const name = opt.object || 'MugBodyMesh';
+  const code = [
+    'GameObject go = GameObject.Find(' + JSON.stringify(name) + ');',
+    'if (go == null) { Debug.Log("LATHE: missing"); }',
+    'else {',
+    '    MeshFilter mf = go.GetComponent<MeshFilter>();',
+    '    MeshRenderer mr = go.GetComponent<MeshRenderer>();',
+    '    if (mf == null || mf.sharedMesh == null) { Debug.Log("LATHE: n_mesh"); }',
+    '    else {',
+    '        Mesh m = mf.sharedMesh;',
+    '        int mats = (mr != null && mr.sharedMaterials != null) ? mr.sharedMaterials.Length : -1;',
+    '        Vector3[] v = m.vertices;',
+    '        int[] t = m.GetTriangles(0);',
+    '        int outward = 0; int total = 0;',
+    '        for (int i = 0; i < t.Length; i += 3) {',
+    '            Vector3 a = v[t[i]]; Vector3 b = v[t[i+1]]; Vector3 c = v[t[i+2]];',
+    '            Vector3 n = Vector3.Cross(b - a, c - a);',
+    '            Vector3 radial = new Vector3(a.x, 0f, a.z);',
+    '            if (radial.sqrMagnitude < 0.0001f) continue;',
+    '            total++;',
+    '            if (Vector3.Dot(n, radial) > 0f) outward++;',
+    '        }',
+    '        Debug.Log("LATHE: subs=" + m.subMeshCount + " mats=" + mats',
+    '            + " tris=" + (t.Length / 3) + " outward=" + outward + "/" + total);',
+    '    }',
+    '}',
+  ].join('\n');
+  try {
+    const r = await mcp.call('code.execute', { mode: 'runtime', code, description: 'lathe verify' });
+    const log = String((r && r.logs) || '');
+    const m = /LATHE: subs=(\d+) mats=(-?\d+) tris=(\d+) outward=(\d+)\/(\d+)/.exec(log);
+    if (!m) {
+      add('曲面网格可读', false, log.trim().slice(0, 160) || 'C# 没回报 LATHE 数据');
+    } else {
+      const subs = Number(m[1]), mats = Number(m[2]);
+      const tris = Number(m[3]), outward = Number(m[4]), total = Number(m[5]);
+      const want = opt.expectSubMeshes === undefined ? 3 : opt.expectSubMeshes;
+      add('submesh 数量', subs === want, `subMeshCount=${subs}（期望 ${want}）`);
+      add('材质数匹配 submesh', mats === subs, `sharedMaterials=${mats} / subMeshCount=${subs}`);
+      add('网格非空', tris > 0, `外壁三角形 ${tris}`);
+      const ratio = total ? outward / total : 0;
+      const min = opt.outwardMinRatio === undefined ? lathe.LIMITS.outwardMinRatio : opt.outwardMinRatio;
+      add('外壁法线朝外', ratio >= min,
+        `${outward}/${total} = ${(ratio * 100).toFixed(1)}%（下限 ${(min * 100).toFixed(0)}%）`);
+    }
+  } catch (e) {
+    add('曲面网格可读', false, e.message.split('\n')[0]);
+  }
+
+  // 贴图宽高比：直接读实际 PNG，不依赖调用方手填尺寸
+  if (opt.texture && Number.isFinite(opt.radius) && Number.isFinite(opt.height)) {
+    let abs;
+    try { abs = mcp.resolveOut(opt.texture, opt.projectRoot); }
+    catch (e) { abs = opt.texture; }
+    if (!fs.existsSync(abs)) {
+      add('贴图存在', false, `找不到 ${abs}`);
+    } else {
+      add('贴图存在', true, path.basename(abs));
+      try {
+        const img = PNG.readPNG(abs);
+        const a = lathe.assertTextureAspect([img.w, img.h], { radius: opt.radius, height: opt.height });
+        add('柱面贴图宽高比', true, `${img.w}×${img.h} = ${a.got.toFixed(2)} vs ${a.want.toFixed(2)}`);
+      } catch (e) {
+        add('柱面贴图宽高比', false, e.message.split('\n')[0]);
+      }
+    }
+  }
+
+  const ok = problems.length === 0;
+  if (!ok && !opt.noThrow) {
+    const err = new Error('曲面校验未通过：\n  - ' + problems.join('\n  - '));
+    err.checks = checks;
+    err.problems = problems;
+    throw err;
+  }
+  return { ok, checks, problems };
+}
 
 /**
  * 跑全部检查。
@@ -34,7 +128,7 @@ function configure(opts) { return mcp.configure(opts); }
  */
 async function run(o) {
   const opt = o || {};
-  const project = (mcp.configure && opt.project) || undefined;
+  if (opt.profile === 'lathe') return await runLathe(opt);
   const checks = [];
   const problems = [];
 
@@ -153,4 +247,4 @@ function report(result) {
   return lines.join('\n');
 }
 
-module.exports = { configure, run, report };
+module.exports = { configure, run, runLathe, report };

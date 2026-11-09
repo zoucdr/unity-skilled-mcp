@@ -34,6 +34,31 @@ function throws(name, fn, match) {
 
 function section(t) { console.log('\n' + t); }
 
+/** 递归收集文本文件。只认文本扩展名，二进制素材（png/jpg/asset 等）自动跳过。 */
+function walkText(dir, out) {
+  if (!fs.existsSync(dir)) return out;
+  for (const ent of fs.readdirSync(dir, { withFileTypes: true })) {
+    if (ent.name === 'node_modules' || ent.name === '__pycache__' || ent.name.startsWith('.')) continue;
+    const p = path.join(dir, ent.name);
+    if (ent.isDirectory()) walkText(p, out);
+    else if (/\.(js|json|md|py|cs|ini|ya?ml|txt)$/i.test(ent.name)) out.push(p);
+  }
+  return out;
+}
+
+/** 在一串文本行里找绝对路径。抽成纯函数，才能对扫描器本身做回归测试。 */
+function absHits(text, patterns, rel) {
+  const hits = [];
+  String(text).split(/\r?\n/).forEach((L, i) => {
+    for (const pat of patterns) {
+      if (pat.re.test(L) && !/不要|勿|禁|反例|错误示例|反直觉/.test(L)) {
+        hits.push(`${rel}:${i + 1} (${pat.name})`);
+      }
+    }
+  });
+  return hits;
+}
+
 const S = __dirname;
 const UV = require('./uvspace');
 const { Field, gradientToNormal, subtract } = require('./field');
@@ -198,6 +223,12 @@ section('6. 提交 Unity 前的 C# 预检');
 
   const bad3 = 'var j = JsonConvert.SerializeObject(o);';
   ok('抓到 Newtonsoft', mcp.lintCSharp(bad3).some(p => p.rule === 'newtonsoft' && p.level === 'error'));
+  // 提示内容不能和 semantics 第 16 条打架（曾写过「改用 SimpleJson」，而该类型本工程根本没有）
+  const nj = mcp.lintCSharp(bad3).find(p => p.rule === 'newtonsoft') || { msg: '' };
+  ok('Newtonsoft 提示不再把 SimpleJson 当解法',
+    !/(改用|替代|请用)[^\n]*SimpleJson/.test(nj.msg), nj.msg);
+  ok('Newtonsoft 提示声明 SimpleJson 不存在', /无 Newtonsoft \/ SimpleJson/.test(nj.msg), nj.msg);
+  ok('Newtonsoft 提示指向 C# 字面量', /字面量/.test(nj.msg), nj.msg);
 
   const bad4 = 'arr[i * 0.5] = 1f;';
   ok('抓到浮点索引', mcp.lintCSharp(bad4).some(p => p.rule === 'float-index' && p.level === 'error'));
@@ -209,6 +240,20 @@ section('6. 提交 Unity 前的 C# 预检');
   ok('不误报 null 比较', mcp.lintCSharp(good2).length === 0);
 
   throws('assertLint 直接拒绝', () => mcp.assertLint('return;'), '预检失败');
+
+  // 预检必须挂在 call() 层，不能只有一个没人用的 runCode() 入口
+  ok('call 层对 code.execute 强制预检',
+    mcp.guardCSharp('code.execute', { code: 'var a = 1;' }, {}) === true);
+  throws('直连 code.execute 的 return; 同样被拒',
+    () => mcp.guardCSharp('code.execute', { code: 'return;' }, {}), '预检失败');
+  ok('skipLint:true 才能显式豁免',
+    mcp.guardCSharp('code.execute', { code: 'return;' }, { skipLint: true }) === false);
+  ok('非 code.execute 不触发预检',
+    mcp.guardCSharp('texgen.spec', { code: 'return;' }, {}) === false);
+  ok('无 code 字段不触发预检',
+    mcp.guardCSharp('code.execute', {}, {}) === false);
+  ok('浮点索引规则不误报普通数组',
+    !mcp.lintCSharp('arr[Math.round(i * 0.5f)] = 1f;').some(p => p.rule === 'float-index'));
 }
 
 // ============================================================ 7. 建模校验
@@ -273,7 +318,8 @@ section('9. UI 封装');
 section('10. 文件完整性');
 {
   const must = ['mcp.js', 'model.js', 'tex.js', 'ui.js', 'verify.js',
-    'uvspace.js', 'field.js', 'png.js', 'inspect.js'];
+    'uvspace.js', 'field.js', 'png.js', 'inspect.js', 'lathe.js',
+    'calibrate.js', 'check.js'];
   for (const f of must) {
     ok('存在 scripts/' + f, fs.existsSync(path.join(S, f)));
   }
@@ -291,8 +337,16 @@ section('10. 文件完整性');
     }
   }
 
-  ok('存在 examples/wooden_crate.js',
-    fs.existsSync(path.join(root, 'examples', 'wooden_crate.js')));
+  const examples = ['wooden_crate.js', 'fish_mug.js', 'fish_mug.cs',
+    'fish_mug_texture.py', 'README.md',
+    'assets/mug_basecolor.png', 'assets/mug_metallicgloss.png'];
+  for (const f of examples) {
+    ok('存在 examples/' + f, fs.existsSync(path.join(root, 'examples', f)));
+  }
+  for (const f of ['assets/mug_basecolor.png', 'assets/mug_metallicgloss.png']) {
+    const p = path.join(root, 'examples', f);
+    if (fs.existsSync(p)) ok('  ' + f + ' 非空（>1KB）', fs.statSync(p).size > 1024);
+  }
 
   // 技能必须可搬运：脚本与文档里不得出现盘符/用户目录这类绝对路径
   const absPatterns = [
@@ -300,29 +354,35 @@ section('10. 文件完整性');
     { name: '无 /Users/ 或 /home/ 用户目录', re: /[\\/](Users|home)[\\/][\w.$-]/ },
     { name: '无 /usr、/opt、/System 等系统绝对路径', re: /['"(][\\/](usr|opt|System|Library|Applications)[\\/]/ },
   ];
+  // 递归覆盖所有文本文件目录；此前只扫 scripts/ 与 examples/ 的顶层且只认 js|json|md，
+  // 最容易带字体绝对路径的 .py / .cs 完全漏检。
   const scanFiles = [];
-  for (const d of ['scripts', 'examples']) {
-    const dir = path.join(root, d);
-    if (fs.existsSync(dir)) {
-      for (const f of fs.readdirSync(dir)) {
-        if (/\.(js|json|md)$/.test(f)) scanFiles.push(path.join(dir, f));
-      }
-    }
+  for (const d of ['scripts', 'examples', 'references']) {
+    walkText(path.join(root, d), scanFiles);
   }
-  for (const f of ['SKILL.md']) {
-    const p = path.join(root, f);
-    if (fs.existsSync(p)) scanFiles.push(p);
-  }
+  const skillMd = path.join(root, 'SKILL.md');
+  if (fs.existsSync(skillMd)) scanFiles.push(skillMd);
+
+  ok('扫描器覆盖 .py 与 .cs',
+    scanFiles.some(f => /\.py$/i.test(f)) && scanFiles.some(f => /\.cs$/i.test(f)));
+  ok('扫描器覆盖 references/', scanFiles.some(f => /references[\\/]/i.test(f)));
+  ok('扫描器跳过二进制素材',
+    !scanFiles.some(f => /\.(png|jpg|jpeg|asset|mat)$/i.test(f)));
+
+  // 植入样本：证明扫描器真能抓到 .py/.cs 里写死的系统路径。
+  // 字符串故意拆开，避免自检文件自身被当成违规行。
+  const probe = [
+    'FONT = \'C:' + '/Windows/Fonts/msyh.ttc\'',
+    'HOME = \'/' + 'Users/someone/project\'',
+    'SYS = \'/' + 'usr/share/fonts/x.ttf\'',
+  ].join('\n');
+  const probeHits = absHits(probe, absPatterns, 'probe');
+  ok('植入样本能被扫描器抓到（3 类路径）', probeHits.length >= 3, probeHits.join(', '));
+
   for (const pat of absPatterns) {
     const hits = [];
     for (const file of scanFiles) {
-      const lines = fs.readFileSync(file, 'utf8').split(/\r?\n/);
-      lines.forEach((L, i) => {
-        // 注释里的反例说明（"不要写 C:/..."）允许，故排除含"不"、"勿"、"禁"的行
-        if (pat.re.test(L) && !/不要|勿|禁|反例|错误示例|反直觉/.test(L)) {
-          hits.push(path.relative(root, file) + ':' + (i + 1));
-        }
-      });
+      hits.push(...absHits(fs.readFileSync(file, 'utf8'), [pat], path.relative(root, file)));
     }
     ok('路径无关：' + pat.name, hits.length === 0, hits.slice(0, 4).join(', '));
   }
@@ -373,6 +433,83 @@ section('11. calibration.json 与代码假设一致');
       }
     }
   }
+}
+
+// ============================================================ 12. 曲面护栏
+section('12. 程序化曲面几何护栏（lathe.js）');
+{
+  const lathe = require('./lathe');
+  const root12 = path.join(S, '..');
+  const cs = fs.readFileSync(path.join(root12, 'examples', 'fish_mug.cs'), 'utf8');
+  const SPEC = {
+    texSize: [4096, 1024], radius: 0.80, height: 1.15,
+    basis: 'sin-cos', cameraSide: '-Z',
+    metallic: 0.4, hasReflectionProbe: false,
+    outerRadius: 0.850, innerRadius: 0.814, sweepVar: 'ht',
+  };
+
+  // 1) 贴图宽高比
+  const a = lathe.assertTextureAspect([4096, 1024], { radius: 0.8, height: 1.15 });
+  ok('4096×1024 与 4.37:1 在容差内', a.rel < lathe.LIMITS.aspectTol, a.rel.toFixed(3));
+  throws('2048×1024 被拒绝（会拉伸 2 倍）',
+    () => lathe.assertTextureAspect([2048, 1024], { radius: 0.8, height: 1.15 }), '宽高比');
+
+  // 2) UV 朝向
+  const ori = lathe.uvOrientation({ basis: 'sin-cos', cameraSide: '-Z' });
+  ok('实测锚点要求 u 取反', ori.flip === true && ori.measured === true, ori.formula);
+  ok('换到 +Z 侧不取反', lathe.uvOrientation({ basis: 'sin-cos', cameraSide: '+Z' }).flip === false);
+  ok('两基的 flip 表互为反相',
+    lathe.FLIP_TABLE['sin-cos']['-Z'] === !lathe.FLIP_TABLE['cos-sin']['-Z']);
+  ok('现有 C# 的 UV 公式与推导一致',
+    lathe.assertUVOrientation({ basis: 'sin-cos', cameraSide: '-Z', csharp: cs }).flip === true);
+  throws('未取反的 u 公式被拒',
+    () => lathe.assertUVOrientation({ basis: 'sin-cos', cameraSide: '-Z',
+      csharp: 'uvs.Add(new Vector2((float)j / N, yy));' }), 'UV 朝向不符');
+
+  // 3) 扫掠绕序
+  ok('正确绕序通过（不误报旋转体 tl 的 a,b,c）', lathe.assertSweepWinding(cs).ok === true);
+  throws('内侧绕序被拒',
+    () => lathe.assertSweepWinding('ht.Add(a); ht.Add(b); ht.Add(c);'), '内侧绕序');
+  ok('按变量名区分：旋转体单独用 a,b,c 通过',
+    lathe.assertSweepWinding('tl.Add(a); tl.Add(b); tl.Add(c);\nht.Add(a); ht.Add(c); ht.Add(b);',
+      { varName: 'ht' }).ok === true);
+  ok('绕序常量是 (a,c,b)/(b,c,d)',
+    JSON.stringify(lathe.SWEEP_TRIANGLES) === '[[0,2,1],[1,2,3]]');
+
+  // 4) 金属度
+  ok('金属度 0.4 通过', lathe.assertMetallic(0.4, { hasReflectionProbe: false }).ok);
+  throws('金属度 0.86 被拒（会发黑）',
+    () => lathe.assertMetallic(0.86, { hasReflectionProbe: false }), '发黑');
+  ok('有反射探针时放行',
+    lathe.assertMetallic(0.95, { hasReflectionProbe: true }).capped === false);
+
+  // 5) 口沿壁厚
+  const t = lathe.assertRimThickness(0.850, 0.814, { radius: 0.850 });
+  ok('壁厚 0.036 通过', t.ratio > 0.015 && t.ratio < 0.075, t.ratio.toFixed(3));
+  throws('壁厚 0.064 被拒（粗蓝环）',
+    () => lathe.assertRimThickness(0.850, 0.786, { radius: 0.850 }), '粗色环');
+
+  // 6) C# 静态检查：既放行现状，也能抓到被改坏的代码
+  const rep = lathe.assertCSharp(cs, Object.assign({}, SPEC, { noThrow: true }));
+  ok('现有 fish_mug.cs 通过 C# 静态检查', rep.ok, rep.problems.join('; '));
+  const badUv = cs.replace('1f - (float)j / N', '(float)j / N');
+  const repUv = lathe.assertCSharp(badUv, Object.assign({}, SPEC, { noThrow: true }));
+  ok('UV 公式被改坏会被抓到', !repUv.ok && repUv.problems.some(p => /UV 朝向/.test(p)));
+  const badWind = cs.replace('ht.Add(a); ht.Add(c); ht.Add(b);', 'ht.Add(a); ht.Add(b); ht.Add(c);');
+  const repWind = lathe.assertCSharp(badWind, Object.assign({}, SPEC, { noThrow: true }));
+  ok('扫掠绕序被改坏会被抓到', !repWind.ok && repWind.problems.some(p => /扫掠管/.test(p)));
+
+  // 7) 综合入口
+  const g = lathe.guard(Object.assign({}, SPEC, { csharp: cs, noThrow: true }));
+  ok('guard 综合通过', g.ok, g.problems.join('; '));
+
+  // 关键实测数字必须在 semantics.md 里，防止知识又散回 README
+  const sem12 = fs.readFileSync(path.join(root12, 'references', 'semantics.md'), 'utf8');
+  ok('semantics 新增曲面章节', /六、曲面/.test(sem12));
+  ok('semantics 写明 4.37 宽高比', /4\.37/.test(sem12));
+  ok('semantics 写明 u = 1 - j/N', /1\s*-\s*j\s*\/\s*N|1\s*-\s*theta/.test(sem12));
+  ok('semantics 写明金属度 0.4', /0\.4/.test(sem12));
+  ok('semantics 写明壁厚 0.036', /0\.036/.test(sem12));
 }
 
 // ============================================================ 汇总

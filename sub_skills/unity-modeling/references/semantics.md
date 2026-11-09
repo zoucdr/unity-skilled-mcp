@@ -211,6 +211,59 @@ IMAGE    解码后的 PNG 行号      y 向下    row = (1 - v) * H
 
 ---
 
+## 六、曲面与程序化网格 `[实测]`
+
+ProBuilder 图集不适合圆柱、杯体、花瓶这类**贴图必须沿柱面连续展开**的模型。
+这时走 `examples/fish_mug.js`：C# 旋转体 + 扫掠把手 + 柱面 UV + 多 submesh。
+以下五条不是"经验之谈"，全部由 `scripts/lathe.js` 做成硬断言，`fish_mug.js`
+在提交 `code.execute` 之前会跑一次 `guard()`，改坏了直接抛错、不浪费 Unity 往返。
+
+### 20. 贴图宽高比 ≈ 柱面周长 : 高度 `[实测]`
+
+鱼纹第一版用 `2048×1024`（2:1）贴 `C=2π·0.8≈5.03`、`H=1.15` 的杯子，
+真实比 **4.37:1**，结果鱼被横向拉伸约 2 倍。改成 `4096×1024`（4:1，误差 8.5%）才正常。
+`lathe.assertTextureAspect()` 容差 15%，超出即抛错并给出建议尺寸。
+
+### 21. `u = 1 - j/N` `[实测]`
+
+网格用 `x = r·sinθ, z = r·cosθ`，相机在 `-Z` 侧看向 `+Z` 时，θ 增大对应屏幕左，
+贴图会左右镜像（`STARBUCKS` 跑到右边、鱼头朝右）。取反后正常。
+`lathe.uvOrientation({basis, cameraSide})` 给出 flip 结论；`sin-cos` + `-Z` 是**实测锚点**，
+其余三格由 180° 对称推导，换基后应重新标定。`assertCSharp()` 会静态检查 C# 里的 u 公式。
+
+### 22. 扫掠管绕序 `(a,c,b)` / `(b,c,d)` `[实测]`
+
+按 `(a,b,c)` 生成把手时法线朝管内，整个把手被背面剔除、完全看不见。
+`lathe.assertSweepWinding()` 静态检查 C# 源码，发现内侧绕序直接抛错。
+`verify.run({profile:'lathe'})` 还会在线统计外壁法线朝外比例（实测 1536/1536 = 100%）。
+
+### 23. 金属度 0.4，不要给满 `[实测]`
+
+场景无反射探针时，`_MetallicGlossMap` 里金色给到 **0.86 会发黑**；
+降到 **0.4** 才保留亮金漫反射。内壁背光则补一点 `_EMISSION`（`_EmissionColor`）才有亮钴蓝。
+`lathe.assertMetallic()` 在 `hasReflectionProbe:false` 时把上限锁在 0.60。
+
+### 24. 口沿壁厚 0.036 `[实测]`
+
+壁厚 `0.064 / 半径 0.85 = 7.5%` 时，亮蓝口沿变成一圈粗环；收到 **0.036（4.2%）** 才自然。
+`lathe.assertRimThickness()` 把壁厚比锁在 `[0.015, 0.075]`。
+
+### 曲面流水线与图集流水线的校验差异
+
+`verify.run()` 默认假设单 submesh + ProBuilder `getMeshInfo` + 图集 `uv_info`；
+曲面是 3 submesh + 柱面 UV + **无图集**，直接跑默认档会误报。
+用 `verify.run({profile:'lathe', object, texture, radius, height, expectSubMeshes:3})`：
+查 submesh 数、`sharedMaterials` 数、贴图宽高比、外壁法线朝外比例。
+
+### 场景对象不能只靠隐藏名单 `[实测]`
+
+示例曾用 `SetActive(false)` 名单隐藏 demo 自带对象，后来场景里多出一个 `Monkey`
+（`active=True`、1 个 renderer），俯视时正好坐在杯子里，名单漏了它。
+现在改成「名单 + 兜底：所有非 `Mug*` 且带 MeshRenderer 的根对象一律隐藏」。
+根治方案是新建独立 Scene，见 `pipeline.md`。
+
+---
+
 ## 附：工具名易错清单
 
 | 想当然的名字 | 实际名字 |

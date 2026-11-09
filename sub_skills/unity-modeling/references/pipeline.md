@@ -1,6 +1,8 @@
 # 流水线
 
-三条主线，按交付物选一条。每条都有可运行的样例或命令。
+五条路线、**两条主干**，按交付物选一条。A–D 属图集主干（ProBuilder + TexGen），
+E 属曲面主干（C# 程序化网格 + 柱面 UV）。两条主干互斥，选错会破坏 UV 连续性或白做功夫。
+每条都有可运行的样例或命令；选路表见 `SKILL.md`。
 
 ---
 
@@ -154,6 +156,49 @@ await U.signboard({ text: 'OPEN', width: 512, height: 256,
 
 ---
 
+## E. 程序化曲面 + 柱面展开贴图
+
+圆柱、杯体、花瓶，或图案必须沿柱面**连续**展开时走这条。ProBuilder 图集会把曲面切成孤岛，
+贴上去必然断裂。完整样板 `examples/fish_mug.js`（零绝对路径，可重复执行）。
+
+### 步骤
+
+| # | 动作 | 关键点 |
+|---|---|---|
+| 0 | `lathe.guard({...})` 离线跑护栏 | 从实际 PNG 读尺寸，静态比对 C#；改坏即抛错 |
+| 1 | `fish_mug_texture.py` 画柱面展开图 | BaseColor + RGBA MetallicGloss；复杂曲线用 PIL，别用 TexGen 图层 |
+| 2 | 贴图同步进 `Assets/` | Unity 只认工程内资源 |
+| 3 | `code.execute` 提交 C#：lathe 三组 profile | 外壁 / 口沿 / 内壁 → `subMeshCount=3`；柱面 `u = 1 - j/N` |
+| 4 | 同一次 C# 生成扫掠把手、材质、灯光、相机 | 材质顺序 `[外壁贴图, 内壁, 口沿]` |
+| 5 | `camera.screenshot` + `verify.run({profile:'lathe'})` | 看渲染图，再跑在线断言 |
+
+```bash
+node examples/fish_mug.js                    # 建模 + 截图
+node examples/fish_mug.js --verify          # 追加在线校验
+node examples/fish_mug.js --regen-texture --no-shot   # 只重绘贴图（需 Pillow）
+```
+
+### 五条硬约束（由 `scripts/lathe.js` 强制执行）
+
+| 约束 | 实测值 | 断言函数 |
+|---|---|---|
+| 贴图宽高比 ≈ 周长:高度 | 4.37:1 → `4096×1024`（误差 8.5%） | `assertTextureAspect` |
+| `u = 1 - j/N` | `x=r·sinθ` + 相机在 `-Z` 时必取反 | `uvOrientation` / `assertCSharp` |
+| 扫掠管 `(a,c,b)` | 内侧绕序会被背面剔除 | `assertSweepWinding` |
+| 金属度 ~0.4 | 无反射探针时 0.86 会发黑 | `assertMetallic` |
+| 口沿壁厚 0.036 | `0.064/0.85=7.5%` 会成粗环 | `assertRimThickness` |
+
+`verify.run({profile:'lathe'})` 在线查：submesh 数、材质数、贴图宽高比、
+外壁法线朝外比例（实测 1536/1536 = 100%）。默认档假设单 submesh + 图集，**不能用于曲面**。
+
+### 场景隔离
+
+示例会隐藏所有非 `Mug*` 且带 MeshRenderer 的根对象（相机、灯无 renderer，不受影响）。
+曾只靠硬编码名单，结果场景里后加的 `Monkey` 没被隐藏、俯视时坐在杯子里。
+**根治方案是新建独立 Scene**，不要长期依赖 `SetActive(false)` 名单。
+
+---
+
 ## 通用排错清单
 
 按现象查，不按步骤查。
@@ -171,13 +216,20 @@ await U.signboard({ text: 'OPEN', width: 512, height: 256,
 | 子网格材质丢失 | `mergeObjects` 抹掉了归属 | 用 `splitSubmeshes` 重建 |
 | 任务"等待超时（undefinedms）" | `opts.timeoutMs` 传了 undefined | 已在 `waitTask` 里兜底 |
 | `material.create` 报已存在 | 非幂等 | `tex.material()` 已处理复用 |
+| 杯身图案横向拉伸约 2 倍 | 贴图宽高比没匹配周长:高度 | `lathe.assertTextureAspect` |
+| 贴图 / 文字左右镜像 | `x=r·sinθ` 时 u 没取反 | `lathe.uvOrientation` |
+| 把手完全看不见 | 扫掠管用了内侧绕序 | `lathe.assertSweepWinding` |
+| 金色发黑、内壁发暗 | 无探针却给满金属度 / 内壁无自发光 | `lathe.assertMetallic`、`_EMISSION` |
+| 口沿一圈粗色环 | 壁厚过大 | `lathe.assertRimThickness` |
+| 场景里冒出别的对象 | 隐藏名单漏了新增对象 | 兜底规则，或新建独立 Scene |
+| 曲面跑默认 `verify.run` 误报 | 默认档假设单 submesh + 图集 | 传 `profile:'lathe'` |
 
 ---
 
 ## 交付前的最后三件事
 
 1. `node scripts/check.js` —— 技能自检全绿（说明脚本假设没坏）
-2. `verify.run({...})` —— 本次结果逐项通过
+2. `verify.run({...})` —— 本次结果逐项通过（曲面加 `profile:'lathe'`）
 3. `inspect.js` 看一眼贴图（结构化图案用 `--tile 2`）
 
 三件都过，才算可以交付。
