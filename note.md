@@ -1150,3 +1150,23 @@ dotnet 临时工程里全部通过，不等于 Unity 里可用。在真实 Unity
 - **用户后续收敛**：具体工具一律不显示 tag，标签只保留在工具集（模块）行且必须在**行尾**。已移除 3 处工具级绘制（工具 header、工具展开区、内置门面工具），模块行改为 `Foldout → FlexibleSpace → 右对齐标签`；标签数据（`ToolModule.Tags` → `ToolSpec.Tags` → `/groups` 索引）不变。
 - 验证：运行态 `GET /groups` 已读到 `asset-database` / `texture-generation` / `logging` / `ui-authoring` / `mesh-editing` / `uv-mapping` 等新 tag（145 个 tag / 271 个 prefix 引用 / 0 条 `@全名`），说明 Unity 已重载程序集；`git diff --check` 通过，`McpServiceGUI.cs` 词法括号未闭合 0 / 错配 0。未 commit/push。
 
+## 本轮：多客户端并发冲突修复（未提交）
+
+- 复核修正：`resources/subscribe` / `unsubscribe` 分发分支早已注释、`initialize` 声明 `subscribe: false`，`clientCallbackUrl` 与 `subscribedResources` 只被这段停用路径消费，**不是活跃的多客户端冲突**，本轮不动该路径。
+- `McpService.cs` 新增写执行门：`EnqueueTask` 拆出 `EnsureQueuePumpRegistered`；`tools/call` 改走 `EnqueueWrite(Action<int>)`，由 `PumpWriteGate` 在 `EditorApplication.update` 中按代次启动，工具回调 `finally` 调 `ReleaseWriteGate`。HTTP 提前返回 `running` 后门仍持有，其他客户端写调用只排队不交错；5 分钟看门狗防工具不回调导致永久停摆，`Stop` / `ForceStop` 调 `ResetWriteGate` 作废旧代次。
+- `ProcessMessageQueue` 从每帧 1 个改为每帧批量最多 16 个普通任务；注销 update 前用 `HasPendingWriteWork()` 复核写门状态，避免新入队写调用丢失泵。`HandleToolsCall` 的 `TaskCompletionSource` 加 `RunContinuationsAsynchronously`，避免主线程内联执行响应构建。
+- `RuntimeMcpService.cs`：原来 `toolMethod.ExecuteMethod` 在 HTTP 工作线程直接跑（非主线程碰 Unity API），改为 `EnqueueToolExecution` + `Update()` 主线程泵，同样按代次串行；`Task.Run(() => tcs.Task.Wait(5000))` 换成 `Task.WhenAny` + `Task.Delay`，不再白占线程池线程。`DiscoverTools` / `HandleToolsList` / `RegisterTool` / `GetToolCount(s)` 用 `lockObj` 保护字典，消除多客户端并发 initialize 时的字典并发写。
+- 行为变化：Runtime 服务现依赖 `Update` 驱动；编辑器暂停时工具请求会在 5 秒超时返回错误（原实现会在后台线程执行但线程不安全）。写操作吞吐由「每帧一个」变为「一个工具完整完成后才放行下一个」，同步完成的工具可在同帧连续放行。
+- 文档同步：`README.zh-CN.md` 新增「8. 多客户端访问」、`README_MCP_HTTP.md` 特性与性能、`SKILL.md` 多步访问、`Unity3d_MCP_用户使用指南.md` Q4。
+- 验证：`git diff --check` 通过；两个 C# 文件改动前后大括号增量一致（Editor 0→0，Runtime -2→-2），新增标识符引用已逐项核对。**未在 Unity 内编译/跑测试**（本机编译器调用被安全策略拦截），需在 Unity 编辑器重载后跑 `McpProtocolSafetyTests` / `WorkflowContractTests` 并实测多客户端并发。未 commit/push。
+
+## 本轮：skill.ini 携带 Unity 版本与渲染管线（未提交）
+
+- 需求：创建 `~/.unity-mcp/skill.ini` 时带上 Unity 版本号与渲染管线类型。
+- `McpDiscovery.cs`：`McpConnectionInfo` 增 `UnityVersion` / `RenderPipeline`（构造函数可注入，未传则自动探测）；`PublishConnectionInfo()` 在服务启动成功（主线程）时传入 `Application.unityVersion` 与 `DetectRenderPipeline()`；`ToIni()` / `ToJson()` 同步发布 `unity_version`、`render_pipeline`，INI 统一走 `IniValue()` 换行转义。
+- 管线判定：`GraphicsSettings.currentRenderPipeline`（已含 QualitySettings 覆盖）→ `Built-in` / `URP` / `HDRP` / 自定义 SRP 类型全名；与 `pipeline_get` 的 `effective` 同源但归一化为可读类型。异常降级 `unknown` 并告警，不阻断启动。属启动快照，运行中切换管线需重启服务才刷新。
+- 客户端无需改动：JS/Python 的 INI 解析忽略未知键，discovery 校验只针对既有字段；`discover` 原样输出 discovery JSON，故两字段亦可从 `/discovery` 读到。
+- 自检：`McpDiscoveryTests.TestConnectionInfo` 增 INI/discovery 双写断言、探测一致性断言、含换行值不注入额外 INI 项断言。
+- 文档同步：`README.md` / `README.zh-CN.md` / `docs/index.html` / `unity-package/Skills/unity-skilled-mcp/SKILL.md` / 状态窗口安装提示词。`dist/unity-skilled-mcp.zip` 内 SKILL.md 副本按惯例未重打包。
+- 验证：`git diff --check` 通过；两个 C# 文件词法括号未闭合 0 / 错配 0。**未在 Unity 内编译/跑自检**（需重载编辑器后跑 `Tools/Unity MCP/Run Discovery Self Tests` 并重启服务查看新 INI）。未 commit/push。
+

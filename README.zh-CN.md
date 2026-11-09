@@ -310,12 +310,14 @@ demo 工程另含 `demo/Assets/Extends/CustomTools/` 下的**自定义扩展工�
 base_url=http://localhost:8000
 port=8000
 project_path=/path/to/UnityProject
+unity_version=2021.3.45f2c1
+render_pipeline=Built-in
 process_id=12345
 updated_at=2026-11-06T02:00:00.0000000Z
 max_details=32
 ```
 
-INI 只含本地连接元数据与启动设置，**不发布 `mcp_url`**，也不再发布脚本语言字段。技能客户端每次命令重新读取并校验服务；不扫端口、不自动重放写操作。
+INI 只含本地连接元数据与启动设置，**不发布 `mcp_url`**，也不再发布脚本语言字段。服务启动成功时另捕获 `unity_version`（Unity 编辑器版本）与 `render_pipeline`（当前生效渲染管线：`Built-in` / `URP` / `HDRP` / 自定义管线资源类型全名），供技能判断工程环境；运行中切换渲染管线须重启服务才会刷新。技能客户端每次命令重新读取并校验服务；不扫端口、不自动重放写操作。
 
 ### 5. 基本使用
 
@@ -349,7 +351,15 @@ for (const step of await planFromCatalog(catalog)) {
 }
 ```
 
-> 构建、切平台、重编译、测试运行期间不要与其他写操作并发。
+> 服务端对 `tools/call` 设有写执行门：同一时刻只有一个写工具在编辑器主线程执行，其余写调用排队等待，不会跨帧交错。但排队期间客户端可能先收到 `running` + `task_id` 或超时，**超时不等于未执行**；构建、切平台、重编译、测试运行等长任务仍应错峰执行，避免排队过久或逻辑上互相覆盖。
+
+### 8. 多客户端访问
+
+- 传输层允许多客户端同时连接：`HttpListener` 单端口，每个 HTTP 请求并发接管，无会话限制，不支持 SSE（GET SSE 返回 501）。
+- 服务端不做 session 隔离，所有客户端共享工具注册表、5 秒只读响应缓存与 `params.request_id` 幂等账本。`request_id` 必须全局唯一（客户端默认 `randomUUID()`）；同一 id 换 payload 返回 409，同一 id 相同 payload 直接取回已记录结果。
+- 写操作由写执行门串行化：一个工具的回调完成前不启动下一个；普通主线程任务每帧批量出队。只读请求仍可并发。
+- `resources/subscribe` 未启用（能力声明 `subscribe: false`），资源变更需重新读取。
+- 多个 Unity 工程请分别配置端口，并核对 `X-Mcp-Expected-Project` / `X-Mcp-Instance-Id`；`~/.unity-mcp/skill.ini` 由最后启动的工程写入。
 
 ---
 

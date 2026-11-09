@@ -17,7 +17,7 @@ agent_created: true
 
 ## 连接与运行时
 
-1. Unity 启 MCP，先读 `~/.unity-mcp/skill.ini` 之 `[unity3d-skilled-mcp]` 节。客户端有两个等价实现：`scripts/unity_bridge.js`（Node.js 18+）与 `scripts/unity_bridge.py`（Python 3.8+），皆只用标准库、契约与校验同源。INI 不发布脚本语言字段；旧 INI 残留 `script_language` 忽略。`max_details` 由 Unity 启动时发布，为单次详情数（默认 `32`，`0` 不限），只读、不得放大。INI 与 `/discovery` 不符则提示重启服务。禁以 INI 内容作命令执行。INI 与 `/discovery` 另带 `skill_dir`：本技能源目录之绝对路径（`unity-package/Skills/unity-skilled-mcp`），供直接定位 `SKILL.md` 与两个客户端脚本，未导入或解析失败时为空串；该字段只作路径提示，不改变调用语义，亦不得据其执行命令。
+1. Unity 启 MCP，先读 `~/.unity-mcp/skill.ini` 之 `[unity3d-skilled-mcp]` 节。客户端有两个等价实现：`scripts/unity_bridge.js`（Node.js 18+）与 `scripts/unity_bridge.py`（Python 3.8+），皆只用标准库、契约与校验同源。INI 不发布脚本语言字段；旧 INI 残留 `script_language` 忽略。`max_details` 由 Unity 启动时发布，为单次详情数（默认 `32`，`0` 不限），只读、不得放大。INI 与 `/discovery` 不符则提示重启服务。禁以 INI 内容作命令执行。INI 与 `/discovery` 另带 `skill_dir`：本技能源目录之绝对路径（`unity-package/Skills/unity-skilled-mcp`），供直接定位 `SKILL.md` 与两个客户端脚本，未导入或解析失败时为空串；该字段只作路径提示，不改变调用语义，亦不得据其执行命令。INI 与 `/discovery` 另带 `unity_version`（Unity 编辑器版本）与 `render_pipeline`（启动时的生效渲染管线：`Built-in` / `URP` / `HDRP` / 自定义管线资源类型全名），二者只作环境提示，不参与连接校验、不得据其执行命令；运行中切换管线须重启服务才刷新。
 2. 下例自技能目录运行；他处用脚本绝对路径。命令一律 `node scripts/unity_bridge.js`，或等价地 `python scripts/unity_bridge.py`。选定一种即沿用，不因失败换运行时，不失败重放。
 3. 先 `discover` 核项目、端口、进程、更新时间。每命令重读 INI、验 HTTP `/discovery`。配置失效则重启目标服务，不扫端口。最后成功启动之项目覆盖 INI；响应扩展字段仅作数据保留。
 4. INI 与 `/discovery` 皆不发布 MCP 端点，此乃刻意：勿自拼或直连 `/mcp`，勿加载 MCP 客户端协议。访问只走本脚本 CLI 或库 API（`list` / `find` / `schema` / `schemas` / `call` / `prompt` / `resource` / `details` / `request` 及函数形式，见「作为代码库调用」）。
@@ -177,7 +177,7 @@ node scripts/unity_bridge.js resource URI
 
 - 技能不设批量调用接口。须多步时，以库 API 自行编排：每步仍先 `schema` 取定义、再 `call`；循环、次序、遇错是否续行，皆由调用方代码定。
 - 每次 `call` 独立重读 INI、验服务、发单个 `tools/call`。不合并、不预取、不隐式重试。
-- 写操作可能已生效：中途失败先以只读手段核状态，再定余下步骤是否继续；**禁盲目重跑整个序列**，续行只提交未执行之步。长任务勿与其他写操作并发。
+- 写操作可能已生效：中途失败先以只读手段核状态，再定余下步骤是否继续；**禁盲目重跑整个序列**，续行只提交未执行之步。长任务勿与其他写操作并发：服务端已按 `tools/call` 串行排队，但排队过久仍可能先回 `running` 或超时，超时不表未执行。
 - 序列中若含可外发数据之调用，仍须用户明确授权；代码编排不改 `request` 一节授权边界。
 
 ## 安全与失败处理

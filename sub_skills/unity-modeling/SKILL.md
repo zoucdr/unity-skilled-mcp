@@ -20,6 +20,8 @@ agent_created: true
 
 ## 开工前必读
 
+**`TUTORIAL.md`** —— 教学文档：六层架构、提示词五段式模板、锦鲤杯全流程案例复盘，以及覆盖 A–E 的八个案例库（墙 / 猴子 / 手机 / 打雪仗海报 / 电视 / 彩虹球 / 网球场 / 铁门）。第一次用这个技能，或要写提示词把活派给 AI，先读它；本篇 `SKILL.md` 是干活时的速查手册。
+
 **`references/semantics.md`** —— 24 条实测结论，每一条都是踩过的坑，并且和源码注释/官方文档相矛盾的地方都标了出来。不看这个直接干，会重复付出代价。第六节（20–24）专讲曲面，由 `scripts/lathe.js` 强制执行。
 
 尤其这三条：
@@ -169,7 +171,8 @@ node examples/fish_mug.js --regen-texture --no-shot   # 只重绘贴图（需 Pi
 | `png.js` | PNG 编解码 | `readPNG` `decodePNG` `encodePNG` `neighborDelta` |
 | `inspect.js` | 贴图体检 | `analyze` `seamDelta` `normalReport` `tilePreview` |
 | `lathe.js` | **曲面几何硬护栏** | `guard` `assertTextureAspect` `uvOrientation` `assertSweepWinding` `assertCSharp` |
-| `check.js` | 技能自检 | `node check.js`（145 项，离线） |
+| `check.js` | 技能自检 | `node check.js`（150 项，离线） |
+| `export_html.py` | 教学文档导出 | `python scripts/export_html.py` → 自包含可打印 `TUTORIAL.html` |
 
 ## 铁律
 
@@ -183,6 +186,8 @@ node examples/fish_mug.js --regen-texture --no-shot   # 只重绘贴图（需 Pi
 
 ## 参考文档
 
+- `TUTORIAL.md` — **教学文档**：架构分层、如何写提示词、锦鲤杯复盘 + 八案例库（不教功能细节）
+- `TUTORIAL.html` — 教学文档的 A4 可打印版（图片内嵌，浏览器 Ctrl+P 另存为 PDF），由 `scripts/export_html.py` 生成
 - `references/semantics.md` — **24 条实测铁律**（第六节为曲面），含"源码注释是错的"这类反直觉结论
 - `references/modeling.md` — ProBuilder / mesh 工具全表、分件策略、单 mesh 与多材质
 - `references/texturing.md` — TexGen 图层语法、图案/渐变/法线、PBR 派生、无缝平铺
@@ -193,7 +198,7 @@ node examples/fish_mug.js --regen-texture --no-shot   # 只重绘贴图（需 Pi
 ## 自检
 
 ```bash
-node scripts/check.js     # 145 项离线断言，全绿才可信
+node scripts/check.js     # 150 项离线断言，全绿才可信
 node scripts/calibrate.js --project <工程>   # 换工程/升级 MCP 后重新实测坐标语义
 ```
 

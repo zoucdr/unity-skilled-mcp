@@ -245,6 +245,16 @@ namespace UniMcp
         private readonly Queue<Action> messageQueue = new();
         private readonly object queueLock = new();
         private bool isUpdateRegistered = false;
+        private const int MaxTasksPerUpdate = 16;
+
+        // 写执行门：tools/call 从启动到回调完成期间独占，避免多客户端写操作跨帧交错。
+        // HTTP 提前返回 running 后工具仍在主线程跑，此时其他客户端的写调用只能排队等待。
+        private readonly object writeGateLock = new();
+        private readonly Queue<Action<int>> pendingWriteTasks = new();
+        private static readonly TimeSpan WriteGateTimeout = TimeSpan.FromMinutes(5);
+        private bool writeExecutionActive = false;
+        private int writeGeneration = 0;
+        private DateTime writeActiveSince;
 
         // HTTP请求记录跟踪 - 使用McpExecuteRecordObject
         public int ConnectedClientCount
@@ -508,13 +518,106 @@ namespace UniMcp
             lock (queueLock)
             {
                 messageQueue.Enqueue(task);
+            }
+            EnsureQueuePumpRegistered();
+        }
 
+        /// <summary>注册主线程泵；普通任务与写执行门共用同一个 update 回调。</summary>
+        private void EnsureQueuePumpRegistered()
+        {
+            lock (queueLock)
+            {
                 // 如果update还没有注册，则注册它
                 if (!isUpdateRegistered)
                 {
                     EditorApplication.update += ProcessMessageQueue;
                     isUpdateRegistered = true;
                     Log("[UniMcp] 消息队列处理器已注册到EditorApplication.update");
+                }
+            }
+        }
+
+        /// <summary>排入一次写工具执行；同一时刻只允许一个写工具处于执行中。</summary>
+        private void EnqueueWrite(Action<int> task)
+        {
+            lock (writeGateLock)
+            {
+                pendingWriteTasks.Enqueue(task);
+            }
+            EnsureQueuePumpRegistered();
+        }
+
+        private bool HasPendingWriteWork()
+        {
+            lock (writeGateLock)
+            {
+                return writeExecutionActive || pendingWriteTasks.Count > 0;
+            }
+        }
+
+        /// <summary>释放写执行门；只有持有当前代次的调用才能释放，避免超时兜底后被旧任务误放。</summary>
+        private void ReleaseWriteGate(int generation)
+        {
+            lock (writeGateLock)
+            {
+                if (!writeExecutionActive || generation != writeGeneration) return;
+                writeExecutionActive = false;
+            }
+        }
+
+        /// <summary>服务停止/重启时清空排队写调用并作废旧代次，防止新实例被旧门卡住。</summary>
+        private void ResetWriteGate()
+        {
+            lock (writeGateLock)
+            {
+                pendingWriteTasks.Clear();
+                writeExecutionActive = false;
+                writeGeneration++;
+            }
+        }
+
+        /// <summary>在主线程启动下一个写工具；同步完成的工具可连续放行，异步未完成的立即停住。</summary>
+        private void PumpWriteGate()
+        {
+            for (int i = 0; i < MaxTasksPerUpdate; i++)
+            {
+                Action<int> next;
+                int generation;
+                bool timedOut = false;
+                lock (writeGateLock)
+                {
+                    if (writeExecutionActive)
+                    {
+                        if (DateTime.UtcNow - writeActiveSince >= WriteGateTimeout)
+                        {
+                            // 工具未回报完成（域重载、导入中断等）时兜底放行，避免服务永久停摆。
+                            writeExecutionActive = false;
+                            writeGeneration++;
+                            timedOut = true;
+                        }
+                        else
+                        {
+                            return;
+                        }
+                    }
+                    if (pendingWriteTasks.Count == 0) return;
+                    next = pendingWriteTasks.Dequeue();
+                    generation = ++writeGeneration;
+                    writeExecutionActive = true;
+                    writeActiveSince = DateTime.UtcNow;
+                }
+
+                if (timedOut)
+                    LogWarning("[UniMcp] 写执行门超时自动释放，可能有工具未回报完成状态");
+
+                try
+                {
+                    next(generation);
+                }
+                catch (Exception ex)
+                {
+                    ReleaseWriteGate(generation);
+                    LogError($"[UniMcp] 启动写工具失败: {ex.Message}");
                 }
             }
         }
@@ -575,27 +678,20 @@ namespace UniMcp
         /// </summary>
         private void ProcessMessageQueue()
         {
-            Action task = null;
+            // 写工具严格一个接一个：上一个未回调完成前不启动下一个，避免多客户端跨帧交错。
+            PumpWriteGate();
 
-            lock (queueLock)
+            // 普通任务按批出队，多客户端堆积时不再每帧只处理一个。
+            for (int i = 0; i < MaxTasksPerUpdate; i++)
             {
-                if (messageQueue.Count > 0)
+                Action task;
+                lock (queueLock)
                 {
+                    if (messageQueue.Count == 0) break;
                     task = messageQueue.Dequeue();
                 }
 
-                // 如果队列为空，注销update回调
-                if (messageQueue.Count == 0 && isUpdateRegistered)
-                {
-                    EditorApplication.update -= ProcessMessageQueue;
-                    isUpdateRegistered = false;
-                    Log("[UniMcp] 消息队列处理器已从EditorApplication.update注销");
-                }
-            }
-
-            // 在锁外执行任务
-            if (task != null)
-            {
+                // 在锁外执行任务
                 try
                 {
                     task.Invoke();
@@ -603,6 +699,17 @@ namespace UniMcp
                 catch (Exception ex)
                 {
                     LogError($"[UniMcp] 消息队列任务执行失败: {ex.Message}\n{ex.StackTrace}");
+                }
+            }
+
+            // 注销前重新确认写门状态：执行期间新入队的写调用必须保留 update 泵。
+            lock (queueLock)
+            {
+                if (messageQueue.Count == 0 && !HasPendingWriteWork() && isUpdateRegistered)
+                {
+                    EditorApplication.update -= ProcessMessageQueue;
+                    isUpdateRegistered = false;
+                    Log("[UniMcp] 消息队列处理器已从EditorApplication.update注销");
                 }
             }
         }
@@ -1441,6 +1548,9 @@ namespace UniMcp
         {
             Log("[UniMcp] 正在强制停止服务...");
 
+            // 清空排队中的写调用并作废旧代次
+            ResetWriteGate();
+
             // 清除所有响应缓存
             ClearResponseCache();
 
@@ -1818,6 +1928,8 @@ namespace UniMcp
         public void Stop()
         {
             EditorApplication.update -= UpdateDiscoverySnapshot;
+            // 停止后清空排队的写调用并作废旧代次，避免重启被上一个实例的写门卡住。
+            ResetWriteGate();
             if (!isRunning && listener == null)
             {
                 return;
@@ -4344,15 +4456,15 @@ namespace UniMcp
 
                 Log($"[UniMcp] 找到工具: {tool.GetType().Name}，开始异步处理命令");
 
-                // 使用TaskCompletionSource来等待异步执行完成
-                var tcs = new TaskCompletionSource<JsonNode>();
+                // 使用TaskCompletionSource来等待异步执行完成；续跑放线程池，避免主线程内联执行响应构建。
+                var tcs = new TaskCompletionSource<JsonNode>(TaskCreationOptions.RunContinuationsAsynchronously);
                 var startTime = DateTime.Now;
 
                 // 对特定工具进行参数适配
                 JsonNode adaptedArguments = AdaptToolArguments(toolName, argumentsNode);
 
-                // 统一通过HandleCommand处理所有工具调用，使用消息队列确保在主线程中执行
-                EnqueueTask(() =>
+                // 统一通过HandleCommand处理所有工具调用；写执行门保证多客户端写操作不会跨帧交错。
+                EnqueueWrite(gateGeneration =>
                 {
                     try
                     {
@@ -4440,12 +4552,18 @@ namespace UniMcp
                                 LogError($"[UniMcp] 工具回调处理失败: {callbackEx.Message}");
                                 tcs.SetException(callbackEx);
                             }
+                            finally
+                            {
+                                // 工具真正收尾后才放行下一个写调用；HTTP 提前返回不影响门的持有。
+                                ReleaseWriteGate(gateGeneration);
+                            }
                         });
                     }
                     catch (Exception ex)
                     {
                         LogError($"[UniMcp] 主线程执行工具调用失败: {ex.Message}");
                         tcs.SetException(ex);
+                        ReleaseWriteGate(gateGeneration);
                     }
                 });
 

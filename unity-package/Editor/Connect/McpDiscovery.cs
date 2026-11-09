@@ -91,7 +91,9 @@ namespace UniMcp
             var info = new McpConnectionInfo(listener.Prefixes.Cast<string>(),
                 Path.GetDirectoryName(UnityEngine.Application.dataPath),
                 System.Diagnostics.Process.GetCurrentProcess().Id, DateTime.UtcNow,
-                maxDetails: startedDiscoveryMaxDetails, skillDir: skillDir);
+                maxDetails: startedDiscoveryMaxDetails, skillDir: skillDir,
+                unityVersion: UnityEngine.Application.unityVersion,
+                renderPipeline: McpConnectionInfo.DetectRenderPipeline());
             discoveryJson = info.ToJson();
             try
             {
@@ -750,6 +752,10 @@ namespace UniMcp
         internal int MaxDetails { get; }
         /// <summary>技能源目录绝对路径（unity-package/Skills/unity-skilled-mcp）；未导入时为 null。</summary>
         internal string SkillDir { get; }
+        /// <summary>Unity 编辑器版本，服务启动成功时捕获。</summary>
+        internal string UnityVersion { get; }
+        /// <summary>当前生效的渲染管线：Built-in / URP / HDRP / 自定义管线资源类型全名。</summary>
+        internal string RenderPipeline { get; }
 
         // 实例标识存在 SessionState 里：跨域重载存活，编辑器进程退出即失效。
         // 这样脚本重编译、进出 Play Mode 都不会改变绑定，客户端无需重新发现。
@@ -787,7 +793,8 @@ namespace UniMcp
         }
 
         internal McpConnectionInfo(IEnumerable<string> boundPrefixes, string projectPath, int processId, DateTime updatedAt,
-            int maxDetails = McpDiscoverySnapshot.DefaultMaxDetails, string skillDir = null)
+            int maxDetails = McpDiscoverySnapshot.DefaultMaxDetails, string skillDir = null,
+            string unityVersion = null, string renderPipeline = null)
         {
             var prefixes = boundPrefixes.ToArray();
             // 优先选择显式成功绑定的 localhost，其次 127.0.0.1；通配监听只发布回环地址。
@@ -806,6 +813,34 @@ namespace UniMcp
             UpdatedAt = updatedAt.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture);
             MaxDetails = McpDiscoverySnapshot.NormalizeMaxDetails(maxDetails);
             SkillDir = string.IsNullOrEmpty(skillDir) ? null : skillDir;
+            UnityVersion = string.IsNullOrEmpty(unityVersion) ? UnityEngine.Application.unityVersion : unityVersion;
+            RenderPipeline = string.IsNullOrEmpty(renderPipeline) ? DetectRenderPipeline() : renderPipeline;
+        }
+
+        /// <summary>
+        /// 当前生效的渲染管线（GraphicsSettings.currentRenderPipeline 已含 QualitySettings 覆盖）。
+        /// 内置管线返回 Built-in，URP/HDRP 归一化为简称，自定义 SRP 返回管线资源类型全名。
+        /// 读取失败不影响服务启动，仅记为 unknown。仅在主线程、服务启动成功时调用。
+        /// </summary>
+        internal static string DetectRenderPipeline()
+        {
+            try
+            {
+                var pipeline = UnityEngine.Rendering.GraphicsSettings.currentRenderPipeline;
+                if (pipeline == null) return "Built-in";
+                Type type = pipeline.GetType();
+                string name = type.FullName ?? type.Name;
+                if (name.IndexOf("UniversalRenderPipeline", StringComparison.OrdinalIgnoreCase) >= 0
+                    || name.IndexOf(".Universal.", StringComparison.OrdinalIgnoreCase) >= 0) return "URP";
+                if (name.IndexOf("HDRenderPipeline", StringComparison.OrdinalIgnoreCase) >= 0
+                    || name.IndexOf(".HighDefinition.", StringComparison.OrdinalIgnoreCase) >= 0) return "HDRP";
+                return name;
+            }
+            catch (Exception ex)
+            {
+                UnityEngine.Debug.LogWarning("[UniMcp] 读取渲染管线类型失败（INI 记为 unknown）: " + ex.Message);
+                return "unknown";
+            }
         }
 
         internal string ToJson()
@@ -814,6 +849,8 @@ namespace UniMcp
                 { "base_url", new JsonData(BaseUrl) },
                 { "port", new JsonData(Port) },
                 { "project_path", new JsonData(ProjectPath) },
+                { "unity_version", new JsonData(UnityVersion) },
+                { "render_pipeline", new JsonData(RenderPipeline) },
                 { "instance_id", new JsonData(InstanceId) },
                 { "process_id", new JsonData(ProcessId) },
                 { "updated_at", new JsonData(UpdatedAt) },
@@ -832,16 +869,22 @@ namespace UniMcp
 
         internal string ToIni()
         {
-            // 防止合法但包含换行的路径注入额外 INI 项。
-            string projectPath = ProjectPath.Replace("\r", "\\r").Replace("\n", "\\n");
             return "[unity3d-skilled-mcp]\n"
                 + "base_url=" + BaseUrl + "\n"
                 + "port=" + Port.ToString(CultureInfo.InvariantCulture) + "\n"
-                + "project_path=" + projectPath + "\n"
-                + "skill_dir=" + (SkillDir == null ? string.Empty : SkillDir.Replace("\r", "\\r").Replace("\n", "\\n")) + "\n"
+                + "project_path=" + IniValue(ProjectPath) + "\n"
+                + "unity_version=" + IniValue(UnityVersion) + "\n"
+                + "render_pipeline=" + IniValue(RenderPipeline) + "\n"
+                + "skill_dir=" + IniValue(SkillDir) + "\n"
                 + "process_id=" + ProcessId.ToString(CultureInfo.InvariantCulture) + "\n"
                 + "updated_at=" + UpdatedAt + "\n"
                 + "max_details=" + MaxDetails.ToString(CultureInfo.InvariantCulture) + "\n";
+        }
+
+        // 防止合法但包含换行的值注入额外 INI 项。
+        private static string IniValue(string value)
+        {
+            return (value ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n");
         }
 
         internal void WriteIni(string path)

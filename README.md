@@ -85,12 +85,14 @@ Example `~/.unity-mcp/skill.ini`:
 base_url=http://localhost:8000
 port=8000
 project_path=/path/to/UnityProject
+unity_version=2021.3.45f2c1
+render_pipeline=Built-in
 process_id=12345
 updated_at=2026-10-30T02:00:00.0000000Z
 max_details=32
 ```
 
-The file contains local connection metadata and startup settings, but **does not publish `mcp_url`** and no longer publishes a script language. The Skill client reads the file dynamically on each command and validates the service before proceeding; it does not scan ports or automatically replay failed write operations.
+The file contains local connection metadata and startup settings, but **does not publish `mcp_url`** and no longer publishes a script language. `unity_version` and `render_pipeline` are captured when the service starts: the active pipeline is reported as `Built-in`, `URP`, `HDRP`, or the custom pipeline asset's full type name; changing the pipeline while the service runs requires a restart to refresh them. The Skill client reads the file dynamically on each command and validates the service before proceeding; it does not scan ports or automatically replay failed write operations.
 
 ## How progressive discovery works
 

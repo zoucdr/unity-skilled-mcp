@@ -319,13 +319,13 @@ section('10. 文件完整性');
 {
   const must = ['mcp.js', 'model.js', 'tex.js', 'ui.js', 'verify.js',
     'uvspace.js', 'field.js', 'png.js', 'inspect.js', 'lathe.js',
-    'calibrate.js', 'check.js'];
+    'calibrate.js', 'check.js', 'export_html.py'];
   for (const f of must) {
     ok('存在 scripts/' + f, fs.existsSync(path.join(S, f)));
   }
 
   const root = path.join(S, '..');
-  const docs = ['SKILL.md',
+  const docs = ['SKILL.md', 'TUTORIAL.md',
     'references/semantics.md', 'references/modeling.md',
     'references/texturing.md', 'references/ui.md', 'references/pipeline.md'];
   for (const f of docs) {
@@ -348,6 +348,15 @@ section('10. 文件完整性');
     if (fs.existsSync(p)) ok('  ' + f + ' 非空（>1KB）', fs.statSync(p).size > 1024);
   }
 
+  // TUTORIAL.md 引用的案例证据图必须齐备，否则教学文档会挂空图。
+  const caseImgs = ['case_gallery.png', 'case_phone_compare.png', 'case_wall_ab.png',
+    'fish_mug_iteration.png', 'fish_mug_unwrap.png'];
+  const samplesDir = path.join(root, 'references', 'samples');
+  ok('案例证据图齐备（' + caseImgs.length + ' 张）', caseImgs.every(f => {
+    const p = path.join(samplesDir, f);
+    return fs.existsSync(p) && fs.statSync(p).size > 1024;
+  }));
+
   // 技能必须可搬运：脚本与文档里不得出现盘符/用户目录这类绝对路径
   const absPatterns = [
     { name: '无 Windows 盘符路径', re: /\b[A-Za-z]:[\\/][\w.$-]/ },
@@ -362,7 +371,10 @@ section('10. 文件完整性');
   }
   const skillMd = path.join(root, 'SKILL.md');
   if (fs.existsSync(skillMd)) scanFiles.push(skillMd);
+  const tutorialMd = path.join(root, 'TUTORIAL.md');
+  if (fs.existsSync(tutorialMd)) scanFiles.push(tutorialMd);
 
+  ok('扫描器覆盖 TUTORIAL.md', scanFiles.some(f => /TUTORIAL\.md$/i.test(f)));
   ok('扫描器覆盖 .py 与 .cs',
     scanFiles.some(f => /\.py$/i.test(f)) && scanFiles.some(f => /\.cs$/i.test(f)));
   ok('扫描器覆盖 references/', scanFiles.some(f => /references[\\/]/i.test(f)));

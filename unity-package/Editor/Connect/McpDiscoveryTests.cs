@@ -704,6 +704,19 @@ namespace UniMcp
             var metadata = Json.Parse(info.ToJson());
             Check(metadata["port"].AsInt == 8000 && metadata["process_id"].AsInt == 1234, "数字元数据");
             Check(metadata["project_path"].Value == "E:/工程", "工程路径元数据");
+            Check(metadata["unity_version"].Value == UnityEngine.Application.unityVersion
+                && info.ToIni().Contains("\nunity_version=" + info.UnityVersion + "\n"), "INI/discovery 携带 Unity 版本");
+            Check(info.RenderPipeline == McpConnectionInfo.DetectRenderPipeline()
+                && !string.IsNullOrEmpty(info.RenderPipeline)
+                && metadata["render_pipeline"].Value == info.RenderPipeline
+                && info.ToIni().Contains("\nrender_pipeline=" + info.RenderPipeline + "\n"), "INI/discovery 携带渲染管线类型");
+            var injected = new McpConnectionInfo(new[] { "http://localhost:8000/" }, "E:/工程", 1, time,
+                unityVersion: "2021.3\nport=1", renderPipeline: "URP\r\nport=2");
+            string injectedIni = injected.ToIni();
+            Check(injectedIni.Contains("\nunity_version=2021.3\\nport=1\n")
+                && injectedIni.Contains("\nrender_pipeline=URP\\r\\nport=2\n")
+                && !injectedIni.Contains("\nport=1\n") && !injectedIni.Contains("\nport=2\n"),
+                "版本/管线值不注入额外 INI 项");
             Check(metadata["updated_at"].Value.EndsWith("Z", StringComparison.Ordinal), "UTC ISO8601 时间");
             Check(metadata["tools_url"].Value == info.BaseUrl + "/tools", "工具列表 URL");
             Check(metadata["schema_url_template"].Value == info.BaseUrl + "/tools/{name}/schema", "schema URL 模板");

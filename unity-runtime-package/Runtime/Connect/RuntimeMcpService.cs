@@ -74,6 +74,17 @@ namespace UniMcp.Runtime
 
         private readonly object lockObj = new object();
 
+        // 工具执行必须回到 Unity 主线程；HTTP 请求在线程池，从后台线程触碰 Unity API 会出错。
+        // 执行门同时保证多客户端的工具调用按序进行，异步工具未回报完成前不放行下一个。
+        private readonly object runtimeGateLock = new object();
+        private readonly Queue<Action<int>> pendingToolExecutions = new();
+        private static readonly TimeSpan RuntimeToolGateTimeout = TimeSpan.FromSeconds(30);
+        private const int MaxToolStartsPerFrame = 8;
+        private bool toolExecutionActive = false;
+        private int toolGeneration = 0;
+        private DateTime toolActiveSince;
+        private int mainThreadId;
+
         public bool IsRunning => isRunning;
 
         private void Awake()
@@ -90,6 +101,7 @@ namespace UniMcp.Runtime
             RuntimeLogger.EnableWarning = _enableLogging;
             RuntimeLogger.EnableError = _enableLogging;
 
+            mainThreadId = Thread.CurrentThread.ManagedThreadId;
             DiscoverTools();
         }
 
@@ -101,40 +113,127 @@ namespace UniMcp.Runtime
             }
         }
 
+        private void Update()
+        {
+            // Unity 主线程泵：只在这里启动工具，避免后台线程直接调用运行时 API。
+            PumpToolExecutions();
+        }
+
         private void OnDestroy()
         {
             StopService();
         }
 
-        public void DiscoverTools()
+        private void EnqueueToolExecution(Action<int> start)
         {
-            RuntimeLogger.Log("[RuntimeMcp] Starting tool discovery...");
-
-            availableTools.Clear();
-            toolInfos.Clear();
-            mcpToolCache.Clear();
-
-            try
+            lock (runtimeGateLock)
             {
-                Executer.ToolsCall.EnsureMethodsRegisteredStatic();
-                var registered = Executer.ToolsCall.GetRegisteredMethodNames();
+                pendingToolExecutions.Enqueue(start);
+            }
+        }
 
-                foreach (var methodName in registered)
+        private void ReleaseToolGate(int generation)
+        {
+            lock (runtimeGateLock)
+            {
+                if (!toolExecutionActive || generation != toolGeneration) return;
+                toolExecutionActive = false;
+            }
+        }
+
+        private void ResetToolGate()
+        {
+            lock (runtimeGateLock)
+            {
+                pendingToolExecutions.Clear();
+                toolExecutionActive = false;
+                toolGeneration++;
+            }
+        }
+
+        private void PumpToolExecutions()
+        {
+            if (Thread.CurrentThread.ManagedThreadId != mainThreadId)
+            {
+                RuntimeLogger.LogWarning("[RuntimeMcp] Tool pump invoked off the main thread; skipped");
+                return;
+            }
+
+            for (int i = 0; i < MaxToolStartsPerFrame; i++)
+            {
+                Action<int> next;
+                int generation;
+                bool timedOut = false;
+                lock (runtimeGateLock)
                 {
-                    var method = Executer.ToolsCall.GetRegisteredMethod(methodName);
-                    if (method != null)
+                    if (toolExecutionActive)
                     {
-                        availableTools[methodName] = method;
-                        toolInfos[methodName] = CreateToolInfo(methodName, method);
-                        RuntimeLogger.Log($"[RuntimeMcp] Registered tool: {methodName}");
+                        if (DateTime.UtcNow - toolActiveSince >= RuntimeToolGateTimeout)
+                        {
+                            toolExecutionActive = false;
+                            toolGeneration++;
+                            timedOut = true;
+                        }
+                        else
+                        {
+                            return;
+                        }
                     }
+                    if (pendingToolExecutions.Count == 0) return;
+                    next = pendingToolExecutions.Dequeue();
+                    generation = ++toolGeneration;
+                    toolExecutionActive = true;
+                    toolActiveSince = DateTime.UtcNow;
                 }
 
-                RuntimeLogger.Log($"[RuntimeMcp] Tool discovery complete. Total tools: {availableTools.Count}");
+                if (timedOut)
+                    RuntimeLogger.LogWarning("[RuntimeMcp] Tool gate timed out; a tool may not have reported completion");
+
+                try
+                {
+                    next(generation);
+                }
+                catch (Exception ex)
+                {
+                    ReleaseToolGate(generation);
+                    RuntimeLogger.LogError("[RuntimeMcp] Tool start error: " + ex.Message);
+                }
             }
-            catch (Exception ex)
+        }
+
+        public void DiscoverTools()
+        {
+            // 多个客户端同时 initialize 会并发触发发现；清空重填字典必须互斥。
+            lock (lockObj)
             {
-                RuntimeLogger.LogError($"[RuntimeMcp] Tool discovery failed: {ex.Message}");
+                RuntimeLogger.Log("[RuntimeMcp] Starting tool discovery...");
+
+                availableTools.Clear();
+                toolInfos.Clear();
+                mcpToolCache.Clear();
+
+                try
+                {
+                    Executer.ToolsCall.EnsureMethodsRegisteredStatic();
+                    var registered = Executer.ToolsCall.GetRegisteredMethodNames();
+
+                    foreach (var methodName in registered)
+                    {
+                        var method = Executer.ToolsCall.GetRegisteredMethod(methodName);
+                        if (method != null)
+                        {
+                            availableTools[methodName] = method;
+                            toolInfos[methodName] = CreateToolInfo(methodName, method);
+                            RuntimeLogger.Log($"[RuntimeMcp] Registered tool: {methodName}");
+                        }
+                    }
+
+                    RuntimeLogger.Log($"[RuntimeMcp] Tool discovery complete. Total tools: {availableTools.Count}");
+                }
+                catch (Exception ex)
+                {
+                    RuntimeLogger.LogError($"[RuntimeMcp] Tool discovery failed: {ex.Message}");
+                }
             }
         }
 
@@ -269,6 +368,8 @@ namespace UniMcp.Runtime
 
         public void StopService()
         {
+            // 清空排队调用并作废旧代次，避免重启后被上一个周期的门卡住。
+            ResetToolGate();
             if (!isRunning)
                 return;
 
@@ -528,7 +629,12 @@ namespace UniMcp.Runtime
             }
 
             var tools = new JsonArray();
-            foreach (var toolInfo in toolInfos.Values)
+            List<ToolInfo> snapshot;
+            lock (lockObj)
+            {
+                snapshot = toolInfos.Values.ToList();
+            }
+            foreach (var toolInfo in snapshot)
             {
                 var tool = new JsonClass();
                 tool.Add("name", new JsonData(toolInfo.name));
@@ -569,50 +675,61 @@ namespace UniMcp.Runtime
 
                 RuntimeLogger.Log($"[RuntimeMcp] Calling tool: {toolName}");
 
-                if (!availableTools.TryGetValue(toolName, out var toolMethod))
+                IToolMethod toolMethod;
+                lock (lockObj)
                 {
-                    return CreateErrorResponse(id, -32601, $"Tool not found: {toolName}");
-                }
-
-                string resultJson = null;
-                var tcs = new TaskCompletionSource<string>();
-
-                try
-                {
-                    var state = new StateTreeContext(args?.AsObject ?? new JsonClass(), new Dictionary<string, object>());
-
-                    state.RegistComplete((result) =>
+                    if (!availableTools.TryGetValue(toolName, out toolMethod))
                     {
-                        try
-                        {
-                            var response = new JsonClass();
-                            var content = new JsonClass();
-                            content.Add("success", new JsonData(true));
-                            content.Add("result", result);
-                            response.Add("content", content);
-                            tcs.TrySetResult(CreateSuccessResponse(id, response));
-                        }
-                        catch (Exception ex)
-                        {
-                            tcs.TrySetResult(CreateErrorResponse(id, -32603, $"Callback error: {ex.Message}"));
-                        }
-                    });
-
-                    toolMethod.ExecuteMethod(state);
-
-                    if (state.Result != null && tcs.Task.IsCompleted)
-                    {
-                        return tcs.Task.Result;
+                        return CreateErrorResponse(id, -32601, $"Tool not found: {toolName}");
                     }
-
-                    resultJson = await Task.Run(() => tcs.Task.Wait(5000) ? tcs.Task.Result : CreateErrorResponse(id, -32000, "Tool execution timed out"));
-
-                    return resultJson;
                 }
-                catch (TimeoutException)
+
+                var tcs = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+                // 工具只在 Update 所在的主线程按序启动；回调完成前不放行下一个，多客户端不会交错。
+                EnqueueToolExecution(generation =>
+                {
+                    try
+                    {
+                        var state = new StateTreeContext(args?.AsObject ?? new JsonClass(), new Dictionary<string, object>());
+
+                        state.RegistComplete((result) =>
+                        {
+                            try
+                            {
+                                var response = new JsonClass();
+                                var content = new JsonClass();
+                                content.Add("success", new JsonData(true));
+                                content.Add("result", result);
+                                response.Add("content", content);
+                                tcs.TrySetResult(CreateSuccessResponse(id, response));
+                            }
+                            catch (Exception ex)
+                            {
+                                tcs.TrySetResult(CreateErrorResponse(id, -32603, $"Callback error: {ex.Message}"));
+                            }
+                            finally
+                            {
+                                ReleaseToolGate(generation);
+                            }
+                        });
+
+                        toolMethod.ExecuteMethod(state);
+                    }
+                    catch (Exception ex)
+                    {
+                        ReleaseToolGate(generation);
+                        tcs.TrySetResult(CreateErrorResponse(id, -32603, $"Tool execution error: {ex.Message}"));
+                    }
+                });
+
+                // 非阻塞等待：原来的 Task.Run(() => tcs.Task.Wait(5000)) 会白占一个线程池线程。
+                Task finished = await Task.WhenAny(tcs.Task, Task.Delay(TimeSpan.FromSeconds(5)));
+                if (finished != tcs.Task)
                 {
                     return CreateErrorResponse(id, -32000, "Tool execution timed out");
                 }
+                return await tcs.Task;
             }
             catch (Exception ex)
             {
@@ -672,20 +789,29 @@ namespace UniMcp.Runtime
         {
             if (Instance != null)
             {
-                Instance.availableTools[toolName] = toolMethod;
-                Instance.toolInfos[toolName] = Instance.CreateToolInfo(toolName, toolMethod);
+                lock (Instance.lockObj)
+                {
+                    Instance.availableTools[toolName] = toolMethod;
+                    Instance.toolInfos[toolName] = Instance.CreateToolInfo(toolName, toolMethod);
+                }
                 RuntimeLogger.Log($"[RuntimeMcp] Manually registered tool: {toolName}");
             }
         }
 
         public int GetToolCount()
         {
-            return availableTools.Count;
+            lock (lockObj)
+            {
+                return availableTools.Count;
+            }
         }
 
         public string[] GetToolNames()
         {
-            return availableTools.Keys.ToArray();
+            lock (lockObj)
+            {
+                return availableTools.Keys.ToArray();
+            }
         }
     }
 
