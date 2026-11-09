@@ -1,0 +1,19 @@
+{
+  "screen": "RainbowBattleHUD",
+  "produced_at": "2026-11-09T06:12:21.350Z",
+  "ok": true,
+  "problems": [],
+  "warnings": [],
+  "stats": {
+    "nodes": 28,
+    "roots": 8,
+    "flatRatio": 0.29,
+    "containsNotNested": 0,
+    "siblingOverlaps": 0,
+    "crossParentOverlaps": 0
+  },
+  "containsNotNested": [],
+  "siblingOverlaps": [],
+  "crossParentOverlaps": [],
+  "suggestedParents": {}
+}

@@ -1,0 +1,115 @@
+{
+  "spec_version": "1.0",
+  "name": "ExamplePanel",
+  "source": {
+    "image": "Assets/AI-Generate/UGUI/ExamplePanel/reference.png",
+    "width": 1280,
+    "height": 720,
+    "note": "效果图原始尺寸；rect 全部以此为坐标系"
+  },
+  "canvas": {
+    "reference_resolution": [1280, 720],
+    "scale_mode": "ScaleWithScreenSize",
+    "match": 0.5,
+    "root": "Canvas",
+    "sorting_order": 0
+  },
+  "palette": {
+    "primary": "#4C8DFF",
+    "surface": "#1E2433",
+    "on_surface": "#EEF2FF",
+    "border": "#FFFFFF22",
+    "background": "#00000000",
+    "radius": 12,
+    "font_size": 24
+  },
+  "nodes": [
+    {
+      "id": "bg",
+      "name": "Background",
+      "type": "image",
+      "rect": [0, 0, 1280, 720],
+      "anchor": "stretch",
+      "asset": "none",
+      "style": { "background": "#101820" },
+      "confidence": 1
+    },
+    {
+      "id": "card",
+      "name": "LoginCard",
+      "type": "card",
+      "rect": [440, 160, 400, 400],
+      "anchor": "middle_center",
+      "asset": "crop",
+      "slice": [24, 24, 24, 24],
+      "confidence": 0.95
+    },
+    {
+      "id": "title",
+      "name": "Title",
+      "parent": "card",
+      "type": "label",
+      "rect": [480, 200, 320, 40],
+      "anchor": "top_center",
+      "text": "Welcome Back",
+      "font_size": 30,
+      "color": "#EEF2FF",
+      "asset": "none",
+      "confidence": 0.98
+    },
+    {
+      "id": "user",
+      "name": "InputUser",
+      "parent": "card",
+      "type": "input",
+      "rect": [480, 270, 320, 48],
+      "anchor": "top_center",
+      "text": "",
+      "asset": "crop",
+      "slice": [16, 16, 16, 16],
+      "style": { "placeholder": "请输入账号", "text_align": "middle_left" },
+      "confidence": 0.9
+    },
+    {
+      "id": "remember",
+      "name": "ToggleRemember",
+      "parent": "card",
+      "type": "toggle",
+      "rect": [480, 340, 32, 32],
+      "anchor": "top_left",
+      "checked": true,
+      "asset": "crop",
+      "states": ["normal", "checked"],
+      "confidence": 0.85
+    },
+    {
+      "id": "btn_login",
+      "name": "BtnLogin",
+      "parent": "card",
+      "type": "button",
+      "rect": [480, 410, 320, 56],
+      "anchor": "top_center",
+      "text": "登录",
+      "font_size": 26,
+      "color": "#FFFFFF",
+      "asset": "crop",
+      "slice": [24, 24, 24, 24],
+      "states": ["normal", "hover", "pressed", "disabled"],
+      "confidence": 0.97
+    },
+    {
+      "id": "volume",
+      "name": "SliderVolume",
+      "parent": "card",
+      "type": "slider",
+      "rect": [480, 490, 320, 24],
+      "anchor": "top_center",
+      "value": 0.6,
+      "asset": "none",
+      "confidence": 0.8
+    }
+  ],
+  "uncertainties": [
+    { "node": "volume", "field": "type", "reason": "效果图里是横向条 + 圆形滑块，也可能是进度条", "alternatives": ["slider", "progress"] }
+  ]
+}

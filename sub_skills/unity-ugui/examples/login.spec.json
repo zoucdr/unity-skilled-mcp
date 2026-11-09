@@ -1,0 +1,149 @@
+{
+  "spec_version": "1.0",
+  "name": "Login",
+  "source": {
+    "image": "reference.png",
+    "width": 960,
+    "height": 600,
+    "note": "示例效果图（若没有真实图，用 --image 指向任意同尺寸 PNG 即可跑通全链路）"
+  },
+  "canvas": {
+    "reference_resolution": [960, 600],
+    "scale_mode": "ScaleWithScreenSize",
+    "match": 0.5,
+    "root": "Canvas",
+    "sorting_order": 0
+  },
+  "palette": {
+    "primary": "#4C8DFF",
+    "surface": "#1E2433",
+    "on_surface": "#EEF2FF",
+    "border": "#FFFFFF22",
+    "radius": 12,
+    "font_size": 22
+  },
+  "nodes": [
+    {
+      "id": "bg",
+      "name": "Background",
+      "type": "image",
+      "rect": [0, 0, 960, 600],
+      "anchor": "stretch",
+      "asset": "none",
+      "style": { "background": "#101820" },
+      "confidence": 1
+    },
+    {
+      "id": "card",
+      "name": "LoginCard",
+      "type": "card",
+      "rect": [220, 80, 520, 440],
+      "anchor": "middle_center",
+      "asset": "crop",
+      "slice": [32, 32, 32, 32],
+      "confidence": 0.96,
+      "children": [
+        {
+          "id": "title",
+          "name": "Title",
+          "type": "label",
+          "rect": [270, 150, 420, 40],
+          "anchor": "top_center",
+          "text": "Welcome Back",
+          "font_size": 30,
+          "color": "#EEF2FF",
+          "asset": "none",
+          "confidence": 0.98
+        },
+        {
+          "id": "user",
+          "name": "InputUser",
+          "type": "input",
+          "rect": [270, 230, 420, 48],
+          "anchor": "top_center",
+          "text": "",
+          "asset": "crop",
+          "slice": [16, 16, 16, 16],
+          "style": { "placeholder": "请输入账号", "text_align": "middle_left" },
+          "confidence": 0.9
+        },
+        {
+          "id": "pwd",
+          "name": "InputPwd",
+          "type": "input",
+          "rect": [270, 296, 420, 48],
+          "anchor": "top_center",
+          "text": "",
+          "asset": "crop",
+          "slice": [16, 16, 16, 16],
+          "style": { "placeholder": "请输入密码", "text_align": "middle_left" },
+          "confidence": 0.9
+        },
+        {
+          "id": "remember",
+          "name": "ToggleRemember",
+          "type": "toggle",
+          "rect": [270, 372, 32, 32],
+          "anchor": "top_left",
+          "checked": true,
+          "asset": "crop",
+          "states": ["normal", "checked"],
+          "confidence": 0.86
+        },
+        {
+          "id": "lang",
+          "name": "DropdownLang",
+          "type": "dropdown",
+          "rect": [470, 366, 220, 40],
+          "anchor": "top_center",
+          "text": "English",
+          "items": ["English", "中文", "日本語"],
+          "asset": "crop",
+          "slice": [12, 12, 12, 12],
+          "confidence": 0.88
+        },
+        {
+          "id": "btn_login",
+          "name": "BtnLogin",
+          "type": "button",
+          "rect": [270, 430, 420, 56],
+          "anchor": "top_center",
+          "text": "登录",
+          "font_size": 26,
+          "color": "#FFFFFF",
+          "asset": "crop",
+          "slice": [24, 24, 24, 24],
+          "states": ["normal", "hover", "pressed", "disabled"],
+          "confidence": 0.97
+        }
+      ]
+    },
+    {
+      "id": "volume",
+      "name": "SliderVolume",
+      "type": "slider",
+      "rect": [40, 540, 320, 24],
+      "anchor": "bottom_left",
+      "value": 0.6,
+      "asset": "none",
+      "confidence": 0.82
+    },
+    {
+      "id": "badge_new",
+      "name": "BadgeNew",
+      "type": "badge",
+      "rect": [860, 30, 72, 28],
+      "anchor": "top_right",
+      "text": "NEW",
+      "font_size": 16,
+      "color": "#FFFFFF",
+      "asset": "crop",
+      "slice": [14, 14, 14, 14],
+      "confidence": 0.92
+    }
+  ],
+  "uncertainties": [
+    { "node": "volume", "field": "type", "reason": "底部横条可能是只读进度条而非可拖动滑条", "alternatives": ["slider", "progress"] },
+    { "node": "lang", "field": "type", "reason": "带箭头，也可能是自定义按钮弹出面板", "alternatives": ["dropdown", "button"] }
+  ]
+}

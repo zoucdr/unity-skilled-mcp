@@ -1,0 +1,146 @@
+{
+  "screen": "RainbowBattleHUD",
+  "items": [
+    {
+      "id": "player_status",
+      "path": "UGUI_RainbowBattleHUD/player_status",
+      "yaml": "name: player_status\nid: -16558\nanchoredPos: [43.0, -18.0]\nsizeDelta: [266.0, 60.0]\nanchorMin: [0.000, 1.000]\nanchorMax: [0.000, 1.000]\npivot: [0.000, 1.000]\noffsetMin: [43.0, -78.0]\noffsetMax: [309.0, -18.0]\nlocalPos: [-497.2, 285.9, 0.0]\nlocalScale: [1.00, 1.00, 1.00]\nrect: [x:0.0, y:-60.0, w:266.0, h:60.0]"
+    },
+    {
+      "id": "health_label",
+      "path": "UGUI_RainbowBattleHUD/player_status/health_label",
+      "yaml": "name: health_label\nid: -16568\nanchoredPos: [14.0, -5.0]\nsizeDelta: [80.0, 19.0]\nanchorMin: [0.000, 1.000]\nanchorMax: [0.000, 1.000]\npivot: [0.000, 1.000]\noffsetMin: [14.0, -24.0]\noffsetMax: [94.0, -5.0]\nlocalPos: [14.0, -5.0, 0.0]\nlocalScale: [1.00, 1.00, 1.00]\nrect: [x:0.0, y:-19.0, w:80.0, h:19.0]"
+    },
+    {
+      "id": "health_value",
+      "path": "UGUI_RainbowBattleHUD/player_status/health_value",
+      "yaml": "name: health_value\nid: -16578\nanchoredPos: [195.0, -5.0]\nsizeDelta: [27.0, 20.0]\nanchorMin: [0.000, 1.000]\nanchorMax: [0.000, 1.000]\npivot: [0.000, 1.000]\noffsetMin: [195.0, -25.0]\noffsetMax: [222.0, -5.0]\nlocalPos: [195.0, -5.0, 0.0]\nlocalScale: [1.00, 1.00, 1.00]\nrect: [x:0.0, y:-20.0, w:27.0, h:20.0]"
+    },
+    {
+      "id": "attack_value",
+      "path": "UGUI_RainbowBattleHUD/player_status/attack_value",
+      "yaml": "name: attack_value\nid: -16588\nanchoredPos: [235.0, -5.0]\nsizeDelta: [25.0, 20.0]\nanchorMin: [0.000, 1.000]\nanchorMax: [0.000, 1.000]\npivot: [0.000, 1.000]\noffsetMin: [235.0, -25.0]\noffsetMax: [260.0, -5.0]\nlocalPos: [235.0, -5.0, 0.0]\nlocalScale: [1.00, 1.00, 1.00]\nrect: [x:0.0, y:-20.0, w:25.0, h:20.0]"
+    },
+    {
+      "id": "health_track",
+      "path": "UGUI_RainbowBattleHUD/player_status/health_track",
+      "yaml": "name: health_track\nid: -16598\nanchoredPos: [14.0, -26.0]\nsizeDelta: [206.0, 12.0]\nanchorMin: [0.000, 1.000]\nanchorMax: [0.000, 1.000]\npivot: [0.000, 1.000]\noffsetMin: [14.0, -38.0]\noffsetMax: [220.0, -26.0]\nlocalPos: [14.0, -26.0, 0.0]\nlocalScale: [1.00, 1.00, 1.00]\nrect: [x:0.0, y:-12.0, w:206.0, h:12.0]"
+    },
+    {
+      "id": "health_fill",
+      "path": "UGUI_RainbowBattleHUD/player_status/health_track/health_fill",
+      "yaml": "name: health_fill\nid: -16608\nanchoredPos: [3.0, -3.0]\nsizeDelta: [200.0, 6.0]\nanchorMin: [0.000, 1.000]\nanchorMax: [0.000, 1.000]\npivot: [0.000, 1.000]\noffsetMin: [3.0, -9.0]\noffsetMax: [203.0, -3.0]\nlocalPos: [3.0, -3.0, 0.0]\nlocalScale: [1.00, 1.00, 1.00]\nrect: [x:0.0, y:-6.0, w:200.0, h:6.0]"
+    },
+    {
+      "id": "energy_label",
+      "path": "UGUI_RainbowBattleHUD/player_status/energy_label",
+      "yaml": "name: energy_label\nid: -16618\nanchoredPos: [14.0, -39.0]\nsizeDelta: [40.0, 17.0]\nanchorMin: [0.000, 1.000]\nanchorMax: [0.000, 1.000]\npivot: [0.000, 1.000]\noffsetMin: [14.0, -56.0]\noffsetMax: [54.0, -39.0]\nlocalPos: [14.0, -39.0, 0.0]\nlocalScale: [1.00, 1.00, 1.00]\nrect: [x:0.0, y:-17.0, w:40.0, h:17.0]"
+    },
+    {
+      "id": "energy_track",
+      "path": "UGUI_RainbowBattleHUD/player_status/energy_track",
+      "yaml": "name: energy_track\nid: -16628\nanchoredPos: [56.0, -44.0]\nsizeDelta: [164.0, 9.0]\nanchorMin: [0.000, 1.000]\nanchorMax: [0.000, 1.000]\npivot: [0.000, 1.000]\noffsetMin: [56.0, -53.0]\noffsetMax: [220.0, -44.0]\nlocalPos: [56.0, -44.0, 0.0]\nlocalScale: [1.00, 1.00, 1.00]\nrect: [x:0.0, y:-9.0, w:164.0, h:9.0]"
+    },
+    {
+      "id": "energy_fill",
+      "path": "UGUI_RainbowBattleHUD/player_status/energy_track/energy_fill",
+      "yaml": "name: energy_fill\nid: -16638\nanchoredPos: [2.0, -2.0]\nsizeDelta: [160.0, 5.0]\nanchorMin: [0.000, 1.000]\nanchorMax: [0.000, 1.000]\npivot: [0.000, 1.000]\noffsetMin: [2.0, -7.0]\noffsetMax: [162.0, -2.0]\nlocalPos: [2.0, -2.0, 0.0]\nlocalScale: [1.00, 1.00, 1.00]\nrect: [x:0.0, y:-5.0, w:160.0, h:5.0]"
+    },
+    {
+      "id": "energy_value",
+      "path": "UGUI_RainbowBattleHUD/player_status/energy_value",
+      "yaml": "name: energy_value\nid: -16648\nanchoredPos: [234.0, -34.0]\nsizeDelta: [27.0, 22.0]\nanchorMin: [0.000, 1.000]\nanchorMax: [0.000, 1.000]\npivot: [0.000, 1.000]\noffsetMin: [234.0, -56.0]\noffsetMax: [261.0, -34.0]\nlocalPos: [234.0, -34.0, 0.0]\nlocalScale: [1.00, 1.00, 1.00]\nrect: [x:0.0, y:-22.0, w:27.0, h:22.0]"
+    },
+    {
+      "id": "opponent_panel",
+      "path": "UGUI_RainbowBattleHUD/opponent_panel",
+      "yaml": "name: opponent_panel\nid: -16658\nanchoredPos: [-39.0, -19.0]\nsizeDelta: [130.0, 28.0]\nanchorMin: [1.000, 1.000]\nanchorMax: [1.000, 1.000]\npivot: [1.000, 1.000]\noffsetMin: [-169.0, -47.0]\noffsetMax: [-39.0, -19.0]\nlocalPos: [501.2, 284.9, 0.0]\nlocalScale: [1.00, 1.00, 1.00]\nrect: [x:-130.0, y:-28.0, w:130.0, h:28.0]"
+    },
+    {
+      "id": "opponent_name",
+      "path": "UGUI_RainbowBattleHUD/opponent_panel/opponent_name",
+      "yaml": "name: opponent_name\nid: -16668\nanchoredPos: [-6.0, -3.0]\nsizeDelta: [117.0, 22.0]\nanchorMin: [1.000, 1.000]\nanchorMax: [1.000, 1.000]\npivot: [1.000, 1.000]\noffsetMin: [-123.0, -25.0]\noffsetMax: [-6.0, -3.0]\nlocalPos: [-6.0, -3.0, 0.0]\nlocalScale: [1.00, 1.00, 1.00]\nrect: [x:-117.0, y:-22.0, w:117.0, h:22.0]"
+    },
+    {
+      "id": "counter_button",
+      "path": "UGUI_RainbowBattleHUD/counter_button",
+      "yaml": "name: counter_button\nid: -16678\nanchoredPos: [-39.0, -50.0]\nsizeDelta: [73.0, 26.0]\nanchorMin: [1.000, 1.000]\nanchorMax: [1.000, 1.000]\npivot: [1.000, 1.000]\noffsetMin: [-112.0, -76.0]\noffsetMax: [-39.0, -50.0]\nlocalPos: [501.2, 253.9, 0.0]\nlocalScale: [1.00, 1.00, 1.00]\nrect: [x:-73.0, y:-26.0, w:73.0, h:26.0]"
+    },
+    {
+      "id": "weapon_panel",
+      "path": "UGUI_RainbowBattleHUD/weapon_panel",
+      "yaml": "name: weapon_panel\nid: -16700\nanchoredPos: [44.0, 19.0]\nsizeDelta: [214.0, 63.0]\nanchorMin: [0.000, 0.000]\nanchorMax: [0.000, 0.000]\npivot: [0.000, 0.000]\noffsetMin: [44.0, 19.0]\noffsetMax: [258.0, 82.0]\nlocalPos: [-496.2, -284.9, 0.0]\nlocalScale: [1.00, 1.00, 1.00]\nrect: [x:0.0, y:0.0, w:214.0, h:63.0]"
+    },
+    {
+      "id": "weapon_track",
+      "path": "UGUI_RainbowBattleHUD/weapon_panel/weapon_track",
+      "yaml": "name: weapon_track\nid: -16710\nanchoredPos: [52.0, 15.0]\nsizeDelta: [151.0, 11.0]\nanchorMin: [0.000, 0.000]\nanchorMax: [0.000, 0.000]\npivot: [0.000, 0.000]\noffsetMin: [52.0, 15.0]\noffsetMax: [203.0, 26.0]\nlocalPos: [52.0, 15.0, 0.0]\nlocalScale: [1.00, 1.00, 1.00]\nrect: [x:0.0, y:0.0, w:151.0, h:11.0]"
+    },
+    {
+      "id": "weapon_fill",
+      "path": "UGUI_RainbowBattleHUD/weapon_panel/weapon_track/weapon_fill",
+      "yaml": "name: weapon_fill\nid: -16720\nanchoredPos: [3.0, 3.0]\nsizeDelta: [145.0, 5.0]\nanchorMin: [0.000, 0.000]\nanchorMax: [0.000, 0.000]\npivot: [0.000, 0.000]\noffsetMin: [3.0, 3.0]\noffsetMax: [148.0, 8.0]\nlocalPos: [3.0, 3.0, 0.0]\nlocalScale: [1.00, 1.00, 1.00]\nrect: [x:0.0, y:0.0, w:145.0, h:5.0]"
+    },
+    {
+      "id": "weapon_caption",
+      "path": "UGUI_RainbowBattleHUD/weapon_panel/weapon_caption",
+      "yaml": "name: weapon_caption\nid: -16730\nanchoredPos: [59.0, 30.0]\nsizeDelta: [137.0, 22.0]\nanchorMin: [0.000, 0.000]\nanchorMax: [0.000, 0.000]\npivot: [0.000, 0.000]\noffsetMin: [59.0, 30.0]\noffsetMax: [196.0, 52.0]\nlocalPos: [59.0, 30.0, 0.0]\nlocalScale: [1.00, 1.00, 1.00]\nrect: [x:0.0, y:0.0, w:137.0, h:22.0]"
+    },
+    {
+      "id": "combo_panel",
+      "path": "UGUI_RainbowBattleHUD/combo_panel",
+      "yaml": "name: combo_panel\nid: -16740\nanchoredPos: [0.0, 18.0]\nsizeDelta: [308.0, 58.0]\nanchorMin: [0.500, 0.000]\nanchorMax: [0.500, 0.000]\npivot: [0.500, 0.000]\noffsetMin: [-154.0, 18.0]\noffsetMax: [154.0, 76.0]\nlocalPos: [0.0, -285.9, 0.0]\nlocalScale: [1.00, 1.00, 1.00]\nrect: [x:-154.0, y:0.0, w:308.0, h:58.0]"
+    },
+    {
+      "id": "combo_counter",
+      "path": "UGUI_RainbowBattleHUD/combo_panel/combo_counter",
+      "yaml": "name: combo_counter\nid: -16750\nanchoredPos: [-107.5, 7.0]\nsizeDelta: [79.0, 45.0]\nanchorMin: [0.500, 0.000]\nanchorMax: [0.500, 0.000]\npivot: [0.500, 0.000]\noffsetMin: [-147.0, 7.0]\noffsetMax: [-68.0, 52.0]\nlocalPos: [-107.5, 7.0, 0.0]\nlocalScale: [1.00, 1.00, 1.00]\nrect: [x:-39.5, y:0.0, w:79.0, h:45.0]"
+    },
+    {
+      "id": "combo_label",
+      "path": "UGUI_RainbowBattleHUD/combo_panel/combo_counter/combo_label",
+      "yaml": "name: combo_label\nid: -16760\nanchoredPos: [0.0, 27.0]\nsizeDelta: [59.0, 16.0]\nanchorMin: [0.500, 0.000]\nanchorMax: [0.500, 0.000]\npivot: [0.500, 0.000]\noffsetMin: [-29.5, 27.0]\noffsetMax: [29.5, 43.0]\nlocalPos: [0.0, 27.0, 0.0]\nlocalScale: [1.00, 1.00, 1.00]\nrect: [x:-29.5, y:0.0, w:59.0, h:16.0]"
+    },
+    {
+      "id": "combo_value",
+      "path": "UGUI_RainbowBattleHUD/combo_panel/combo_counter/combo_value",
+      "yaml": "name: combo_value\nid: -16770\nanchoredPos: [0.0, 1.0]\nsizeDelta: [55.0, 26.0]\nanchorMin: [0.500, 0.000]\nanchorMax: [0.500, 0.000]\npivot: [0.500, 0.000]\noffsetMin: [-27.5, 1.0]\noffsetMax: [27.5, 27.0]\nlocalPos: [0.0, 1.0, 0.0]\nlocalScale: [1.00, 1.00, 1.00]\nrect: [x:-27.5, y:0.0, w:55.0, h:26.0]"
+    },
+    {
+      "id": "praise_button",
+      "path": "UGUI_RainbowBattleHUD/combo_panel/praise_button",
+      "yaml": "name: praise_button\nid: -16780\nanchoredPos: [-7.0, 7.0]\nsizeDelta: [102.0, 44.0]\nanchorMin: [0.500, 0.000]\nanchorMax: [0.500, 0.000]\npivot: [0.500, 0.000]\noffsetMin: [-58.0, 7.0]\noffsetMax: [44.0, 51.0]\nlocalPos: [-7.0, 7.0, 0.0]\nlocalScale: [1.00, 1.00, 1.00]\nrect: [x:-51.0, y:0.0, w:102.0, h:44.0]"
+    },
+    {
+      "id": "cooldown_button",
+      "path": "UGUI_RainbowBattleHUD/combo_panel/cooldown_button",
+      "yaml": "name: cooldown_button\nid: -16802\nanchoredPos: [99.0, 7.0]\nsizeDelta: [92.0, 43.0]\nanchorMin: [0.500, 0.000]\nanchorMax: [0.500, 0.000]\npivot: [0.500, 0.000]\noffsetMin: [53.0, 7.0]\noffsetMax: [145.0, 50.0]\nlocalPos: [99.0, 7.0, 0.0]\nlocalScale: [1.00, 1.00, 1.00]\nrect: [x:-46.0, y:0.0, w:92.0, h:43.0]"
+    },
+    {
+      "id": "weapon_icon",
+      "path": "UGUI_RainbowBattleHUD/weapon_panel/weapon_icon",
+      "yaml": "name: weapon_icon\nid: -16824\nanchoredPos: [7.0, 9.0]\nsizeDelta: [45.0, 50.0]\nanchorMin: [0.000, 0.000]\nanchorMax: [0.000, 0.000]\npivot: [0.000, 0.000]\noffsetMin: [7.0, 9.0]\noffsetMax: [52.0, 59.0]\nlocalPos: [7.0, 9.0, 0.0]\nlocalScale: [1.00, 1.00, 1.00]\nrect: [x:0.0, y:0.0, w:45.0, h:50.0]"
+    },
+    {
+      "id": "fire_skill",
+      "path": "UGUI_RainbowBattleHUD/fire_skill",
+      "yaml": "name: fire_skill\nid: -16846\nanchoredPos: [-241.0, 22.0]\nsizeDelta: [46.0, 47.0]\nanchorMin: [1.000, 0.000]\nanchorMax: [1.000, 0.000]\npivot: [1.000, 0.000]\noffsetMin: [-287.0, 22.0]\noffsetMax: [-241.0, 69.0]\nlocalPos: [299.2, -281.9, 0.0]\nlocalScale: [1.00, 1.00, 1.00]\nrect: [x:-46.0, y:0.0, w:46.0, h:47.0]"
+    },
+    {
+      "id": "dash_skill",
+      "path": "UGUI_RainbowBattleHUD/dash_skill",
+      "yaml": "name: dash_skill\nid: -16868\nanchoredPos: [-187.0, 22.0]\nsizeDelta: [47.0, 47.0]\nanchorMin: [1.000, 0.000]\nanchorMax: [1.000, 0.000]\npivot: [1.000, 0.000]\noffsetMin: [-234.0, 22.0]\noffsetMax: [-187.0, 69.0]\nlocalPos: [353.2, -281.9, 0.0]\nlocalScale: [1.00, 1.00, 1.00]\nrect: [x:-47.0, y:0.0, w:47.0, h:47.0]"
+    },
+    {
+      "id": "minimap_frame",
+      "path": "UGUI_RainbowBattleHUD/minimap_frame",
+      "yaml": "name: minimap_frame\nid: -16890\nanchoredPos: [-38.0, 20.0]\nsizeDelta: [132.0, 137.0]\nanchorMin: [1.000, 0.000]\nanchorMax: [1.000, 0.000]\npivot: [1.000, 0.000]\noffsetMin: [-170.0, 20.0]\noffsetMax: [-38.0, 157.0]\nlocalPos: [502.2, -283.9, 0.0]\nlocalScale: [1.00, 1.00, 1.00]\nrect: [x:-132.0, y:0.0, w:132.0, h:137.0]"
+    },
+    {
+      "id": "minimap_display",
+      "path": "UGUI_RainbowBattleHUD/minimap_frame/minimap_display",
+      "yaml": "name: minimap_display\nid: -16900\nanchoredPos: [-8.0, 10.0]\nsizeDelta: [116.0, 116.0]\nanchorMin: [1.000, 0.000]\nanchorMax: [1.000, 0.000]\npivot: [1.000, 0.000]\noffsetMin: [-124.0, 10.0]\noffsetMax: [-8.0, 126.0]\nlocalPos: [-8.0, 10.0, 0.0]\nlocalScale: [1.00, 1.00, 1.00]\nrect: [x:-116.0, y:0.0, w:116.0, h:116.0]"
+    }
+  ],
+  "produced_at": "2026-11-09T05:51:59.786Z"
+}

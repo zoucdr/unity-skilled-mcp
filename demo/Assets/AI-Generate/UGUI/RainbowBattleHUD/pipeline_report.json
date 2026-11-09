@@ -1,0 +1,29 @@
+{
+  "screen": "RainbowBattleHUD",
+  "project": "demo",
+  "started_at": "2026-11-09T06:12:21.348Z",
+  "stages": {
+    "dryRun": {
+      "planItems": 28,
+      "specNodes": 28
+    }
+  },
+  "warnings": [],
+  "problems": [],
+  "geometry": {
+    "nodes": 28,
+    "roots": 8,
+    "flatRatio": 0.29,
+    "containsNotNested": 0,
+    "siblingOverlaps": 0,
+    "crossParentOverlaps": 0
+  },
+  "capabilities": {
+    "design": "figma",
+    "assets": "regenerate",
+    "build": "code",
+    "layout": "module",
+    "rules": "module",
+    "verify": "full"
+  }
+}

@@ -1,0 +1,108 @@
+{
+  "project": "E:/unity3d-skilled-mcp/demo",
+  "detected_at": "2026-11-09T06:12:21.431Z",
+  "tool_count": 35,
+  "groups": {
+    "design": {
+      "present": [
+        "figma.fetch_document",
+        "figma.download_images",
+        "figma.preview",
+        "figma.get_conversion_rules"
+      ],
+      "missing": []
+    },
+    "assets": {
+      "present": [
+        "uisourcegen.render",
+        "uisourcegen.batch",
+        "uisourcegen.templates",
+        "uisourcegen.spec",
+        "uisourcegen.draw"
+      ],
+      "missing": []
+    },
+    "create": {
+      "present": [
+        "ugui.generate",
+        "ugui.create_component",
+        "ugui.list_templates"
+      ],
+      "missing": []
+    },
+    "layout": {
+      "present": [
+        "ugui.do_layout",
+        "ugui.get_layout",
+        "ugui.tattoo"
+      ],
+      "missing": []
+    },
+    "rules": {
+      "present": [
+        "ui_rule.record_renames",
+        "ui_rule.record_download_sprites",
+        "ui_rule.get_download_sprites",
+        "ui_rule.record_modify"
+      ],
+      "missing": []
+    },
+    "core": {
+      "present": [
+        "code.execute",
+        "scene.get_hierarchy",
+        "scene.get_active",
+        "hierarchy.find_by_query",
+        "game_view.screenshot",
+        "camera.screenshot"
+      ],
+      "missing": []
+    }
+  },
+  "strategies": {
+    "design": "figma",
+    "assets": "regenerate",
+    "build": "code",
+    "layout": "module",
+    "rules": "module",
+    "verify": "full"
+  },
+  "warnings": [],
+  "tools": [
+    "camera.screenshot",
+    "camera.screenshot_multiview",
+    "code.execute",
+    "figma.download_images",
+    "figma.fetch_document",
+    "figma.get_conversion_rules",
+    "figma.preview",
+    "game_view.screenshot",
+    "hierarchy.find_by_query",
+    "scene.get_active",
+    "scene.get_hierarchy",
+    "ugui.create_component",
+    "ugui.do_layout",
+    "ugui.generate",
+    "ugui.get_layout",
+    "ugui.list_templates",
+    "ugui.tattoo",
+    "ui_rule.get_download_sprites",
+    "ui_rule.get_renames",
+    "ui_rule.record_download_sprites",
+    "ui_rule.record_modify",
+    "ui_rule.record_renames",
+    "uisourcegen.batch",
+    "uisourcegen.canvas_examples",
+    "uisourcegen.canvas_spec",
+    "uisourcegen.draw",
+    "uisourcegen.draw_batch",
+    "uisourcegen.examples",
+    "uisourcegen.fonts",
+    "uisourcegen.measure",
+    "uisourcegen.pdf",
+    "uisourcegen.render",
+    "uisourcegen.spec",
+    "uisourcegen.svg",
+    "uisourcegen.templates"
+  ]
+}

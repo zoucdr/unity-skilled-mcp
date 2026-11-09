@@ -1,0 +1,104 @@
+{
+  "ok": true,
+  "checks": [
+    {
+      "name": "图资源文件齐全",
+      "ok": true,
+      "detail": "19 张；无缺失"
+    },
+    {
+      "name": "切图非纯色",
+      "ok": true,
+      "detail": "全部通过"
+    },
+    {
+      "name": "层级：包含即父子",
+      "ok": true,
+      "detail": "容器嵌套正确，根节点 8/28"
+    },
+    {
+      "name": "同级控件无意外重叠",
+      "ok": true,
+      "detail": "同级可见节点无交叉"
+    },
+    {
+      "name": "Unity 层级回读",
+      "ok": true,
+      "detail": "124 条记录"
+    },
+    {
+      "name": "所有节点存在",
+      "ok": true,
+      "detail": "28 个节点齐全"
+    },
+    {
+      "name": "控件组件齐全",
+      "ok": true,
+      "detail": "按映射表全部齐全"
+    },
+    {
+      "name": "交互控件引用已绑定",
+      "ok": true,
+      "detail": "targetGraphic/graphic/fillRect/textComponent 等全部非空"
+    },
+    {
+      "name": "Sprite 已挂载到 Image",
+      "ok": true,
+      "detail": "全部已挂"
+    },
+    {
+      "name": "布局坐标误差 < 2px",
+      "ok": true,
+      "detail": "最大误差 0.00px"
+    },
+    {
+      "name": "屏幕几何位置（独立反算）",
+      "ok": true,
+      "detail": "28 个节点屏幕位置正确，最大误差 0.00px"
+    },
+    {
+      "name": "专用预览为有效非空白 PNG",
+      "ok": true,
+      "detail": "E:\\unity3d-skilled-mcp\\demo\\Assets\\AI-Generate\\UGUI\\RainbowBattleHUD\\ugui_preview-dce23bf0-04c9-4acf-b001-2ec9743aecdc.png"
+    },
+    {
+      "name": "截图已生成并可比对",
+      "ok": true,
+      "detail": "MAE=1.02"
+    }
+  ],
+  "problems": [],
+  "metrics": {
+    "image": {
+      "ok": true,
+      "sampled": [
+        160,
+        90
+      ],
+      "mae": 1.02,
+      "maxMae": 255,
+      "note": "MAE 仅作趋势参考；透视/字体/九宫格都会抬高数值，必须配合人工目检"
+    },
+    "preview": {
+      "ok": true,
+      "format": "PNG",
+      "width": 1080,
+      "height": 608,
+      "visiblePixels": 70279,
+      "range": 251,
+      "blank": false,
+      "reason": null
+    },
+    "auditLines": 124,
+    "geometry": {
+      "nodes": 28,
+      "roots": 8,
+      "flatRatio": 0.29,
+      "containsNotNested": 0,
+      "siblingOverlaps": 0,
+      "crossParentOverlaps": 0
+    },
+    "geometryWarnings": []
+  },
+  "produced_at": "2026-11-09T05:52:05.684Z"
+}

@@ -1,0 +1,735 @@
+{
+  "generator": "unity-ugui/rules",
+  "version": "1.0",
+  "screen": "RainbowBattleHUD",
+  "source_image": "hud_atlas.png",
+  "reference_resolution": [
+    1080,
+    608
+  ],
+  "created_at": "2026-11-09T05:51:59.789Z",
+  "node_names": [
+    {
+      "id": "player_status",
+      "name": "player_status",
+      "originName": "player_status",
+      "type": "panel",
+      "parent": null,
+      "rect": [
+        43,
+        18,
+        266,
+        60
+      ],
+      "anchor": "top_left",
+      "confidence": 0.95
+    },
+    {
+      "id": "health_label",
+      "name": "health_label",
+      "originName": "health_label",
+      "type": "label",
+      "parent": "player_status",
+      "rect": [
+        57,
+        23,
+        80,
+        19
+      ],
+      "anchor": "top_left",
+      "confidence": 0.95
+    },
+    {
+      "id": "health_value",
+      "name": "health_value",
+      "originName": "health_value",
+      "type": "label",
+      "parent": "player_status",
+      "rect": [
+        238,
+        23,
+        27,
+        20
+      ],
+      "anchor": "top_left",
+      "confidence": 0.95
+    },
+    {
+      "id": "attack_value",
+      "name": "attack_value",
+      "originName": "attack_value",
+      "type": "label",
+      "parent": "player_status",
+      "rect": [
+        278,
+        23,
+        25,
+        20
+      ],
+      "anchor": "top_left",
+      "confidence": 0.95
+    },
+    {
+      "id": "health_track",
+      "name": "health_track",
+      "originName": "health_track",
+      "type": "panel",
+      "parent": "player_status",
+      "rect": [
+        57,
+        44,
+        206,
+        12
+      ],
+      "anchor": "top_left",
+      "confidence": 0.95
+    },
+    {
+      "id": "health_fill",
+      "name": "health_fill",
+      "originName": "health_fill",
+      "type": "progress",
+      "parent": "health_track",
+      "rect": [
+        60,
+        47,
+        200,
+        6
+      ],
+      "anchor": "top_left",
+      "confidence": 0.95
+    },
+    {
+      "id": "energy_label",
+      "name": "energy_label",
+      "originName": "energy_label",
+      "type": "label",
+      "parent": "player_status",
+      "rect": [
+        57,
+        57,
+        40,
+        17
+      ],
+      "anchor": "top_left",
+      "confidence": 0.95
+    },
+    {
+      "id": "energy_track",
+      "name": "energy_track",
+      "originName": "energy_track",
+      "type": "panel",
+      "parent": "player_status",
+      "rect": [
+        99,
+        62,
+        164,
+        9
+      ],
+      "anchor": "top_left",
+      "confidence": 0.95
+    },
+    {
+      "id": "energy_fill",
+      "name": "energy_fill",
+      "originName": "energy_fill",
+      "type": "progress",
+      "parent": "energy_track",
+      "rect": [
+        101,
+        64,
+        160,
+        5
+      ],
+      "anchor": "top_left",
+      "confidence": 0.95
+    },
+    {
+      "id": "energy_value",
+      "name": "energy_value",
+      "originName": "energy_value",
+      "type": "label",
+      "parent": "player_status",
+      "rect": [
+        277,
+        52,
+        27,
+        22
+      ],
+      "anchor": "top_left",
+      "confidence": 0.95
+    },
+    {
+      "id": "opponent_panel",
+      "name": "opponent_panel",
+      "originName": "opponent_panel",
+      "type": "panel",
+      "parent": null,
+      "rect": [
+        911,
+        19,
+        130,
+        28
+      ],
+      "anchor": "top_right",
+      "confidence": 0.95
+    },
+    {
+      "id": "opponent_name",
+      "name": "opponent_name",
+      "originName": "opponent_name",
+      "type": "label",
+      "parent": "opponent_panel",
+      "rect": [
+        918,
+        22,
+        117,
+        22
+      ],
+      "anchor": "top_right",
+      "confidence": 0.95
+    },
+    {
+      "id": "counter_button",
+      "name": "counter_button",
+      "originName": "counter_button",
+      "type": "button",
+      "parent": null,
+      "rect": [
+        968,
+        50,
+        73,
+        26
+      ],
+      "anchor": "top_right",
+      "confidence": 0.95
+    },
+    {
+      "id": "weapon_panel",
+      "name": "weapon_panel",
+      "originName": "weapon_panel",
+      "type": "panel",
+      "parent": null,
+      "rect": [
+        44,
+        526,
+        214,
+        63
+      ],
+      "anchor": "bottom_left",
+      "confidence": 0.95
+    },
+    {
+      "id": "weapon_track",
+      "name": "weapon_track",
+      "originName": "weapon_track",
+      "type": "panel",
+      "parent": "weapon_panel",
+      "rect": [
+        96,
+        563,
+        151,
+        11
+      ],
+      "anchor": "bottom_left",
+      "confidence": 0.95
+    },
+    {
+      "id": "weapon_fill",
+      "name": "weapon_fill",
+      "originName": "weapon_fill",
+      "type": "progress",
+      "parent": "weapon_track",
+      "rect": [
+        99,
+        566,
+        145,
+        5
+      ],
+      "anchor": "bottom_left",
+      "confidence": 0.95
+    },
+    {
+      "id": "weapon_caption",
+      "name": "weapon_caption",
+      "originName": "weapon_caption",
+      "type": "label",
+      "parent": "weapon_panel",
+      "rect": [
+        103,
+        537,
+        137,
+        22
+      ],
+      "anchor": "bottom_left",
+      "confidence": 0.95
+    },
+    {
+      "id": "combo_panel",
+      "name": "combo_panel",
+      "originName": "combo_panel",
+      "type": "panel",
+      "parent": null,
+      "rect": [
+        386,
+        532,
+        308,
+        58
+      ],
+      "anchor": "bottom_center",
+      "confidence": 0.95
+    },
+    {
+      "id": "combo_counter",
+      "name": "combo_counter",
+      "originName": "combo_counter",
+      "type": "panel",
+      "parent": "combo_panel",
+      "rect": [
+        393,
+        538,
+        79,
+        45
+      ],
+      "anchor": "bottom_center",
+      "confidence": 0.95
+    },
+    {
+      "id": "combo_label",
+      "name": "combo_label",
+      "originName": "combo_label",
+      "type": "label",
+      "parent": "combo_counter",
+      "rect": [
+        403,
+        540,
+        59,
+        16
+      ],
+      "anchor": "bottom_center",
+      "confidence": 0.95
+    },
+    {
+      "id": "combo_value",
+      "name": "combo_value",
+      "originName": "combo_value",
+      "type": "label",
+      "parent": "combo_counter",
+      "rect": [
+        405,
+        556,
+        55,
+        26
+      ],
+      "anchor": "bottom_center",
+      "confidence": 0.95
+    },
+    {
+      "id": "praise_button",
+      "name": "praise_button",
+      "originName": "praise_button",
+      "type": "button",
+      "parent": "combo_panel",
+      "rect": [
+        482,
+        539,
+        102,
+        44
+      ],
+      "anchor": "bottom_center",
+      "confidence": 0.95
+    },
+    {
+      "id": "cooldown_button",
+      "name": "cooldown_button",
+      "originName": "cooldown_button",
+      "type": "button",
+      "parent": "combo_panel",
+      "rect": [
+        593,
+        540,
+        92,
+        43
+      ],
+      "anchor": "bottom_center",
+      "confidence": 0.95
+    },
+    {
+      "id": "weapon_icon",
+      "name": "weapon_icon",
+      "originName": "weapon_icon",
+      "type": "button",
+      "parent": "weapon_panel",
+      "rect": [
+        51,
+        530,
+        45,
+        50
+      ],
+      "anchor": "bottom_left",
+      "confidence": 0.95
+    },
+    {
+      "id": "fire_skill",
+      "name": "fire_skill",
+      "originName": "fire_skill",
+      "type": "button",
+      "parent": null,
+      "rect": [
+        793,
+        539,
+        46,
+        47
+      ],
+      "anchor": "bottom_right",
+      "confidence": 0.95
+    },
+    {
+      "id": "dash_skill",
+      "name": "dash_skill",
+      "originName": "dash_skill",
+      "type": "button",
+      "parent": null,
+      "rect": [
+        846,
+        539,
+        47,
+        47
+      ],
+      "anchor": "bottom_right",
+      "confidence": 0.95
+    },
+    {
+      "id": "minimap_frame",
+      "name": "minimap_frame",
+      "originName": "minimap_frame",
+      "type": "panel",
+      "parent": null,
+      "rect": [
+        910,
+        451,
+        132,
+        137
+      ],
+      "anchor": "bottom_right",
+      "confidence": 0.95
+    },
+    {
+      "id": "minimap_display",
+      "name": "minimap_display",
+      "originName": "minimap_display",
+      "type": "image",
+      "parent": "minimap_frame",
+      "rect": [
+        918,
+        462,
+        116,
+        116
+      ],
+      "anchor": "bottom_right",
+      "confidence": 0.95
+    }
+  ],
+  "node_sprites": [
+    {
+      "id": "player_status",
+      "fileName": "player_status.png",
+      "path": "E:\\unity3d-skilled-mcp\\demo\\Assets\\AI-Generate\\UGUI\\RainbowBattleHUD\\Sprites\\player_status.png",
+      "slice": [
+        13,
+        13,
+        13,
+        13
+      ],
+      "states": {
+        "normal": "player_status.png"
+      }
+    },
+    {
+      "id": "health_track",
+      "fileName": "health_track.png",
+      "path": "E:\\unity3d-skilled-mcp\\demo\\Assets\\AI-Generate\\UGUI\\RainbowBattleHUD\\Sprites\\health_track.png",
+      "slice": [
+        3,
+        3,
+        3,
+        3
+      ],
+      "states": {
+        "normal": "health_track.png"
+      }
+    },
+    {
+      "id": "health_fill",
+      "fileName": "health_fill.png",
+      "path": "E:\\unity3d-skilled-mcp\\demo\\Assets\\AI-Generate\\UGUI\\RainbowBattleHUD\\Sprites\\health_fill.png",
+      "slice": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "states": {
+        "normal": "health_fill.png"
+      }
+    },
+    {
+      "id": "energy_track",
+      "fileName": "energy_track.png",
+      "path": "E:\\unity3d-skilled-mcp\\demo\\Assets\\AI-Generate\\UGUI\\RainbowBattleHUD\\Sprites\\energy_track.png",
+      "slice": [
+        2,
+        2,
+        2,
+        2
+      ],
+      "states": {
+        "normal": "energy_track.png"
+      }
+    },
+    {
+      "id": "energy_fill",
+      "fileName": "energy_fill.png",
+      "path": "E:\\unity3d-skilled-mcp\\demo\\Assets\\AI-Generate\\UGUI\\RainbowBattleHUD\\Sprites\\energy_fill.png",
+      "slice": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "states": {
+        "normal": "energy_fill.png"
+      }
+    },
+    {
+      "id": "opponent_panel",
+      "fileName": "opponent_panel.png",
+      "path": "E:\\unity3d-skilled-mcp\\demo\\Assets\\AI-Generate\\UGUI\\RainbowBattleHUD\\Sprites\\opponent_panel.png",
+      "slice": [
+        7,
+        7,
+        7,
+        7
+      ],
+      "states": {
+        "normal": "opponent_panel.png"
+      }
+    },
+    {
+      "id": "counter_button",
+      "fileName": "counter_button.png",
+      "path": "E:\\unity3d-skilled-mcp\\demo\\Assets\\AI-Generate\\UGUI\\RainbowBattleHUD\\Sprites\\counter_button.png",
+      "slice": [
+        6,
+        6,
+        6,
+        6
+      ],
+      "states": {
+        "normal": "counter_button.png"
+      }
+    },
+    {
+      "id": "weapon_panel",
+      "fileName": "weapon_panel.png",
+      "path": "E:\\unity3d-skilled-mcp\\demo\\Assets\\AI-Generate\\UGUI\\RainbowBattleHUD\\Sprites\\weapon_panel.png",
+      "slice": [
+        12,
+        12,
+        12,
+        12
+      ],
+      "states": {
+        "normal": "weapon_panel.png"
+      }
+    },
+    {
+      "id": "weapon_track",
+      "fileName": "weapon_track.png",
+      "path": "E:\\unity3d-skilled-mcp\\demo\\Assets\\AI-Generate\\UGUI\\RainbowBattleHUD\\Sprites\\weapon_track.png",
+      "slice": [
+        3,
+        3,
+        3,
+        3
+      ],
+      "states": {
+        "normal": "weapon_track.png"
+      }
+    },
+    {
+      "id": "weapon_fill",
+      "fileName": "weapon_fill.png",
+      "path": "E:\\unity3d-skilled-mcp\\demo\\Assets\\AI-Generate\\UGUI\\RainbowBattleHUD\\Sprites\\weapon_fill.png",
+      "slice": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "states": {
+        "normal": "weapon_fill.png"
+      }
+    },
+    {
+      "id": "combo_panel",
+      "fileName": "combo_panel.png",
+      "path": "E:\\unity3d-skilled-mcp\\demo\\Assets\\AI-Generate\\UGUI\\RainbowBattleHUD\\Sprites\\combo_panel.png",
+      "slice": [
+        20,
+        20,
+        20,
+        20
+      ],
+      "states": {
+        "normal": "combo_panel.png"
+      }
+    },
+    {
+      "id": "combo_counter",
+      "fileName": "combo_counter.png",
+      "path": "E:\\unity3d-skilled-mcp\\demo\\Assets\\AI-Generate\\UGUI\\RainbowBattleHUD\\Sprites\\combo_counter.png",
+      "slice": [
+        13,
+        13,
+        13,
+        13
+      ],
+      "states": {
+        "normal": "combo_counter.png"
+      }
+    },
+    {
+      "id": "praise_button",
+      "fileName": "praise_button.png",
+      "path": "E:\\unity3d-skilled-mcp\\demo\\Assets\\AI-Generate\\UGUI\\RainbowBattleHUD\\Sprites\\praise_button.png",
+      "slice": [
+        14,
+        14,
+        14,
+        14
+      ],
+      "states": {
+        "normal": "praise_button.png"
+      }
+    },
+    {
+      "id": "cooldown_button",
+      "fileName": "cooldown_button.png",
+      "path": "E:\\unity3d-skilled-mcp\\demo\\Assets\\AI-Generate\\UGUI\\RainbowBattleHUD\\Sprites\\cooldown_button.png",
+      "slice": [
+        14,
+        14,
+        14,
+        14
+      ],
+      "states": {
+        "normal": "cooldown_button.png"
+      }
+    },
+    {
+      "id": "weapon_icon",
+      "fileName": "weapon_icon.png",
+      "path": "E:\\unity3d-skilled-mcp\\demo\\Assets\\AI-Generate\\UGUI\\RainbowBattleHUD\\Sprites\\weapon_icon.png",
+      "slice": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "states": {
+        "normal": "weapon_icon.png"
+      }
+    },
+    {
+      "id": "fire_skill",
+      "fileName": "fire_skill.png",
+      "path": "E:\\unity3d-skilled-mcp\\demo\\Assets\\AI-Generate\\UGUI\\RainbowBattleHUD\\Sprites\\fire_skill.png",
+      "slice": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "states": {
+        "normal": "fire_skill.png"
+      }
+    },
+    {
+      "id": "dash_skill",
+      "fileName": "dash_skill.png",
+      "path": "E:\\unity3d-skilled-mcp\\demo\\Assets\\AI-Generate\\UGUI\\RainbowBattleHUD\\Sprites\\dash_skill.png",
+      "slice": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "states": {
+        "normal": "dash_skill.png"
+      }
+    },
+    {
+      "id": "minimap_frame",
+      "fileName": "minimap_frame.png",
+      "path": "E:\\unity3d-skilled-mcp\\demo\\Assets\\AI-Generate\\UGUI\\RainbowBattleHUD\\Sprites\\minimap_frame.png",
+      "slice": [
+        8,
+        8,
+        8,
+        8
+      ],
+      "states": {
+        "normal": "minimap_frame.png"
+      }
+    },
+    {
+      "id": "minimap_display",
+      "fileName": "minimap_display.png",
+      "path": "E:\\unity3d-skilled-mcp\\demo\\Assets\\AI-Generate\\UGUI\\RainbowBattleHUD\\Sprites\\minimap_display.png",
+      "slice": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "states": {
+        "normal": "minimap_display.png"
+      }
+    }
+  ],
+  "missing_sprites": [],
+  "modify_records": [
+    {
+      "at": "2026-11-09T05:51:59.789Z",
+      "desc": "由效果图 hud_atlas.png 生成 RainbowBattleHUD"
+    }
+  ],
+  "uncertainties": [
+    {
+      "node": "minimap_display",
+      "field": "content",
+      "reason": "参考图只提供静态小地图，未提供场景导航数据；当前为静态示意。",
+      "alternatives": [
+        "接入实时地图"
+      ]
+    },
+    {
+      "node": "health_fill",
+      "field": "value",
+      "reason": "填充比例按图近似；数值尚未接入战斗数据。",
+      "alternatives": [
+        "绑定真实角色状态"
+      ]
+    },
+    {
+      "node": "fire_skill",
+      "field": "action",
+      "reason": "图示无法确定业务技能含义，仅建立可交互按钮。",
+      "alternatives": [
+        "绑定项目技能系统"
+      ]
+    }
+  ],
+  "low_confidence_nodes": []
+}

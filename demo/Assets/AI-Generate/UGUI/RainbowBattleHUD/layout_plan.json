@@ -1,0 +1,1189 @@
+{
+  "generator": "unity-ugui/layout",
+  "version": "1.0",
+  "screen": "RainbowBattleHUD",
+  "root": "UGUI_RainbowBattleHUD",
+  "reference_resolution": [
+    1080,
+    608
+  ],
+  "items": [
+    {
+      "id": "player_status",
+      "path": "UGUI_RainbowBattleHUD/player_status",
+      "type": "panel",
+      "rect": [
+        43,
+        18,
+        266,
+        60
+      ],
+      "anchorPreset": "top_left",
+      "stretch": false,
+      "doLayout": {
+        "anchored_pos": [
+          43,
+          -18,
+          0
+        ],
+        "size_delta": [
+          266,
+          60,
+          0
+        ],
+        "anchor_min": [
+          0,
+          1,
+          0
+        ],
+        "anchor_max": [
+          0,
+          1,
+          0
+        ],
+        "pivot": [
+          0,
+          1,
+          0
+        ]
+      },
+      "offsetMin": null,
+      "offsetMax": null
+    },
+    {
+      "id": "health_label",
+      "path": "UGUI_RainbowBattleHUD/player_status/health_label",
+      "type": "label",
+      "rect": [
+        57,
+        23,
+        80,
+        19
+      ],
+      "anchorPreset": "top_left",
+      "stretch": false,
+      "doLayout": {
+        "anchored_pos": [
+          14,
+          -5,
+          0
+        ],
+        "size_delta": [
+          80,
+          19,
+          0
+        ],
+        "anchor_min": [
+          0,
+          1,
+          0
+        ],
+        "anchor_max": [
+          0,
+          1,
+          0
+        ],
+        "pivot": [
+          0,
+          1,
+          0
+        ]
+      },
+      "offsetMin": null,
+      "offsetMax": null
+    },
+    {
+      "id": "health_value",
+      "path": "UGUI_RainbowBattleHUD/player_status/health_value",
+      "type": "label",
+      "rect": [
+        238,
+        23,
+        27,
+        20
+      ],
+      "anchorPreset": "top_left",
+      "stretch": false,
+      "doLayout": {
+        "anchored_pos": [
+          195,
+          -5,
+          0
+        ],
+        "size_delta": [
+          27,
+          20,
+          0
+        ],
+        "anchor_min": [
+          0,
+          1,
+          0
+        ],
+        "anchor_max": [
+          0,
+          1,
+          0
+        ],
+        "pivot": [
+          0,
+          1,
+          0
+        ]
+      },
+      "offsetMin": null,
+      "offsetMax": null
+    },
+    {
+      "id": "attack_value",
+      "path": "UGUI_RainbowBattleHUD/player_status/attack_value",
+      "type": "label",
+      "rect": [
+        278,
+        23,
+        25,
+        20
+      ],
+      "anchorPreset": "top_left",
+      "stretch": false,
+      "doLayout": {
+        "anchored_pos": [
+          235,
+          -5,
+          0
+        ],
+        "size_delta": [
+          25,
+          20,
+          0
+        ],
+        "anchor_min": [
+          0,
+          1,
+          0
+        ],
+        "anchor_max": [
+          0,
+          1,
+          0
+        ],
+        "pivot": [
+          0,
+          1,
+          0
+        ]
+      },
+      "offsetMin": null,
+      "offsetMax": null
+    },
+    {
+      "id": "health_track",
+      "path": "UGUI_RainbowBattleHUD/player_status/health_track",
+      "type": "panel",
+      "rect": [
+        57,
+        44,
+        206,
+        12
+      ],
+      "anchorPreset": "top_left",
+      "stretch": false,
+      "doLayout": {
+        "anchored_pos": [
+          14,
+          -26,
+          0
+        ],
+        "size_delta": [
+          206,
+          12,
+          0
+        ],
+        "anchor_min": [
+          0,
+          1,
+          0
+        ],
+        "anchor_max": [
+          0,
+          1,
+          0
+        ],
+        "pivot": [
+          0,
+          1,
+          0
+        ]
+      },
+      "offsetMin": null,
+      "offsetMax": null
+    },
+    {
+      "id": "health_fill",
+      "path": "UGUI_RainbowBattleHUD/player_status/health_track/health_fill",
+      "type": "progress",
+      "rect": [
+        60,
+        47,
+        200,
+        6
+      ],
+      "anchorPreset": "top_left",
+      "stretch": false,
+      "doLayout": {
+        "anchored_pos": [
+          3,
+          -3,
+          0
+        ],
+        "size_delta": [
+          200,
+          6,
+          0
+        ],
+        "anchor_min": [
+          0,
+          1,
+          0
+        ],
+        "anchor_max": [
+          0,
+          1,
+          0
+        ],
+        "pivot": [
+          0,
+          1,
+          0
+        ]
+      },
+      "offsetMin": null,
+      "offsetMax": null
+    },
+    {
+      "id": "energy_label",
+      "path": "UGUI_RainbowBattleHUD/player_status/energy_label",
+      "type": "label",
+      "rect": [
+        57,
+        57,
+        40,
+        17
+      ],
+      "anchorPreset": "top_left",
+      "stretch": false,
+      "doLayout": {
+        "anchored_pos": [
+          14,
+          -39,
+          0
+        ],
+        "size_delta": [
+          40,
+          17,
+          0
+        ],
+        "anchor_min": [
+          0,
+          1,
+          0
+        ],
+        "anchor_max": [
+          0,
+          1,
+          0
+        ],
+        "pivot": [
+          0,
+          1,
+          0
+        ]
+      },
+      "offsetMin": null,
+      "offsetMax": null
+    },
+    {
+      "id": "energy_track",
+      "path": "UGUI_RainbowBattleHUD/player_status/energy_track",
+      "type": "panel",
+      "rect": [
+        99,
+        62,
+        164,
+        9
+      ],
+      "anchorPreset": "top_left",
+      "stretch": false,
+      "doLayout": {
+        "anchored_pos": [
+          56,
+          -44,
+          0
+        ],
+        "size_delta": [
+          164,
+          9,
+          0
+        ],
+        "anchor_min": [
+          0,
+          1,
+          0
+        ],
+        "anchor_max": [
+          0,
+          1,
+          0
+        ],
+        "pivot": [
+          0,
+          1,
+          0
+        ]
+      },
+      "offsetMin": null,
+      "offsetMax": null
+    },
+    {
+      "id": "energy_fill",
+      "path": "UGUI_RainbowBattleHUD/player_status/energy_track/energy_fill",
+      "type": "progress",
+      "rect": [
+        101,
+        64,
+        160,
+        5
+      ],
+      "anchorPreset": "top_left",
+      "stretch": false,
+      "doLayout": {
+        "anchored_pos": [
+          2,
+          -2,
+          0
+        ],
+        "size_delta": [
+          160,
+          5,
+          0
+        ],
+        "anchor_min": [
+          0,
+          1,
+          0
+        ],
+        "anchor_max": [
+          0,
+          1,
+          0
+        ],
+        "pivot": [
+          0,
+          1,
+          0
+        ]
+      },
+      "offsetMin": null,
+      "offsetMax": null
+    },
+    {
+      "id": "energy_value",
+      "path": "UGUI_RainbowBattleHUD/player_status/energy_value",
+      "type": "label",
+      "rect": [
+        277,
+        52,
+        27,
+        22
+      ],
+      "anchorPreset": "top_left",
+      "stretch": false,
+      "doLayout": {
+        "anchored_pos": [
+          234,
+          -34,
+          0
+        ],
+        "size_delta": [
+          27,
+          22,
+          0
+        ],
+        "anchor_min": [
+          0,
+          1,
+          0
+        ],
+        "anchor_max": [
+          0,
+          1,
+          0
+        ],
+        "pivot": [
+          0,
+          1,
+          0
+        ]
+      },
+      "offsetMin": null,
+      "offsetMax": null
+    },
+    {
+      "id": "opponent_panel",
+      "path": "UGUI_RainbowBattleHUD/opponent_panel",
+      "type": "panel",
+      "rect": [
+        911,
+        19,
+        130,
+        28
+      ],
+      "anchorPreset": "top_right",
+      "stretch": false,
+      "doLayout": {
+        "anchored_pos": [
+          -39,
+          -19,
+          0
+        ],
+        "size_delta": [
+          130,
+          28,
+          0
+        ],
+        "anchor_min": [
+          1,
+          1,
+          0
+        ],
+        "anchor_max": [
+          1,
+          1,
+          0
+        ],
+        "pivot": [
+          1,
+          1,
+          0
+        ]
+      },
+      "offsetMin": null,
+      "offsetMax": null
+    },
+    {
+      "id": "opponent_name",
+      "path": "UGUI_RainbowBattleHUD/opponent_panel/opponent_name",
+      "type": "label",
+      "rect": [
+        918,
+        22,
+        117,
+        22
+      ],
+      "anchorPreset": "top_right",
+      "stretch": false,
+      "doLayout": {
+        "anchored_pos": [
+          -6,
+          -3,
+          0
+        ],
+        "size_delta": [
+          117,
+          22,
+          0
+        ],
+        "anchor_min": [
+          1,
+          1,
+          0
+        ],
+        "anchor_max": [
+          1,
+          1,
+          0
+        ],
+        "pivot": [
+          1,
+          1,
+          0
+        ]
+      },
+      "offsetMin": null,
+      "offsetMax": null
+    },
+    {
+      "id": "counter_button",
+      "path": "UGUI_RainbowBattleHUD/counter_button",
+      "type": "button",
+      "rect": [
+        968,
+        50,
+        73,
+        26
+      ],
+      "anchorPreset": "top_right",
+      "stretch": false,
+      "doLayout": {
+        "anchored_pos": [
+          -39,
+          -50,
+          0
+        ],
+        "size_delta": [
+          73,
+          26,
+          0
+        ],
+        "anchor_min": [
+          1,
+          1,
+          0
+        ],
+        "anchor_max": [
+          1,
+          1,
+          0
+        ],
+        "pivot": [
+          1,
+          1,
+          0
+        ]
+      },
+      "offsetMin": null,
+      "offsetMax": null
+    },
+    {
+      "id": "weapon_panel",
+      "path": "UGUI_RainbowBattleHUD/weapon_panel",
+      "type": "panel",
+      "rect": [
+        44,
+        526,
+        214,
+        63
+      ],
+      "anchorPreset": "bottom_left",
+      "stretch": false,
+      "doLayout": {
+        "anchored_pos": [
+          44,
+          19,
+          0
+        ],
+        "size_delta": [
+          214,
+          63,
+          0
+        ],
+        "anchor_min": [
+          0,
+          0,
+          0
+        ],
+        "anchor_max": [
+          0,
+          0,
+          0
+        ],
+        "pivot": [
+          0,
+          0,
+          0
+        ]
+      },
+      "offsetMin": null,
+      "offsetMax": null
+    },
+    {
+      "id": "weapon_track",
+      "path": "UGUI_RainbowBattleHUD/weapon_panel/weapon_track",
+      "type": "panel",
+      "rect": [
+        96,
+        563,
+        151,
+        11
+      ],
+      "anchorPreset": "bottom_left",
+      "stretch": false,
+      "doLayout": {
+        "anchored_pos": [
+          52,
+          15,
+          0
+        ],
+        "size_delta": [
+          151,
+          11,
+          0
+        ],
+        "anchor_min": [
+          0,
+          0,
+          0
+        ],
+        "anchor_max": [
+          0,
+          0,
+          0
+        ],
+        "pivot": [
+          0,
+          0,
+          0
+        ]
+      },
+      "offsetMin": null,
+      "offsetMax": null
+    },
+    {
+      "id": "weapon_fill",
+      "path": "UGUI_RainbowBattleHUD/weapon_panel/weapon_track/weapon_fill",
+      "type": "progress",
+      "rect": [
+        99,
+        566,
+        145,
+        5
+      ],
+      "anchorPreset": "bottom_left",
+      "stretch": false,
+      "doLayout": {
+        "anchored_pos": [
+          3,
+          3,
+          0
+        ],
+        "size_delta": [
+          145,
+          5,
+          0
+        ],
+        "anchor_min": [
+          0,
+          0,
+          0
+        ],
+        "anchor_max": [
+          0,
+          0,
+          0
+        ],
+        "pivot": [
+          0,
+          0,
+          0
+        ]
+      },
+      "offsetMin": null,
+      "offsetMax": null
+    },
+    {
+      "id": "weapon_caption",
+      "path": "UGUI_RainbowBattleHUD/weapon_panel/weapon_caption",
+      "type": "label",
+      "rect": [
+        103,
+        537,
+        137,
+        22
+      ],
+      "anchorPreset": "bottom_left",
+      "stretch": false,
+      "doLayout": {
+        "anchored_pos": [
+          59,
+          30,
+          0
+        ],
+        "size_delta": [
+          137,
+          22,
+          0
+        ],
+        "anchor_min": [
+          0,
+          0,
+          0
+        ],
+        "anchor_max": [
+          0,
+          0,
+          0
+        ],
+        "pivot": [
+          0,
+          0,
+          0
+        ]
+      },
+      "offsetMin": null,
+      "offsetMax": null
+    },
+    {
+      "id": "combo_panel",
+      "path": "UGUI_RainbowBattleHUD/combo_panel",
+      "type": "panel",
+      "rect": [
+        386,
+        532,
+        308,
+        58
+      ],
+      "anchorPreset": "bottom_center",
+      "stretch": false,
+      "doLayout": {
+        "anchored_pos": [
+          0,
+          18,
+          0
+        ],
+        "size_delta": [
+          308,
+          58,
+          0
+        ],
+        "anchor_min": [
+          0.5,
+          0,
+          0
+        ],
+        "anchor_max": [
+          0.5,
+          0,
+          0
+        ],
+        "pivot": [
+          0.5,
+          0,
+          0
+        ]
+      },
+      "offsetMin": null,
+      "offsetMax": null
+    },
+    {
+      "id": "combo_counter",
+      "path": "UGUI_RainbowBattleHUD/combo_panel/combo_counter",
+      "type": "panel",
+      "rect": [
+        393,
+        538,
+        79,
+        45
+      ],
+      "anchorPreset": "bottom_center",
+      "stretch": false,
+      "doLayout": {
+        "anchored_pos": [
+          -107.5,
+          7,
+          0
+        ],
+        "size_delta": [
+          79,
+          45,
+          0
+        ],
+        "anchor_min": [
+          0.5,
+          0,
+          0
+        ],
+        "anchor_max": [
+          0.5,
+          0,
+          0
+        ],
+        "pivot": [
+          0.5,
+          0,
+          0
+        ]
+      },
+      "offsetMin": null,
+      "offsetMax": null
+    },
+    {
+      "id": "combo_label",
+      "path": "UGUI_RainbowBattleHUD/combo_panel/combo_counter/combo_label",
+      "type": "label",
+      "rect": [
+        403,
+        540,
+        59,
+        16
+      ],
+      "anchorPreset": "bottom_center",
+      "stretch": false,
+      "doLayout": {
+        "anchored_pos": [
+          0,
+          27,
+          0
+        ],
+        "size_delta": [
+          59,
+          16,
+          0
+        ],
+        "anchor_min": [
+          0.5,
+          0,
+          0
+        ],
+        "anchor_max": [
+          0.5,
+          0,
+          0
+        ],
+        "pivot": [
+          0.5,
+          0,
+          0
+        ]
+      },
+      "offsetMin": null,
+      "offsetMax": null
+    },
+    {
+      "id": "combo_value",
+      "path": "UGUI_RainbowBattleHUD/combo_panel/combo_counter/combo_value",
+      "type": "label",
+      "rect": [
+        405,
+        556,
+        55,
+        26
+      ],
+      "anchorPreset": "bottom_center",
+      "stretch": false,
+      "doLayout": {
+        "anchored_pos": [
+          0,
+          1,
+          0
+        ],
+        "size_delta": [
+          55,
+          26,
+          0
+        ],
+        "anchor_min": [
+          0.5,
+          0,
+          0
+        ],
+        "anchor_max": [
+          0.5,
+          0,
+          0
+        ],
+        "pivot": [
+          0.5,
+          0,
+          0
+        ]
+      },
+      "offsetMin": null,
+      "offsetMax": null
+    },
+    {
+      "id": "praise_button",
+      "path": "UGUI_RainbowBattleHUD/combo_panel/praise_button",
+      "type": "button",
+      "rect": [
+        482,
+        539,
+        102,
+        44
+      ],
+      "anchorPreset": "bottom_center",
+      "stretch": false,
+      "doLayout": {
+        "anchored_pos": [
+          -7,
+          7,
+          0
+        ],
+        "size_delta": [
+          102,
+          44,
+          0
+        ],
+        "anchor_min": [
+          0.5,
+          0,
+          0
+        ],
+        "anchor_max": [
+          0.5,
+          0,
+          0
+        ],
+        "pivot": [
+          0.5,
+          0,
+          0
+        ]
+      },
+      "offsetMin": null,
+      "offsetMax": null
+    },
+    {
+      "id": "cooldown_button",
+      "path": "UGUI_RainbowBattleHUD/combo_panel/cooldown_button",
+      "type": "button",
+      "rect": [
+        593,
+        540,
+        92,
+        43
+      ],
+      "anchorPreset": "bottom_center",
+      "stretch": false,
+      "doLayout": {
+        "anchored_pos": [
+          99,
+          7,
+          0
+        ],
+        "size_delta": [
+          92,
+          43,
+          0
+        ],
+        "anchor_min": [
+          0.5,
+          0,
+          0
+        ],
+        "anchor_max": [
+          0.5,
+          0,
+          0
+        ],
+        "pivot": [
+          0.5,
+          0,
+          0
+        ]
+      },
+      "offsetMin": null,
+      "offsetMax": null
+    },
+    {
+      "id": "weapon_icon",
+      "path": "UGUI_RainbowBattleHUD/weapon_panel/weapon_icon",
+      "type": "button",
+      "rect": [
+        51,
+        530,
+        45,
+        50
+      ],
+      "anchorPreset": "bottom_left",
+      "stretch": false,
+      "doLayout": {
+        "anchored_pos": [
+          7,
+          9,
+          0
+        ],
+        "size_delta": [
+          45,
+          50,
+          0
+        ],
+        "anchor_min": [
+          0,
+          0,
+          0
+        ],
+        "anchor_max": [
+          0,
+          0,
+          0
+        ],
+        "pivot": [
+          0,
+          0,
+          0
+        ]
+      },
+      "offsetMin": null,
+      "offsetMax": null
+    },
+    {
+      "id": "fire_skill",
+      "path": "UGUI_RainbowBattleHUD/fire_skill",
+      "type": "button",
+      "rect": [
+        793,
+        539,
+        46,
+        47
+      ],
+      "anchorPreset": "bottom_right",
+      "stretch": false,
+      "doLayout": {
+        "anchored_pos": [
+          -241,
+          22,
+          0
+        ],
+        "size_delta": [
+          46,
+          47,
+          0
+        ],
+        "anchor_min": [
+          1,
+          0,
+          0
+        ],
+        "anchor_max": [
+          1,
+          0,
+          0
+        ],
+        "pivot": [
+          1,
+          0,
+          0
+        ]
+      },
+      "offsetMin": null,
+      "offsetMax": null
+    },
+    {
+      "id": "dash_skill",
+      "path": "UGUI_RainbowBattleHUD/dash_skill",
+      "type": "button",
+      "rect": [
+        846,
+        539,
+        47,
+        47
+      ],
+      "anchorPreset": "bottom_right",
+      "stretch": false,
+      "doLayout": {
+        "anchored_pos": [
+          -187,
+          22,
+          0
+        ],
+        "size_delta": [
+          47,
+          47,
+          0
+        ],
+        "anchor_min": [
+          1,
+          0,
+          0
+        ],
+        "anchor_max": [
+          1,
+          0,
+          0
+        ],
+        "pivot": [
+          1,
+          0,
+          0
+        ]
+      },
+      "offsetMin": null,
+      "offsetMax": null
+    },
+    {
+      "id": "minimap_frame",
+      "path": "UGUI_RainbowBattleHUD/minimap_frame",
+      "type": "panel",
+      "rect": [
+        910,
+        451,
+        132,
+        137
+      ],
+      "anchorPreset": "bottom_right",
+      "stretch": false,
+      "doLayout": {
+        "anchored_pos": [
+          -38,
+          20,
+          0
+        ],
+        "size_delta": [
+          132,
+          137,
+          0
+        ],
+        "anchor_min": [
+          1,
+          0,
+          0
+        ],
+        "anchor_max": [
+          1,
+          0,
+          0
+        ],
+        "pivot": [
+          1,
+          0,
+          0
+        ]
+      },
+      "offsetMin": null,
+      "offsetMax": null
+    },
+    {
+      "id": "minimap_display",
+      "path": "UGUI_RainbowBattleHUD/minimap_frame/minimap_display",
+      "type": "image",
+      "rect": [
+        918,
+        462,
+        116,
+        116
+      ],
+      "anchorPreset": "bottom_right",
+      "stretch": false,
+      "doLayout": {
+        "anchored_pos": [
+          -8,
+          10,
+          0
+        ],
+        "size_delta": [
+          116,
+          116,
+          0
+        ],
+        "anchor_min": [
+          1,
+          0,
+          0
+        ],
+        "anchor_max": [
+          1,
+          0,
+          0
+        ],
+        "pivot": [
+          1,
+          0,
+          0
+        ]
+      },
+      "offsetMin": null,
+      "offsetMax": null
+    }
+  ],
+  "produced_at": "2026-11-09T06:12:21.460Z"
+}

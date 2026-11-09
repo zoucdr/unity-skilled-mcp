@@ -1,0 +1,507 @@
+{
+  "generator": "unity-ugui/slice",
+  "version": "1.0",
+  "screen": "RainbowBattleHUD",
+  "reference_image": "C:/Users/Administrator/WorkBuddy/2026-11-09-12-26-39/hud_atlas.png",
+  "image_size": [
+    1080,
+    608
+  ],
+  "produced_at": "2026-11-09T05:50:50.171Z",
+  "items": [
+    {
+      "id": "player_status",
+      "path": "E:\\unity3d-skilled-mcp\\demo\\Assets\\AI-Generate\\UGUI\\RainbowBattleHUD\\Sprites\\player_status.png",
+      "source": "crop",
+      "rect": [
+        43,
+        18,
+        266,
+        60
+      ],
+      "specRect": [
+        43,
+        18,
+        266,
+        60
+      ],
+      "slice": [
+        13,
+        13,
+        13,
+        13
+      ],
+      "states": {
+        "normal": "E:\\unity3d-skilled-mcp\\demo\\Assets\\AI-Generate\\UGUI\\RainbowBattleHUD\\Sprites\\player_status.png"
+      }
+    },
+    {
+      "id": "health_track",
+      "path": "E:\\unity3d-skilled-mcp\\demo\\Assets\\AI-Generate\\UGUI\\RainbowBattleHUD\\Sprites\\health_track.png",
+      "source": "crop",
+      "rect": [
+        57,
+        44,
+        206,
+        12
+      ],
+      "specRect": [
+        57,
+        44,
+        206,
+        12
+      ],
+      "slice": [
+        3,
+        3,
+        3,
+        3
+      ],
+      "states": {
+        "normal": "E:\\unity3d-skilled-mcp\\demo\\Assets\\AI-Generate\\UGUI\\RainbowBattleHUD\\Sprites\\health_track.png"
+      }
+    },
+    {
+      "id": "health_fill",
+      "path": "E:\\unity3d-skilled-mcp\\demo\\Assets\\AI-Generate\\UGUI\\RainbowBattleHUD\\Sprites\\health_fill.png",
+      "source": "crop",
+      "rect": [
+        60,
+        47,
+        200,
+        6
+      ],
+      "specRect": [
+        60,
+        47,
+        200,
+        6
+      ],
+      "slice": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "states": {
+        "normal": "E:\\unity3d-skilled-mcp\\demo\\Assets\\AI-Generate\\UGUI\\RainbowBattleHUD\\Sprites\\health_fill.png"
+      }
+    },
+    {
+      "id": "energy_track",
+      "path": "E:\\unity3d-skilled-mcp\\demo\\Assets\\AI-Generate\\UGUI\\RainbowBattleHUD\\Sprites\\energy_track.png",
+      "source": "crop",
+      "rect": [
+        99,
+        62,
+        164,
+        9
+      ],
+      "specRect": [
+        99,
+        62,
+        164,
+        9
+      ],
+      "slice": [
+        2,
+        2,
+        2,
+        2
+      ],
+      "states": {
+        "normal": "E:\\unity3d-skilled-mcp\\demo\\Assets\\AI-Generate\\UGUI\\RainbowBattleHUD\\Sprites\\energy_track.png"
+      }
+    },
+    {
+      "id": "energy_fill",
+      "path": "E:\\unity3d-skilled-mcp\\demo\\Assets\\AI-Generate\\UGUI\\RainbowBattleHUD\\Sprites\\energy_fill.png",
+      "source": "crop",
+      "rect": [
+        101,
+        64,
+        160,
+        5
+      ],
+      "specRect": [
+        101,
+        64,
+        160,
+        5
+      ],
+      "slice": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "states": {
+        "normal": "E:\\unity3d-skilled-mcp\\demo\\Assets\\AI-Generate\\UGUI\\RainbowBattleHUD\\Sprites\\energy_fill.png"
+      }
+    },
+    {
+      "id": "opponent_panel",
+      "path": "E:\\unity3d-skilled-mcp\\demo\\Assets\\AI-Generate\\UGUI\\RainbowBattleHUD\\Sprites\\opponent_panel.png",
+      "source": "crop",
+      "rect": [
+        911,
+        19,
+        130,
+        28
+      ],
+      "specRect": [
+        911,
+        19,
+        130,
+        28
+      ],
+      "slice": [
+        7,
+        7,
+        7,
+        7
+      ],
+      "states": {
+        "normal": "E:\\unity3d-skilled-mcp\\demo\\Assets\\AI-Generate\\UGUI\\RainbowBattleHUD\\Sprites\\opponent_panel.png"
+      }
+    },
+    {
+      "id": "counter_button",
+      "path": "E:\\unity3d-skilled-mcp\\demo\\Assets\\AI-Generate\\UGUI\\RainbowBattleHUD\\Sprites\\counter_button.png",
+      "source": "crop",
+      "rect": [
+        968,
+        50,
+        73,
+        26
+      ],
+      "specRect": [
+        968,
+        50,
+        73,
+        26
+      ],
+      "slice": [
+        6,
+        6,
+        6,
+        6
+      ],
+      "states": {
+        "normal": "E:\\unity3d-skilled-mcp\\demo\\Assets\\AI-Generate\\UGUI\\RainbowBattleHUD\\Sprites\\counter_button.png"
+      }
+    },
+    {
+      "id": "weapon_panel",
+      "path": "E:\\unity3d-skilled-mcp\\demo\\Assets\\AI-Generate\\UGUI\\RainbowBattleHUD\\Sprites\\weapon_panel.png",
+      "source": "crop",
+      "rect": [
+        44,
+        526,
+        214,
+        63
+      ],
+      "specRect": [
+        44,
+        526,
+        214,
+        63
+      ],
+      "slice": [
+        12,
+        12,
+        12,
+        12
+      ],
+      "states": {
+        "normal": "E:\\unity3d-skilled-mcp\\demo\\Assets\\AI-Generate\\UGUI\\RainbowBattleHUD\\Sprites\\weapon_panel.png"
+      }
+    },
+    {
+      "id": "weapon_track",
+      "path": "E:\\unity3d-skilled-mcp\\demo\\Assets\\AI-Generate\\UGUI\\RainbowBattleHUD\\Sprites\\weapon_track.png",
+      "source": "crop",
+      "rect": [
+        96,
+        563,
+        151,
+        11
+      ],
+      "specRect": [
+        96,
+        563,
+        151,
+        11
+      ],
+      "slice": [
+        3,
+        3,
+        3,
+        3
+      ],
+      "states": {
+        "normal": "E:\\unity3d-skilled-mcp\\demo\\Assets\\AI-Generate\\UGUI\\RainbowBattleHUD\\Sprites\\weapon_track.png"
+      }
+    },
+    {
+      "id": "weapon_fill",
+      "path": "E:\\unity3d-skilled-mcp\\demo\\Assets\\AI-Generate\\UGUI\\RainbowBattleHUD\\Sprites\\weapon_fill.png",
+      "source": "crop",
+      "rect": [
+        99,
+        566,
+        145,
+        5
+      ],
+      "specRect": [
+        99,
+        566,
+        145,
+        5
+      ],
+      "slice": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "states": {
+        "normal": "E:\\unity3d-skilled-mcp\\demo\\Assets\\AI-Generate\\UGUI\\RainbowBattleHUD\\Sprites\\weapon_fill.png"
+      }
+    },
+    {
+      "id": "combo_panel",
+      "path": "E:\\unity3d-skilled-mcp\\demo\\Assets\\AI-Generate\\UGUI\\RainbowBattleHUD\\Sprites\\combo_panel.png",
+      "source": "crop",
+      "rect": [
+        386,
+        532,
+        308,
+        58
+      ],
+      "specRect": [
+        386,
+        532,
+        308,
+        58
+      ],
+      "slice": [
+        20,
+        20,
+        20,
+        20
+      ],
+      "states": {
+        "normal": "E:\\unity3d-skilled-mcp\\demo\\Assets\\AI-Generate\\UGUI\\RainbowBattleHUD\\Sprites\\combo_panel.png"
+      }
+    },
+    {
+      "id": "combo_counter",
+      "path": "E:\\unity3d-skilled-mcp\\demo\\Assets\\AI-Generate\\UGUI\\RainbowBattleHUD\\Sprites\\combo_counter.png",
+      "source": "crop",
+      "rect": [
+        393,
+        538,
+        79,
+        45
+      ],
+      "specRect": [
+        393,
+        538,
+        79,
+        45
+      ],
+      "slice": [
+        13,
+        13,
+        13,
+        13
+      ],
+      "states": {
+        "normal": "E:\\unity3d-skilled-mcp\\demo\\Assets\\AI-Generate\\UGUI\\RainbowBattleHUD\\Sprites\\combo_counter.png"
+      }
+    },
+    {
+      "id": "praise_button",
+      "path": "E:\\unity3d-skilled-mcp\\demo\\Assets\\AI-Generate\\UGUI\\RainbowBattleHUD\\Sprites\\praise_button.png",
+      "source": "crop",
+      "rect": [
+        482,
+        539,
+        102,
+        44
+      ],
+      "specRect": [
+        482,
+        539,
+        102,
+        44
+      ],
+      "slice": [
+        14,
+        14,
+        14,
+        14
+      ],
+      "states": {
+        "normal": "E:\\unity3d-skilled-mcp\\demo\\Assets\\AI-Generate\\UGUI\\RainbowBattleHUD\\Sprites\\praise_button.png"
+      }
+    },
+    {
+      "id": "cooldown_button",
+      "path": "E:\\unity3d-skilled-mcp\\demo\\Assets\\AI-Generate\\UGUI\\RainbowBattleHUD\\Sprites\\cooldown_button.png",
+      "source": "crop",
+      "rect": [
+        593,
+        540,
+        92,
+        43
+      ],
+      "specRect": [
+        593,
+        540,
+        92,
+        43
+      ],
+      "slice": [
+        14,
+        14,
+        14,
+        14
+      ],
+      "states": {
+        "normal": "E:\\unity3d-skilled-mcp\\demo\\Assets\\AI-Generate\\UGUI\\RainbowBattleHUD\\Sprites\\cooldown_button.png"
+      }
+    },
+    {
+      "id": "weapon_icon",
+      "path": "E:\\unity3d-skilled-mcp\\demo\\Assets\\AI-Generate\\UGUI\\RainbowBattleHUD\\Sprites\\weapon_icon.png",
+      "source": "crop",
+      "rect": [
+        51,
+        530,
+        45,
+        50
+      ],
+      "specRect": [
+        51,
+        530,
+        45,
+        50
+      ],
+      "slice": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "states": {
+        "normal": "E:\\unity3d-skilled-mcp\\demo\\Assets\\AI-Generate\\UGUI\\RainbowBattleHUD\\Sprites\\weapon_icon.png"
+      }
+    },
+    {
+      "id": "fire_skill",
+      "path": "E:\\unity3d-skilled-mcp\\demo\\Assets\\AI-Generate\\UGUI\\RainbowBattleHUD\\Sprites\\fire_skill.png",
+      "source": "crop",
+      "rect": [
+        793,
+        539,
+        46,
+        47
+      ],
+      "specRect": [
+        793,
+        539,
+        46,
+        47
+      ],
+      "slice": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "states": {
+        "normal": "E:\\unity3d-skilled-mcp\\demo\\Assets\\AI-Generate\\UGUI\\RainbowBattleHUD\\Sprites\\fire_skill.png"
+      }
+    },
+    {
+      "id": "dash_skill",
+      "path": "E:\\unity3d-skilled-mcp\\demo\\Assets\\AI-Generate\\UGUI\\RainbowBattleHUD\\Sprites\\dash_skill.png",
+      "source": "crop",
+      "rect": [
+        846,
+        539,
+        47,
+        47
+      ],
+      "specRect": [
+        846,
+        539,
+        47,
+        47
+      ],
+      "slice": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "states": {
+        "normal": "E:\\unity3d-skilled-mcp\\demo\\Assets\\AI-Generate\\UGUI\\RainbowBattleHUD\\Sprites\\dash_skill.png"
+      }
+    },
+    {
+      "id": "minimap_frame",
+      "path": "E:\\unity3d-skilled-mcp\\demo\\Assets\\AI-Generate\\UGUI\\RainbowBattleHUD\\Sprites\\minimap_frame.png",
+      "source": "crop",
+      "rect": [
+        910,
+        451,
+        132,
+        137
+      ],
+      "specRect": [
+        910,
+        451,
+        132,
+        137
+      ],
+      "slice": [
+        8,
+        8,
+        8,
+        8
+      ],
+      "states": {
+        "normal": "E:\\unity3d-skilled-mcp\\demo\\Assets\\AI-Generate\\UGUI\\RainbowBattleHUD\\Sprites\\minimap_frame.png"
+      }
+    },
+    {
+      "id": "minimap_display",
+      "path": "E:\\unity3d-skilled-mcp\\demo\\Assets\\AI-Generate\\UGUI\\RainbowBattleHUD\\Sprites\\minimap_display.png",
+      "source": "crop",
+      "rect": [
+        918,
+        462,
+        116,
+        116
+      ],
+      "specRect": [
+        918,
+        462,
+        116,
+        116
+      ],
+      "slice": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "states": {
+        "normal": "E:\\unity3d-skilled-mcp\\demo\\Assets\\AI-Generate\\UGUI\\RainbowBattleHUD\\Sprites\\minimap_display.png"
+      }
+    }
+  ]
+}

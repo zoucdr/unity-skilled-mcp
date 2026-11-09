@@ -1,0 +1,860 @@
+{
+  "spec_version": "1.0",
+  "name": "RainbowBattleHUD",
+  "source": {
+    "image": "hud_atlas.png",
+    "width": 1080,
+    "height": 608,
+    "note": "依据参考图重绘干净底板并提取技能图标；不覆盖原有3D场景。"
+  },
+  "canvas": {
+    "reference_resolution": [
+      1080,
+      608
+    ],
+    "scale_mode": "ScaleWithScreenSize",
+    "match": 0.5,
+    "root": "Canvas",
+    "sorting_order": 200
+  },
+  "palette": {
+    "primary": "#4C8DFF",
+    "surface": "#244B66",
+    "on_surface": "#FFFFFF",
+    "border": "#FFFFFF22",
+    "radius": 12,
+    "font_size": 18
+  },
+  "nodes": [
+    {
+      "anchor": "top_left",
+      "slice": [
+        13,
+        13,
+        13,
+        13
+      ],
+      "asset": "crop",
+      "states": [
+        "normal"
+      ],
+      "confidence": 0.95,
+      "visible": true,
+      "interactive": false,
+      "id": "player_status",
+      "type": "panel",
+      "rect": [
+        43,
+        18,
+        266,
+        60
+      ],
+      "order": 0,
+      "parent": null,
+      "depth": 0
+    },
+    {
+      "anchor": "top_left",
+      "slice": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "asset": "none",
+      "states": [
+        "normal"
+      ],
+      "confidence": 0.95,
+      "visible": true,
+      "interactive": false,
+      "id": "health_label",
+      "type": "label",
+      "rect": [
+        57,
+        23,
+        80,
+        19
+      ],
+      "order": 1,
+      "text": "生命值",
+      "font_size": 15,
+      "color": "#FFFFFF",
+      "parent": "player_status",
+      "style": {
+        "text_align": "middle_left"
+      },
+      "depth": 0
+    },
+    {
+      "anchor": "top_left",
+      "slice": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "asset": "none",
+      "states": [
+        "normal"
+      ],
+      "confidence": 0.95,
+      "visible": true,
+      "interactive": false,
+      "id": "health_value",
+      "type": "label",
+      "rect": [
+        238,
+        23,
+        27,
+        20
+      ],
+      "order": 2,
+      "text": "82",
+      "font_size": 18,
+      "color": "#FFFFFF",
+      "parent": "player_status",
+      "depth": 0
+    },
+    {
+      "anchor": "top_left",
+      "slice": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "asset": "none",
+      "states": [
+        "normal"
+      ],
+      "confidence": 0.95,
+      "visible": true,
+      "interactive": false,
+      "id": "attack_value",
+      "type": "label",
+      "rect": [
+        278,
+        23,
+        25,
+        20
+      ],
+      "order": 3,
+      "text": "46",
+      "font_size": 17,
+      "color": "#FFFFFF",
+      "parent": "player_status",
+      "depth": 0
+    },
+    {
+      "anchor": "top_left",
+      "slice": [
+        3,
+        3,
+        3,
+        3
+      ],
+      "asset": "crop",
+      "states": [
+        "normal"
+      ],
+      "confidence": 0.95,
+      "visible": true,
+      "interactive": false,
+      "id": "health_track",
+      "type": "panel",
+      "rect": [
+        57,
+        44,
+        206,
+        12
+      ],
+      "order": 4,
+      "parent": "player_status",
+      "depth": 0
+    },
+    {
+      "anchor": "top_left",
+      "slice": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "asset": "crop",
+      "states": [
+        "normal"
+      ],
+      "confidence": 0.95,
+      "visible": true,
+      "interactive": false,
+      "id": "health_fill",
+      "type": "progress",
+      "rect": [
+        60,
+        47,
+        200,
+        6
+      ],
+      "order": 5,
+      "value": 0.86,
+      "parent": "health_track",
+      "depth": 0
+    },
+    {
+      "anchor": "top_left",
+      "slice": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "asset": "none",
+      "states": [
+        "normal"
+      ],
+      "confidence": 0.95,
+      "visible": true,
+      "interactive": false,
+      "id": "energy_label",
+      "type": "label",
+      "rect": [
+        57,
+        57,
+        40,
+        17
+      ],
+      "order": 6,
+      "text": "能量",
+      "font_size": 14,
+      "color": "#FFFFFF",
+      "parent": "player_status",
+      "style": {
+        "text_align": "middle_left"
+      },
+      "depth": 0
+    },
+    {
+      "anchor": "top_left",
+      "slice": [
+        2,
+        2,
+        2,
+        2
+      ],
+      "asset": "crop",
+      "states": [
+        "normal"
+      ],
+      "confidence": 0.95,
+      "visible": true,
+      "interactive": false,
+      "id": "energy_track",
+      "type": "panel",
+      "rect": [
+        99,
+        62,
+        164,
+        9
+      ],
+      "order": 7,
+      "parent": "player_status",
+      "depth": 0
+    },
+    {
+      "anchor": "top_left",
+      "slice": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "asset": "crop",
+      "states": [
+        "normal"
+      ],
+      "confidence": 0.95,
+      "visible": true,
+      "interactive": false,
+      "id": "energy_fill",
+      "type": "progress",
+      "rect": [
+        101,
+        64,
+        160,
+        5
+      ],
+      "order": 8,
+      "value": 0.46,
+      "parent": "energy_track",
+      "depth": 0
+    },
+    {
+      "anchor": "top_left",
+      "slice": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "asset": "none",
+      "states": [
+        "normal"
+      ],
+      "confidence": 0.95,
+      "visible": true,
+      "interactive": false,
+      "id": "energy_value",
+      "type": "label",
+      "rect": [
+        277,
+        52,
+        27,
+        22
+      ],
+      "order": 9,
+      "text": "46",
+      "font_size": 18,
+      "color": "#FFFFFF",
+      "parent": "player_status",
+      "depth": 0
+    },
+    {
+      "anchor": "top_right",
+      "slice": [
+        7,
+        7,
+        7,
+        7
+      ],
+      "asset": "crop",
+      "states": [
+        "normal"
+      ],
+      "confidence": 0.95,
+      "visible": true,
+      "interactive": false,
+      "id": "opponent_panel",
+      "type": "panel",
+      "rect": [
+        911,
+        19,
+        130,
+        28
+      ],
+      "order": 10,
+      "parent": null,
+      "depth": 0
+    },
+    {
+      "anchor": "top_right",
+      "slice": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "asset": "none",
+      "states": [
+        "normal"
+      ],
+      "confidence": 0.95,
+      "visible": true,
+      "interactive": false,
+      "id": "opponent_name",
+      "type": "label",
+      "rect": [
+        918,
+        22,
+        117,
+        22
+      ],
+      "order": 11,
+      "text": "对手：调皮怪兽",
+      "font_size": 14,
+      "color": "#FFFFFF",
+      "parent": "opponent_panel",
+      "depth": 0
+    },
+    {
+      "anchor": "top_right",
+      "slice": [
+        6,
+        6,
+        6,
+        6
+      ],
+      "asset": "crop",
+      "states": [
+        "normal"
+      ],
+      "confidence": 0.95,
+      "visible": true,
+      "interactive": true,
+      "id": "counter_button",
+      "type": "button",
+      "rect": [
+        968,
+        50,
+        73,
+        26
+      ],
+      "order": 12,
+      "text": "反击机会",
+      "font_size": 15,
+      "parent": null,
+      "depth": 0
+    },
+    {
+      "anchor": "bottom_left",
+      "slice": [
+        12,
+        12,
+        12,
+        12
+      ],
+      "asset": "crop",
+      "states": [
+        "normal"
+      ],
+      "confidence": 0.95,
+      "visible": true,
+      "interactive": false,
+      "id": "weapon_panel",
+      "type": "panel",
+      "rect": [
+        44,
+        526,
+        214,
+        63
+      ],
+      "order": 13,
+      "parent": null,
+      "depth": 0
+    },
+    {
+      "anchor": "bottom_left",
+      "slice": [
+        3,
+        3,
+        3,
+        3
+      ],
+      "asset": "crop",
+      "states": [
+        "normal"
+      ],
+      "confidence": 0.95,
+      "visible": true,
+      "interactive": false,
+      "id": "weapon_track",
+      "type": "panel",
+      "rect": [
+        96,
+        563,
+        151,
+        11
+      ],
+      "order": 14,
+      "parent": "weapon_panel",
+      "depth": 0
+    },
+    {
+      "anchor": "bottom_left",
+      "slice": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "asset": "crop",
+      "states": [
+        "normal"
+      ],
+      "confidence": 0.95,
+      "visible": true,
+      "interactive": false,
+      "id": "weapon_fill",
+      "type": "progress",
+      "rect": [
+        99,
+        566,
+        145,
+        5
+      ],
+      "order": 15,
+      "value": 0.82,
+      "parent": "weapon_track",
+      "depth": 0
+    },
+    {
+      "anchor": "bottom_left",
+      "slice": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "asset": "none",
+      "states": [
+        "normal"
+      ],
+      "confidence": 0.95,
+      "visible": true,
+      "interactive": false,
+      "id": "weapon_caption",
+      "type": "label",
+      "rect": [
+        103,
+        537,
+        137,
+        22
+      ],
+      "order": 16,
+      "text": "彩虹之刃",
+      "font_size": 15,
+      "color": "#FFFFFF",
+      "parent": "weapon_panel",
+      "style": {
+        "text_align": "middle_left"
+      },
+      "depth": 0
+    },
+    {
+      "anchor": "bottom_center",
+      "slice": [
+        20,
+        20,
+        20,
+        20
+      ],
+      "asset": "crop",
+      "states": [
+        "normal"
+      ],
+      "confidence": 0.95,
+      "visible": true,
+      "interactive": false,
+      "id": "combo_panel",
+      "type": "panel",
+      "rect": [
+        386,
+        532,
+        308,
+        58
+      ],
+      "order": 17,
+      "parent": null,
+      "depth": 0
+    },
+    {
+      "anchor": "bottom_center",
+      "slice": [
+        13,
+        13,
+        13,
+        13
+      ],
+      "asset": "crop",
+      "states": [
+        "normal"
+      ],
+      "confidence": 0.95,
+      "visible": true,
+      "interactive": false,
+      "id": "combo_counter",
+      "type": "panel",
+      "rect": [
+        393,
+        538,
+        79,
+        45
+      ],
+      "order": 18,
+      "parent": "combo_panel",
+      "depth": 0
+    },
+    {
+      "anchor": "bottom_center",
+      "slice": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "asset": "none",
+      "states": [
+        "normal"
+      ],
+      "confidence": 0.95,
+      "visible": true,
+      "interactive": false,
+      "id": "combo_label",
+      "type": "label",
+      "rect": [
+        403,
+        540,
+        59,
+        16
+      ],
+      "order": 19,
+      "text": "连击",
+      "font_size": 14,
+      "color": "#FFFFFF",
+      "parent": "combo_counter",
+      "depth": 0
+    },
+    {
+      "anchor": "bottom_center",
+      "slice": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "asset": "none",
+      "states": [
+        "normal"
+      ],
+      "confidence": 0.95,
+      "visible": true,
+      "interactive": false,
+      "id": "combo_value",
+      "type": "label",
+      "rect": [
+        405,
+        556,
+        55,
+        26
+      ],
+      "order": 20,
+      "text": "17",
+      "font_size": 23,
+      "color": "#FFFFFF",
+      "parent": "combo_counter",
+      "depth": 0
+    },
+    {
+      "anchor": "bottom_center",
+      "slice": [
+        14,
+        14,
+        14,
+        14
+      ],
+      "asset": "crop",
+      "states": [
+        "normal"
+      ],
+      "confidence": 0.95,
+      "visible": true,
+      "interactive": true,
+      "id": "praise_button",
+      "type": "button",
+      "rect": [
+        482,
+        539,
+        102,
+        44
+      ],
+      "order": 21,
+      "text": "太棒了！",
+      "font_size": 22,
+      "parent": "combo_panel",
+      "depth": 0
+    },
+    {
+      "anchor": "bottom_center",
+      "slice": [
+        14,
+        14,
+        14,
+        14
+      ],
+      "asset": "crop",
+      "states": [
+        "normal"
+      ],
+      "confidence": 0.95,
+      "visible": true,
+      "interactive": true,
+      "id": "cooldown_button",
+      "type": "button",
+      "rect": [
+        593,
+        540,
+        92,
+        43
+      ],
+      "order": 22,
+      "text": "技能冷却",
+      "font_size": 18,
+      "parent": "combo_panel",
+      "depth": 0
+    },
+    {
+      "anchor": "bottom_left",
+      "slice": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "asset": "crop",
+      "states": [
+        "normal"
+      ],
+      "confidence": 0.95,
+      "visible": true,
+      "interactive": true,
+      "id": "weapon_icon",
+      "type": "button",
+      "rect": [
+        51,
+        530,
+        45,
+        50
+      ],
+      "order": 23,
+      "text": "",
+      "parent": "weapon_panel",
+      "depth": 0
+    },
+    {
+      "anchor": "bottom_right",
+      "slice": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "asset": "crop",
+      "states": [
+        "normal"
+      ],
+      "confidence": 0.95,
+      "visible": true,
+      "interactive": true,
+      "id": "fire_skill",
+      "type": "button",
+      "rect": [
+        793,
+        539,
+        46,
+        47
+      ],
+      "order": 24,
+      "text": "",
+      "parent": null,
+      "depth": 0
+    },
+    {
+      "anchor": "bottom_right",
+      "slice": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "asset": "crop",
+      "states": [
+        "normal"
+      ],
+      "confidence": 0.95,
+      "visible": true,
+      "interactive": true,
+      "id": "dash_skill",
+      "type": "button",
+      "rect": [
+        846,
+        539,
+        47,
+        47
+      ],
+      "order": 25,
+      "text": "",
+      "parent": null,
+      "depth": 0
+    },
+    {
+      "anchor": "bottom_right",
+      "slice": [
+        8,
+        8,
+        8,
+        8
+      ],
+      "asset": "crop",
+      "states": [
+        "normal"
+      ],
+      "confidence": 0.95,
+      "visible": true,
+      "interactive": false,
+      "id": "minimap_frame",
+      "type": "panel",
+      "rect": [
+        910,
+        451,
+        132,
+        137
+      ],
+      "order": 26,
+      "parent": null,
+      "depth": 0
+    },
+    {
+      "anchor": "bottom_right",
+      "slice": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "asset": "crop",
+      "states": [
+        "normal"
+      ],
+      "confidence": 0.95,
+      "visible": true,
+      "interactive": false,
+      "id": "minimap_display",
+      "type": "image",
+      "rect": [
+        918,
+        462,
+        116,
+        116
+      ],
+      "order": 27,
+      "parent": "minimap_frame",
+      "depth": 0
+    }
+  ],
+  "uncertainties": [
+    {
+      "node": "minimap_display",
+      "field": "content",
+      "reason": "参考图只提供静态小地图，未提供场景导航数据；当前为静态示意。",
+      "alternatives": [
+        "接入实时地图"
+      ]
+    },
+    {
+      "node": "health_fill",
+      "field": "value",
+      "reason": "填充比例按图近似；数值尚未接入战斗数据。",
+      "alternatives": [
+        "绑定真实角色状态"
+      ]
+    },
+    {
+      "node": "fire_skill",
+      "field": "action",
+      "reason": "图示无法确定业务技能含义，仅建立可交互按钮。",
+      "alternatives": [
+        "绑定项目技能系统"
+      ]
+    }
+  ]
+}
