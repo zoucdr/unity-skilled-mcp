@@ -32,3 +32,4 @@ SECRET_CLEANUP_GUIDE.md
 # UISourceGen smoke-test generated images (not source)
 /docs/uisourcegen_smoke/towel/
 /docs/uisourcegen_smoke/towel.html
+/.dumate
