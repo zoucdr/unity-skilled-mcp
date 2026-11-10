@@ -20,6 +20,7 @@ namespace UniMcp
             TestBuiltInSchemas();
             TestCapabilityModule();
             TestConnectionInfo();
+            TestMultiProjectIni();
             TestSkillInstallPrompt();
             TestResourceList();
             TestFolderResourceList();
@@ -728,11 +729,11 @@ namespace UniMcp
             {
                 string path = Path.Combine(directory, "connection.ini");
                 info.WriteIni(path);
-                Check(File.ReadAllText(path, Encoding.UTF8) == info.ToIni(), "首次写入 UTF-8 INI");
+                Check(File.ReadAllText(path, Encoding.UTF8).StartsWith(info.ToIni(), StringComparison.Ordinal), "首次写入 UTF-8 INI");
                 byte[] bytes = File.ReadAllBytes(path);
                 Check(!(bytes[0] == 0xef && bytes[1] == 0xbb && bytes[2] == 0xbf), "UTF-8 无 BOM");
                 loopback.WriteIni(path);
-                Check(File.ReadAllText(path, Encoding.UTF8) == loopback.ToIni(), "端口重启原子替换");
+                Check(File.ReadAllText(path, Encoding.UTF8).StartsWith(loopback.ToIni(), StringComparison.Ordinal), "端口重启原子替换");
                 Check(Directory.GetFiles(directory).Length == 1, "成功后无临时文件残留");
                 using (var locked = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.None))
                 {
@@ -742,13 +743,56 @@ namespace UniMcp
                     catch (UnauthorizedAccessException) { failed = true; }
                     Check(failed, "锁定目标写入必须失败");
                 }
-                Check(File.ReadAllText(path, Encoding.UTF8) == loopback.ToIni(), "替换失败保留旧 INI");
+                Check(File.ReadAllText(path, Encoding.UTF8).StartsWith(loopback.ToIni(), StringComparison.Ordinal), "替换失败保留旧 INI");
                 Check(Directory.GetFiles(directory).Length == 1, "失败后清理临时文件");
             }
             finally
             {
                 Directory.Delete(directory, true);
             }
+        }
+
+        // 多工程共用一份 skill.ini：按工程分组、同名工程按路径哈希区分、重写替换旧节且保留未知节。
+        private static void TestMultiProjectIni()
+        {
+            string directory = Path.Combine(Path.GetTempPath(), "unity-mcp-multi-ini-" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(directory);
+            try
+            {
+                string path = Path.Combine(directory, "skill.ini");
+                // 用当前进程 id 冒充存活实例，避免陈旧节清理把其它工程节删掉。
+                int pid = System.Diagnostics.Process.GetCurrentProcess().Id;
+                var alpha = new McpConnectionInfo(new[] { "http://localhost:8000/" }, "D:/Alpha", pid, DateTime.UtcNow);
+                var beta = new McpConnectionInfo(new[] { "http://localhost:8001/" }, "D:/Beta", pid, DateTime.UtcNow);
+                alpha.WriteIni(path);
+                beta.WriteIni(path);
+                string ini = File.ReadAllText(path, Encoding.UTF8);
+                Check(ini.Contains("[project:Alpha]\n", StringComparison.Ordinal)
+                    && ini.Contains("[project:Beta]\n", StringComparison.Ordinal), "多工程各写入独立节");
+                Check(ini.StartsWith("[unity3d-skilled-mcp]\nbase_url=http://localhost:8001\n", StringComparison.Ordinal),
+                    "别名节记录最近启动的实例");
+
+                // 同名工程不同路径：第二个改用 #路径哈希 节名，互不覆盖。
+                var alphaTwin = new McpConnectionInfo(new[] { "http://localhost:8002/" }, "E:/Alpha", pid, DateTime.UtcNow);
+                alphaTwin.WriteIni(path);
+                string merged = File.ReadAllText(path, Encoding.UTF8);
+                Check(System.Text.RegularExpressions.Regex.Matches(merged, @"\[project:Alpha").Count == 2
+                    && merged.Contains("port=8002", StringComparison.Ordinal)
+                    && merged.Contains("port=8000", StringComparison.Ordinal), "同名工程按路径哈希区分，互不覆盖");
+
+                // 同工程重写：旧节被替换，不重复累积。
+                alpha.WriteIni(path);
+                string rewritten = File.ReadAllText(path, Encoding.UTF8);
+                Check(System.Text.RegularExpressions.Regex.Matches(rewritten, @"\[project:Alpha\]\n").Count == 1
+                    && rewritten.Contains("port=8000", StringComparison.Ordinal), "同工程重写替换旧节");
+
+                // 未知外部节原样保留。
+                File.AppendAllText(path, "\n[external-tool]\nvalue=keep\n", Encoding.UTF8);
+                beta.WriteIni(path);
+                Check(File.ReadAllText(path, Encoding.UTF8).Contains("[external-tool]\nvalue=keep\n", StringComparison.Ordinal),
+                    "未知节原样保留");
+            }
+            finally { Directory.Delete(directory, true); }
         }
     }
 }

@@ -182,6 +182,42 @@ test('discover 保留未知扩展字段；旧 INI 的 script_language 被忽略'
   assert.match(result.stderr, /测试项目/);
 });
 
+test('多工程 INI：按工程名/实例/路径选择，歧义时报错', async t => {
+  const f = await fixture(t);
+  const g = await fixture(t);
+  g.state.discovery = { project_path: path.resolve('其它项目'), instance_id: 'instance-2' };
+  const section = (name, srv, projectPath, instance) => [
+    '[' + name + ']',
+    'base_url=' + srv.base, 'port=' + srv.port,
+    'project_path=' + path.resolve(projectPath),
+    'project_name=' + name.replace('project:', ''),
+    'instance_id=' + instance,
+  ].join('\n');
+  await f.writeIni([
+    section('unity3d-skilled-mcp', f, '测试项目', 'instance-1'),
+    section('project:Alpha', f, '测试项目', 'instance-1'),
+    section('project:Beta', g, '其它项目', 'instance-2'),
+  ].join('\n\n') + '\n');
+
+  // 按工程名选择 Beta：落到第二个服务。
+  assert.equal(success(await f.run(['--project', 'Beta', 'discover'])).port, g.port);
+  // 按实例选择 instance-2：同样落到第二个服务。
+  assert.equal(success(await f.run(['--instance-id', 'instance-2', 'discover'])).port, g.port);
+  // 默认注入的 --expected-project（测试项目）落到 Alpha。
+  assert.equal(success(await f.run(['discover'])).port, f.port);
+  // 未知名工程在发请求前失败，不猜测。
+  failure(await f.run(['--project', 'Gamma', 'discover']), 2);
+  const before = g.requests.length + f.requests.length;
+
+  // 两个工程同路径：无法按路径消歧，报错列出候选。
+  await f.writeIni([
+    section('project:Alpha', f, '测试项目', 'instance-1'),
+    section('project:Clone', g, '测试项目', 'instance-2'),
+  ].join('\n\n') + '\n');
+  failure(await f.run(['discover']), 2);
+  assert.equal(f.requests.length + g.requests.length, before);
+});
+
 test('list 只取摘要；schema 按需获取并编码工具名', async t => {
   const f = await fixture(t);
   const tools = success(await f.run(['list']));

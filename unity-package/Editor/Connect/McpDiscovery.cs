@@ -756,19 +756,35 @@ namespace UniMcp
         internal string UnityVersion { get; }
         /// <summary>当前生效的渲染管线：Built-in / URP / HDRP / 自定义管线资源类型全名。</summary>
         internal string RenderPipeline { get; }
+        /// <summary>工程根文件夹名，用于多工程 INI 的节名与技能侧 --project 选择。</summary>
+        internal string ProjectName { get; }
 
         // 实例标识存在 SessionState 里：跨域重载存活，编辑器进程退出即失效。
         // 这样脚本重编译、进出 Play Mode 都不会改变绑定，客户端无需重新发现。
         private const string InstanceIdKey = "UniMcp.InstanceId";
 
         private static string instanceId;
+        private static bool instanceIdRestored;
 
         /// <summary>
         /// 本编辑器会话的实例标识，用于执行绑定的 X-Mcp-Instance-Id 校验。
         /// 域重载后保持不变（SessionState 持久化），只有编辑器进程退出重开才更换，
         /// 因此热重载不会让已连接的客户端产生"实例漂移"、被迫重新拉取工具与详情。
+        /// 主线程首次访问时主动恢复：McpService 自动启动与本类 InitializeOnLoadMethod
+        /// 的先后顺序不定，若不主动恢复，服务启动写 INI 时会落盘一个临时新 guid，
+        /// 与 SessionState 的稳定值不一致，客户端就会误判实例漂移、重走发现流程。
         /// </summary>
-        internal static string InstanceId => instanceId ?? (instanceId = Guid.NewGuid().ToString("N"));
+        internal static string InstanceId
+        {
+            get
+            {
+                if (!instanceIdRestored && UnityEditorInternal.InternalEditorUtility.CurrentThreadIsMainThread())
+                {
+                    RestoreInstanceId();
+                }
+                return instanceId ?? (instanceId = Guid.NewGuid().ToString("N"));
+            }
+        }
 
         /// <summary>
         /// 当前域的标识，每次域重载重新生成；用于判定落盘任务是否属于"已经死掉的域"。
@@ -777,12 +793,15 @@ namespace UniMcp
         internal static readonly string DomainId = Guid.NewGuid().ToString("N");
 
         /// <summary>
-        /// 每次域加载后（主线程）从 SessionState 取回实例标识。
-        /// 放在 InitializeOnLoad 而非 getter 里懒加载，避免后台线程查询任务状态时触碰编辑器 API。
+        /// 每次域加载后（主线程）从 SessionState 取回实例标识；只恢复一次。
+        /// 既由 InitializeOnLoad 调用，也由 InstanceId getter 在主线程首次访问时调用，
+        /// 避免两者先后顺序不定导致的临时新标识落盘。后台线程不触碰编辑器 API。
         /// </summary>
         [InitializeOnLoadMethod]
         private static void RestoreInstanceId()
         {
+            if (instanceIdRestored) return;
+            instanceIdRestored = true;
             string stored = SessionState.GetString(InstanceIdKey, string.Empty);
             if (string.IsNullOrEmpty(stored))
             {
@@ -809,6 +828,7 @@ namespace UniMcp
             BaseUrl = uri.GetLeftPart(UriPartial.Authority);
             Port = uri.Port;
             ProjectPath = projectPath;
+            ProjectName = ProjectNameOf(projectPath);
             ProcessId = processId;
             UpdatedAt = updatedAt.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture);
             MaxDetails = McpDiscoverySnapshot.NormalizeMaxDetails(maxDetails);
@@ -867,12 +887,33 @@ namespace UniMcp
             }.ToString();
         }
 
+        /// <summary>兼容别名节名：始终记录最近启动的实例，供旧客户端按名字读取。</summary>
+        internal const string AliasSection = "unity3d-skilled-mcp";
+        /// <summary>按工程分组的节名前缀；节名形如 project:工程名（同名冲突时追加 #路径哈希）。</summary>
+        internal const string ProjectSectionPrefix = "project:";
+        // 跨进程写入互斥体名：多个 Unity 实例同时改写同一份 skill.ini 时串行化。
+        private const string IniMutexName = "UniMcp.SkillIni";
+
+        /// <summary>别名节：不指定工程时的兜底，等价于“最近启动的实例”。</summary>
         internal string ToIni()
         {
-            return "[unity3d-skilled-mcp]\n"
-                + "base_url=" + BaseUrl + "\n"
+            return "[" + AliasSection + "]\n" + SectionBody();
+        }
+
+        /// <summary>按工程分组的节；sectionName 由 MergeIni 依工程名与冲突情况决定。</summary>
+        internal string ToProjectIni(string sectionName)
+        {
+            return "[" + sectionName + "]\n" + SectionBody();
+        }
+
+        // 别名节与工程节字段顺序保持一致；project_name / instance_id 供多工程选择与陈旧节判定。
+        private string SectionBody()
+        {
+            return "base_url=" + BaseUrl + "\n"
                 + "port=" + Port.ToString(CultureInfo.InvariantCulture) + "\n"
                 + "project_path=" + IniValue(ProjectPath) + "\n"
+                + "project_name=" + IniValue(ProjectName) + "\n"
+                + "instance_id=" + InstanceId + "\n"
                 + "unity_version=" + IniValue(UnityVersion) + "\n"
                 + "render_pipeline=" + IniValue(RenderPipeline) + "\n"
                 + "skill_dir=" + IniValue(SkillDir) + "\n"
@@ -887,18 +928,50 @@ namespace UniMcp
             return (value ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n");
         }
 
+        /// <summary>
+        /// 多工程共用一份 skill.ini：读取旧文件 → 删同 project_path 的旧节与进程已亡的陈旧节
+        /// → 重写别名节与本工程节 → 原样保留其它未知节 → 原子替换。全程持命名互斥体，避免多实例互相覆盖。
+        /// </summary>
         internal void WriteIni(string path)
         {
             // 目录按需创建（默认发布目录 ~/.unity-mcp 首次启动时可能不存在）。
             string directory = Path.GetDirectoryName(path);
             if (!string.IsNullOrEmpty(directory)) Directory.CreateDirectory(directory);
+            System.Threading.Mutex mutex = null;
+            bool acquired = false;
+            try
+            {
+                try { mutex = new System.Threading.Mutex(false, IniMutexName); }
+                catch (Exception ex) { UnityEngine.Debug.LogWarning("[UniMcp] 创建 INI 写入互斥体失败（退化为无锁写入）: " + ex.Message); }
+                if (mutex != null)
+                {
+                    try { acquired = mutex.WaitOne(TimeSpan.FromSeconds(5)); }
+                    catch (System.Threading.AbandonedMutexException) { acquired = true; }
+                    if (!acquired) throw new IOException("获取 skill.ini 写入互斥体超时");
+                }
+                // 读取失败（如目标被独占）直接抛出，不覆盖旧文件。
+                string existing = File.Exists(path) ? File.ReadAllText(path, Encoding.UTF8) : null;
+                WriteAtomic(path, MergeIni(existing));
+            }
+            finally
+            {
+                if (mutex != null)
+                {
+                    if (acquired) { try { mutex.ReleaseMutex(); } catch (ApplicationException) { } }
+                    mutex.Dispose();
+                }
+            }
+        }
+
+        private static void WriteAtomic(string path, string content)
+        {
             // 同目录临时文件保证同卷原子替换；失败时保留旧文件，不使用先删后移的降级路径。
             string temporaryPath = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
             try
             {
                 using (var stream = new FileStream(temporaryPath, FileMode.CreateNew, FileAccess.Write, FileShare.None))
                 {
-                    byte[] bytes = new UTF8Encoding(false).GetBytes(ToIni());
+                    byte[] bytes = new UTF8Encoding(false).GetBytes(content);
                     stream.Write(bytes, 0, bytes.Length);
                     stream.Flush(true);
                 }
@@ -908,6 +981,145 @@ namespace UniMcp
             finally
             {
                 if (File.Exists(temporaryPath)) File.Delete(temporaryPath);
+            }
+        }
+
+        private string MergeIni(string existing)
+        {
+            var blocks = ParseIni(existing);
+            string ourKey = ProjectKey(ProjectPath);
+            var preamble = new List<IniBlock>();
+            var kept = new List<IniBlock>();
+            foreach (var block in blocks)
+            {
+                if (block.Name == null) { preamble.Add(block); continue; }
+                // 别名节稍后按本实例重写。
+                if (string.Equals(block.Name, AliasSection, StringComparison.OrdinalIgnoreCase)) continue;
+                if (block.Name.StartsWith(ProjectSectionPrefix, StringComparison.OrdinalIgnoreCase))
+                {
+                    string otherPath = IniField(block, "project_path");
+                    // 同一工程的旧节（含改端口前）直接替换。
+                    if (otherPath != null && string.Equals(ProjectKey(otherPath), ourKey, StringComparison.Ordinal)) continue;
+                    // 进程已亡的陈旧节直接清理。
+                    if (!IsProcessAlive(IniField(block, "process_id"))) continue;
+                }
+                kept.Add(block);
+            }
+            string baseName = ProjectSectionPrefix + SanitizeSectionName(ProjectName);
+            bool nameTaken = kept.Any(b => string.Equals(b.Name, baseName, StringComparison.OrdinalIgnoreCase));
+            string sectionName = nameTaken ? baseName + "#" + PathHash(ProjectPath) : baseName;
+
+            var parts = new List<string>();
+            foreach (var block in preamble)
+            {
+                string body = string.Join("\n", block.Lines).Trim('\n');
+                if (body.Trim().Length > 0) parts.Add(body);
+            }
+            parts.Add(ToIni().TrimEnd('\n'));
+            parts.Add(ToProjectIni(sectionName).TrimEnd('\n'));
+            foreach (var block in kept)
+                parts.Add(("[" + block.Name + "]\n" + string.Join("\n", block.Lines)).Trim('\n'));
+            return string.Join("\n\n", parts) + "\n";
+        }
+
+        // 极简 INI 解析：仅按节切块并保留原始行，未知节与注释原样回写。
+        private sealed class IniBlock
+        {
+            internal string Name;
+            internal readonly List<string> Lines = new List<string>();
+        }
+
+        private static List<IniBlock> ParseIni(string text)
+        {
+            var blocks = new List<IniBlock>();
+            var current = new IniBlock();
+            if (!string.IsNullOrEmpty(text))
+            {
+                foreach (string raw in text.Replace("\r\n", "\n").Replace('\r', '\n').Split('\n'))
+                {
+                    string trimmed = raw.Trim();
+                    if (trimmed.Length >= 3 && trimmed[0] == '[' && trimmed[trimmed.Length - 1] == ']'
+                        && trimmed.IndexOf('=') < 0)
+                    {
+                        blocks.Add(current);
+                        current = new IniBlock { Name = trimmed.Substring(1, trimmed.Length - 2).Trim() };
+                    }
+                    else
+                    {
+                        current.Lines.Add(raw);
+                    }
+                }
+            }
+            blocks.Add(current);
+            return blocks;
+        }
+
+        private static string IniField(IniBlock block, string key)
+        {
+            foreach (string line in block.Lines)
+            {
+                string trimmed = line.Trim();
+                if (trimmed.Length == 0 || trimmed[0] == '#' || trimmed[0] == ';') continue;
+                int equals = trimmed.IndexOf('=');
+                int colon = trimmed.IndexOf(':');
+                int separator = equals < 0 ? colon : colon < 0 ? equals : Math.Min(equals, colon);
+                if (separator <= 0) continue;
+                if (string.Equals(trimmed.Substring(0, separator).Trim(), key, StringComparison.OrdinalIgnoreCase))
+                    return trimmed.Substring(separator + 1).Trim();
+            }
+            return null;
+        }
+
+        // 进程已亡的工程节视为陈旧：仅在确定进程不存在时清理，判断不了则保留。
+        private static bool IsProcessAlive(string processIdText)
+        {
+            if (string.IsNullOrEmpty(processIdText)) return true;
+            int pid;
+            if (!int.TryParse(processIdText, NumberStyles.Integer, CultureInfo.InvariantCulture, out pid) || pid <= 0)
+                return true;
+            try
+            {
+                using (System.Diagnostics.Process.GetProcessById(pid)) { }
+                return true;
+            }
+            catch (ArgumentException) { return false; }
+            catch (Exception) { return true; }
+        }
+
+        // 工程根文件夹名；取不到时用固定名，避免空节名。
+        private static string ProjectNameOf(string projectPath)
+        {
+            string trimmed = (projectPath ?? string.Empty).TrimEnd('/', '\\');
+            string name = Path.GetFileName(trimmed);
+            return string.IsNullOrEmpty(name) ? "unity-project" : name;
+        }
+
+        // 节名里不允许出现 [ ] # = 与控制字符（# 留给同名冲突的路径哈希后缀）。
+        private static string SanitizeSectionName(string name)
+        {
+            var builder = new StringBuilder((name ?? string.Empty).Length);
+            foreach (char c in name ?? string.Empty)
+                builder.Append(c == '[' || c == ']' || c == '#' || c == '=' || char.IsControl(c) ? '_' : c);
+            return builder.ToString();
+        }
+
+        // Windows 路径大小写不敏感；统一分隔符并归一大小写后作工程键。
+        private static string ProjectKey(string path)
+        {
+            if (string.IsNullOrEmpty(path)) return string.Empty;
+            string normalized = path.Replace('\\', '/').TrimEnd('/');
+            return Path.DirectorySeparatorChar == '\\' ? normalized.ToLowerInvariant() : normalized;
+        }
+
+        // 同名工程在不同路径时用其工程键前 8 位十六进制哈希区分节名。
+        private static string PathHash(string path)
+        {
+            using (var sha = System.Security.Cryptography.SHA256.Create())
+            {
+                byte[] hash = sha.ComputeHash(Encoding.UTF8.GetBytes(ProjectKey(path)));
+                var builder = new StringBuilder(8);
+                for (int i = 0; i < 4; i++) builder.Append(hash[i].ToString("x2", CultureInfo.InvariantCulture));
+                return builder.ToString();
             }
         }
     }

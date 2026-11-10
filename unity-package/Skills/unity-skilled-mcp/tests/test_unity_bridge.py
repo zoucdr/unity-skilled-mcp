@@ -432,5 +432,50 @@ class TestCli(Base):
                          self.cli(*(base + ["--tag", "demo", "--members", "[]"])).returncode)
 
 
+class TestMultiProject(Base):
+    """多工程共用一份 INI：按工程名/实例/路径选择，歧义时报错。"""
+
+    @staticmethod
+    def _section(name, srv, project_path, instance):
+        return "[{}]\nbase_url={}\nport={}\nproject_path={}\nproject_name={}\ninstance_id={}".format(
+            name, srv.base, srv.port, project_path, name.replace("project:", ""), instance)
+
+    def test_按工程名与实例选择且歧义报错(self):
+        other = Fixture()
+        self.addCleanup(other.close)
+        other_path = str(Path("其它项目").resolve())
+        other.discovery_overrides = {"project_path": other_path, "instance_id": "instance-2"}
+        Path(self.fx.ini).write_text("\n\n".join([
+            self._section("unity3d-skilled-mcp", self.fx, PROJECT, INSTANCE),
+            self._section("project:Alpha", self.fx, PROJECT, INSTANCE),
+            self._section("project:Beta", other, other_path, "instance-2"),
+        ]) + "\n", encoding="utf-8")
+
+        base = ["--ini", self.fx.ini]
+        # 按工程名选择 Beta：落到第二个服务。
+        proc = self.cli(*(base + ["--project", "Beta", "discover"]))
+        self.assertEqual(0, proc.returncode, proc.stderr)
+        self.assertEqual(other.port, json.loads(proc.stdout)["port"])
+        # 按实例选择 instance-2：同样落到第二个服务。
+        proc = self.cli(*(base + ["--instance-id", "instance-2", "discover"]))
+        self.assertEqual(other.port, json.loads(proc.stdout)["port"])
+        # 显式 --expected-project 落到 Alpha。
+        proc = self.cli(*(base + ["--expected-project", PROJECT, "discover"]))
+        self.assertEqual(self.fx.port, json.loads(proc.stdout)["port"])
+        # 未知名工程在发请求前失败，不猜测。
+        self.assertEqual(unity_bridge.EXIT_PARAM,
+                         self.cli(*(base + ["--project", "Gamma", "discover"])).returncode)
+
+        # 两个工程同路径：无法按路径消歧，报错列出候选且不发请求。
+        before = len(self.fx.requests) + len(other.requests)
+        Path(self.fx.ini).write_text("\n\n".join([
+            self._section("project:Alpha", self.fx, PROJECT, INSTANCE),
+            self._section("project:Clone", other, PROJECT, "instance-2"),
+        ]) + "\n", encoding="utf-8")
+        self.assertEqual(unity_bridge.EXIT_PARAM,
+                         self.cli(*(base + ["--expected-project", PROJECT, "discover"])).returncode)
+        self.assertEqual(before, len(self.fx.requests) + len(other.requests))
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

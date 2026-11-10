@@ -52,7 +52,7 @@ In Unity, open **Window → MCP → Status**, review the service settings, and s
 ~/.unity-mcp/skill.ini
 ```
 
-Changing the port takes effect when the service is restarted. The most recently started Unity project publishes the active connection information to this file.
+Changing the port takes effect when the service is restarted. **Multiple Unity projects share this single file**: besides the compatibility alias section `[unity3d-skilled-mcp]` (which records the most recently started instance), each project gets its own `[project:<name>]` section that never overwrites the others. When two projects share a name but not a path, the section is disambiguated as `project:<name>#<path-hash>`. Select a target project with `--project NAME` (or the `UNITY_MCP_PROJECT` environment variable); otherwise the client matches by `--expected-project` or the current directory and errors with the candidate list when more than one target is possible.
 
 ### 3. Install the Skill
 

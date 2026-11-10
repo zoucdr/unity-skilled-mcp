@@ -159,12 +159,68 @@ def read_ini(filename):
     try:
         with open(os.path.expanduser(filename), encoding="utf-8-sig") as stream:
             config.read_file(stream)
-        section = config["unity3d-skilled-mcp"]
-    except (OSError, UnicodeError, configparser.Error, KeyError) as exc:
+    except (OSError, UnicodeError, configparser.Error) as exc:
         raise ClientError("无法读取连接配置 {}：{}；请在 Unity 中启动服务。".format(filename, exc),
                           EXIT_PARAM)
+    return config
+
+
+ALIAS_SECTION = "unity3d-skilled-mcp"
+PROJECT_SECTION_PREFIX = "project:"
+
+
+def _section_config(config, name):
     # DEFAULT 节由 configparser 自动合并；键名大小写不敏感，取值去首尾空白。
-    return {key.lower(): (value or "").strip() for key, value in section.items()}
+    return {key.lower(): (value or "").strip() for key, value in config[name].items()}
+
+
+def _project_entries(config):
+    # 多工程共用一份 INI：每个 [project:工程名] 节一个候选。
+    return [(name, _section_config(config, name)) for name in config.sections()
+            if name.lower().startswith(PROJECT_SECTION_PREFIX)]
+
+
+def _entry_name(name, config):
+    # 工程名优先取 project_name 字段；否则退化为节名去掉前缀与 #哈希 后缀。
+    explicit = config.get("project_name", "").strip()
+    if explicit:
+        return explicit
+    return name[len(PROJECT_SECTION_PREFIX):].split("#", 1)[0].strip()
+
+
+def _describe_entry(name, config):
+    return "{}（端口 {}，pid {}，节 {}）".format(
+        _entry_name(name, config), config.get("port", "?"), config.get("process_id", "?"), name)
+
+
+def _select_connection(entries, selection):
+    # 选择次序：--instance-id → --project/UNITY_MCP_PROJECT → --expected-project/cwd → 唯一工程节。
+    # 歧义时报错列出候选，不猜测、不重放。
+    candidates = "；".join(_describe_entry(name, config) for name, config in entries)
+    instance_id = selection.get("instanceId")
+    if instance_id:
+        matches = [item for item in entries if item[1].get("instance_id") == instance_id]
+        if len(matches) == 1:
+            return matches[0]
+        raise ClientError("未找到实例 {}；候选：{}。".format(instance_id, candidates), EXIT_PARAM)
+    project = (selection.get("project") or "").strip()
+    if project:
+        needle = project.lower()
+        matches = [item for item in entries if _entry_name(*item).lower() == needle]
+        if len(matches) == 1:
+            return matches[0]
+        raise ClientError('工程名 "{}" 匹配 {} 个；候选：{}。'.format(project, len(matches), candidates),
+                          EXIT_PARAM)
+    expected = selection.get("expectedProject")
+    if expected:
+        matches = [item for item in entries if item[1].get("project_path")
+                   and project_key(item[1]["project_path"]) == project_key(expected)]
+        if len(matches) == 1:
+            return matches[0]
+    if len(entries) == 1:
+        return entries[0]
+    raise ClientError("连接配置含 {} 个工程，请用 --project 或 --expected-project 指定；候选：{}。".format(
+        len(entries), candidates), EXIT_PARAM)
 
 
 def log_info(message):
@@ -172,23 +228,34 @@ def log_info(message):
         print(message, file=sys.stderr)
 
 
-def discover(ini, timeout):
+def discover(ini, timeout, selection=None):
     """读取 INI 并校验 /discovery；任何不一致都在发送业务请求前失败。"""
-    config = read_ini(ini)
+    selection = selection or {}
+    sections = read_ini(ini)
+    entries = _project_entries(sections)
+    if not entries:
+        # 旧版 INI 只有别名节；无工程节时按别名兜底（保持旧客户端行为）。
+        if not sections.has_section(ALIAS_SECTION):
+            raise ClientError(
+                "无法读取连接配置 {}：INI 缺少 unity3d-skilled-mcp 节；请在 Unity 中启动服务。".format(ini),
+                EXIT_PARAM)
+        entry_name, entry = ALIAS_SECTION, _section_config(sections, ALIAS_SECTION)
+    else:
+        entry_name, entry = _select_connection(entries, selection)
     ini_limit = None
     try:
-        if "max_details" in config:
-            raw = config["max_details"]
+        if "max_details" in entry:
+            raw = entry["max_details"]
             digits = raw[1:] if raw.startswith("+") else raw
             if not digits or not digits.isascii() or not digits.isdigit():
                 raise ValueError("INI max_details 必须为非负整数，0 表示不限数量")
             ini_limit = int(raw)
             if not valid_details_limit(ini_limit):
                 raise ValueError("INI max_details 必须为非负安全整数")
-        base = config.get("base_url", "").rstrip("/")
+        base = entry.get("base_url", "").rstrip("/")
         port = None
-        if "port" in config:
-            raw = config["port"]
+        if "port" in entry:
+            raw = entry["port"]
             digits = raw[1:] if raw.startswith("+") else raw
             if raw.startswith("-") or not digits.isascii() or not digits.isdigit():
                 raise ValueError("INI port 无效")
@@ -233,6 +300,11 @@ def discover(ini, timeout):
             raise ValueError("discovery max_details 必须为非负整数")
     except (KeyError, TypeError, ValueError, ClientError) as exc:
         raise ClientError("无效 discovery：{}".format(exc), EXIT_FORMAT)
+    # 陈旧节保护：INI 节记录的实例与目标服务不一致（端口已被其它 Unity 实例占用）时拒绝，避免误连。
+    recorded_instance = entry.get("instance_id")
+    if recorded_instance and info["instance_id"] != recorded_instance:
+        raise ClientError("INI 节 {} 记录的实例已失效（端口被其它实例占用）；请重启目标 Unity 服务刷新。".format(entry_name),
+                          EXIT_PARAM)
     if ini_limit is not None and "max_details" in info and ini_limit != info["max_details"]:
         raise ClientError("INI max_details 与 discovery 不一致；请重启目标 Unity 服务以发布启动配置。",
                           EXIT_PARAM)
@@ -519,7 +591,13 @@ def execute(args):
                 raise ClientError("资源 URI 必须是带 scheme 的完整 URI。", EXIT_PARAM)
             payload = {"uri": args["target"]}
 
-    info = discover(args["ini"], args["timeout"])
+    # 多工程时按下述次序选择目标工程；歧义即报错，不猜测。
+    client = args.get("client")
+    info = discover(args["ini"], args["timeout"], {
+        "instanceId": getattr(client, "instance_id", None),
+        "project": getattr(client, "project", None),
+        "expectedProject": getattr(client, "expected_project", None),
+    })
     base = info["base_url"].rstrip("/")
     same_origin = False
     if args["command"] == "request":
@@ -705,12 +783,14 @@ class Client:
     """一次构造、多次调用；锁定实例，不缓存端口。"""
 
     def __init__(self, ini=None, timeout=None, verbose=False,
-                 expected_project=None, instance_id=None):
+                 expected_project=None, instance_id=None, project=None):
         self.ini = ini or os.path.join(os.path.expanduser("~"), ".unity-mcp", "skill.ini")
         self.timeout = 15 if timeout is None else timeout
         self.verbose = bool(verbose)
         self.expected_project = expected_project_path(expected_project)
         self.instance_id = instance_id
+        # 多工程 INI 下按工程名选择目标；未给时回落到环境变量 UNITY_MCP_PROJECT。
+        self.project = (project or os.environ.get("UNITY_MCP_PROJECT") or "").strip() or None
         self.connection = None
         if instance_id is not None and (not isinstance(instance_id, str) or not instance_id.strip()):
             raise ClientError("instance_id 不能为空。", EXIT_PARAM)
@@ -964,6 +1044,9 @@ def _add_binding_flags(parser):
     parser.add_argument("--expected-project", dest="expected_project", metavar="PATH",
                         default=argparse.SUPPRESS,
                         help="显式指定 Unity 工程根；否则从 cwd 向上寻找")
+    parser.add_argument("--project", dest="project", metavar="NAME",
+                        default=argparse.SUPPRESS,
+                        help="按工程名选择目标（多工程共用 INI 时使用）")
     parser.add_argument("--instance-id", dest="instance_id", metavar="ID",
                         default=argparse.SUPPRESS,
                         help="锁定实例；跨进程保持绑定用")
@@ -1058,7 +1141,8 @@ def build_parser():
 def _args_from_namespace(ns):
     client = Client(ini=ns.ini, timeout=ns.timeout, verbose=getattr(ns, "verbose", False),
                     expected_project=getattr(ns, "expected_project", None),
-                    instance_id=getattr(ns, "instance_id", None))
+                    instance_id=getattr(ns, "instance_id", None),
+                    project=getattr(ns, "project", None))
     args = {
         "command": ns.command, "client": client,
         "ini": client.ini, "timeout": client.timeout,

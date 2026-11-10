@@ -150,6 +150,8 @@ function expandHome(value) {
     : /^~[\\/]/.test(value) ? path.join(os.homedir(), value.slice(2)) : value;
 }
 
+// 多工程共用一份 INI：别名节 [unity3d-skilled-mcp] 记录最近启动的实例，
+// 每个工程另有 [project:工程名] 节。返回全部节，由 selectConnection 决定用哪个。
 function readIni(filename) {
   const sections = new Map();
   let section;
@@ -179,9 +181,65 @@ function readIni(filename) {
     previous = key;
     previousIndent = indent;
   }
-  const selected = sections.get('unity3d-skilled-mcp');
-  if (!selected) throw new Error('INI 缺少 unity3d-skilled-mcp 节');
-  return new Map([...(sections.get('DEFAULT') || []), ...selected]);
+  return sections;
+}
+
+const ALIAS_SECTION = 'unity3d-skilled-mcp';
+const PROJECT_SECTION_PREFIX = 'project:';
+
+// DEFAULT 节按 INI 惯例合并进每个节；返回节名与其配置。
+function mergeSection(sections, name) {
+  const config = new Map(sections.get('DEFAULT') || []);
+  for (const [key, value] of sections.get(name) || []) config.set(key, value);
+  return { name, config };
+}
+
+function projectEntries(sections) {
+  const entries = [];
+  for (const name of sections.keys()) {
+    if (name.toLowerCase().startsWith(PROJECT_SECTION_PREFIX)) entries.push(mergeSection(sections, name));
+  }
+  return entries;
+}
+
+// 工程名优先取 project_name 字段；否则退化为节名去掉前缀与 #哈希 后缀。
+function entryProjectName(entry) {
+  const explicit = (entry.config.get('project_name') || '').trim();
+  if (explicit) return explicit;
+  const raw = entry.name.slice(PROJECT_SECTION_PREFIX.length);
+  const hash = raw.indexOf('#');
+  return (hash < 0 ? raw : raw.slice(0, hash)).trim();
+}
+
+function describeEntry(entry) {
+  return entryProjectName(entry) + '（端口 ' + (entry.config.get('port') || '?')
+    + '，pid ' + (entry.config.get('process_id') || '?') + '，节 ' + entry.name + '）';
+}
+
+// 选择次序：--instance-id → --project/UNITY_MCP_PROJECT → --expected-project/cwd → 唯一工程节。
+// 歧义时报错列出候选，不猜测、不重放。
+function selectConnection(entries, selection) {
+  const candidates = entries.map(describeEntry).join('；');
+  if (selection.instanceId) {
+    const matches = entries.filter(entry => entry.config.get('instance_id') === selection.instanceId);
+    if (matches.length === 1) return matches[0];
+    throw new ClientError('未找到实例 ' + selection.instanceId + '；候选：' + candidates + '。', 2);
+  }
+  if (selection.project) {
+    const needle = selection.project.trim().toLowerCase();
+    const matches = entries.filter(entry => entryProjectName(entry).toLowerCase() === needle);
+    if (matches.length === 1) return matches[0];
+    throw new ClientError('工程名 "' + selection.project + '" 匹配 ' + matches.length
+      + ' 个；候选：' + candidates + '。', 2);
+  }
+  if (selection.expectedProject) {
+    const matches = entries.filter(entry => entry.config.has('project_path')
+      && projectKey(entry.config.get('project_path')) === projectKey(selection.expectedProject));
+    if (matches.length === 1) return matches[0];
+  }
+  if (entries.length === 1) return entries[0];
+  throw new ClientError('连接配置含 ' + entries.length + ' 个工程，请用 --project 或 --expected-project 指定；'
+    + '候选：' + candidates + '。', 2);
 }
 
 function requestHttp(value, timeout, method = 'GET', payload = null, headers = {}, maxBytes = Infinity) {
@@ -266,11 +324,21 @@ function requestHttp(value, timeout, method = 'GET', payload = null, headers = {
 
 const isObject = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 
-async function discover(ini, timeout) {
+async function discover(ini, timeout, selection = {}) {
   let base;
   let iniLimit;
+  let entry;
   try {
-    const config = readIni(ini);
+    const sections = readIni(ini);
+    const projects = projectEntries(sections);
+    if (projects.length === 0) {
+      // 旧版 INI 只有别名节；无工程节时按别名兜底（保持旧客户端行为）。
+      if (!sections.has(ALIAS_SECTION)) throw new Error('INI 缺少 unity3d-skilled-mcp 节');
+      entry = mergeSection(sections, ALIAS_SECTION);
+    } else {
+      entry = selectConnection(projects, selection);
+    }
+    const config = entry.config;
     if (config.has('max_details')) {
       const value = config.get('max_details');
       if (!/^\+?[0-9]+$/.test(value) || !validDetailsLimit(Number(value))) {
@@ -295,6 +363,7 @@ async function discover(ini, timeout) {
       throw new Error('INI 的 base_url 与 port 不一致');
     }
   } catch (error) {
+    if (error instanceof ClientError) throw error;
     throw new ClientError('无法读取连接配置 ' + ini + '：' + error.message + '；请在 Unity 中启动服务。', 2);
   }
   const info = await requestHttp(base + '/discovery', timeout);
@@ -322,6 +391,11 @@ async function discover(ini, timeout) {
     }
   } catch (error) {
     throw new ClientError('无效 discovery：' + error.message, 5);
+  }
+  // 陈旧节保护：INI 节记录的实例与目标服务不一致（端口已被其它 Unity 实例占用）时拒绝，避免误连。
+  const recordedInstance = entry.config.get('instance_id');
+  if (recordedInstance && typeof info.instance_id === 'string' && info.instance_id !== recordedInstance) {
+    throw new ClientError('INI 节 ' + entry.name + ' 记录的实例已失效（端口被其它实例占用）；请重启目标 Unity 服务刷新。', 2);
   }
   if (iniLimit !== undefined && Object.hasOwn(info, 'max_details') && iniLimit !== info.max_details) {
     throw new ClientError('INI max_details 与 discovery 不一致；请重启目标 Unity 服务以发布启动配置。', 2);
@@ -469,7 +543,8 @@ function help(command) {
   };
   return '用法：node scripts/unity_bridge.js [--ini PATH] [--timeout SECONDS] '
     + (usage[command] || 'discover|groups|list|find|details|schema|schemas|call|prompt|resource|request')
-    + '\n--expected-project PATH 显式指定工程，否则从 cwd 向上寻找 Unity 根；--instance-id ID 锁定实例。'
+    + '\n--project NAME 按工程名选择目标（可用环境变量 UNITY_MCP_PROJECT）；--instance-id ID 锁定实例。'
+    + '\n--expected-project PATH 显式指定工程路径，否则从 cwd 向上寻找 Unity 根；多工程时用于消歧。'
     + '\n--verbose 才打印完整连接；call 可用 --request-id ID，失败凭 status 查询，不重放。'
     + '\n默认 INI：~/.unity-mcp/skill.ini；超时：15 秒（正有限数）。'
     + '\n每次读取 INI 并验证 discovery；不重试、不跟随重定向，验证 TLS。'
@@ -492,7 +567,7 @@ function parseArgs(argv) {
       const prefix = { call: '--args', request: '--data', details: '--members', schemas: '--names' }[args.command];
       const source = prefix && (flag === prefix ? 'text' : flag === prefix + '-file' ? 'file' : flag === prefix + '-stdin' ? 'stdin' : null);
       if (flag === '--verbose') { args.verbose = true; continue; }
-      const global = ['--expected-project', '--instance-id'].includes(flag)
+      const global = ['--expected-project', '--project', '--instance-id'].includes(flag)
         || (!args.command && ['--ini', '--timeout'].includes(flag))
         || (args.command === 'call' && flag === '--request-id');
       const requestOption = args.command === 'request' && ['--method', '--header'].includes(flag);
@@ -514,6 +589,10 @@ function parseArgs(argv) {
         args.tag = value;
       } else if (flag === '--kind') { args.kind = value; args.kindExplicit = true; }
       else if (flag === '--expected-project') args.expected_project = value;
+      else if (flag === '--project') {
+        if (!value.trim()) throw new ClientError('--project 不能为空。', 2);
+        args.project = value;
+      }
       else if (flag === '--instance-id') args.instance_id = value;
       else if (flag === '--request-id') args.request_id = requestId(value);
       else if (flag === '--ini') args.ini = value;
@@ -583,7 +662,13 @@ async function execute(args) {
       payload = { uri: args.target };
     }
   }
-  const info = await discover(args.ini, args.timeout);
+  // 多工程时按下述次序选择目标工程；歧义即报错，不猜测。
+  const client = args.client || {};
+  const info = await discover(args.ini, args.timeout, {
+    instanceId: args.instance_id ?? client.instance_id,
+    project: args.project ?? client.project,
+    expectedProject: client.expected_project,
+  });
   const base = origin(info.base_url);
   let sameOrigin = false;
   if (args.command === 'request') {
@@ -776,6 +861,8 @@ class Client {
     this.verbose = Boolean(options.verbose);
     this.expected_project = expectedProject(options.expected_project);
     this.instance_id = options.instance_id;
+    // 多工程 INI 下按工程名选择目标；命令行 --project 未给时回落到环境变量。
+    this.project = ((options.project ?? process.env.UNITY_MCP_PROJECT) || '').trim() || undefined;
     if (this.instance_id !== undefined && (typeof this.instance_id !== 'string' || !this.instance_id.trim())) {
       throw new ClientError('instance_id 不能为空。', 2);
     }
