@@ -54,22 +54,37 @@ function expandHome(p) {
   return s;
 }
 
-/** 极简 INI 读取，只为拿 skill.ini 的字段，不引外部依赖。失败一律返回 {}。 */
-function readIniSection(file, section) {
+/**
+ * 读取最新启动的端：新版 INI 只有 [project:...] 节，各节 started_at 是服务启动时刻，
+ * 取时间最大的即可；旧版 INI 回退历史别名节 [unity3d-skilled-mcp]。
+ * 失败一律返回 {}，不引外部依赖。
+ */
+function readLatestIniSection(file) {
   try {
     const text = fs.readFileSync(expandHome(file), 'utf8');
-    const out = {};
+    const sections = new Map();
     let cur = null;
     for (const line of text.split(/\r?\n/)) {
       const t = line.trim();
       if (!t || t[0] === '#' || t[0] === ';') continue;
       const h = /^\[([^\]]+)\]/.exec(t);
-      if (h) { cur = h[1]; continue; }
-      if (cur !== section) continue;
+      if (h) {
+        cur = h[1];
+        if (!sections.has(cur)) sections.set(cur, {});
+        continue;
+      }
+      if (!cur) continue;
       const m = /^([^=:]+?)\s*[=:]\s*(.*)$/.exec(t);
-      if (m) out[m[1].trim().toLowerCase()] = m[2].trim();
+      if (m) sections.get(cur)[m[1].trim().toLowerCase()] = m[2].trim();
     }
-    return out;
+    const all = [...sections.entries()];
+    const projects = all.filter(([name]) => name.toLowerCase().startsWith('project:'));
+    const pool = projects.length
+      ? projects : all.filter(([name]) => name === 'unity3d-skilled-mcp');
+    if (!pool.length) return {};
+    const stamp = (fields) => fields.started_at || fields.updated_at || '';
+    pool.sort((a, b) => (stamp(a[1]) < stamp(b[1]) ? 1 : stamp(a[1]) > stamp(b[1]) ? -1 : 0));
+    return pool[0][1];
   } catch (e) {
     return {};
   }
@@ -124,7 +139,7 @@ function loaderCandidates() {
   push(process.env.UNITY_MCP_LOADER);
 
   // 2) 服务发布的 skill_dir（本机 INI，只当路径提示）
-  const ini = readIniSection(path.join(os.homedir(), '.unity-mcp', 'skill.ini'), 'unity3d-skilled-mcp');
+  const ini = readLatestIniSection(path.join(os.homedir(), '.unity-mcp', 'skill.ini'));
   if (ini.skill_dir) pushDir(path.join(expandHome(ini.skill_dir), 'scripts'));
 
   // 3) 从当前目录与自身位置分别上溯
@@ -197,7 +212,7 @@ function resolveProject(explicit, opts) {
     }
   }
 
-  const ini = readIniSection(path.join(os.homedir(), '.unity-mcp', 'skill.ini'), 'unity3d-skilled-mcp');
+  const ini = readLatestIniSection(path.join(os.homedir(), '.unity-mcp', 'skill.ini'));
   if (ini.project_path) {
     const hit = accept(ini.project_path, 'skill.ini');
     if (hit) return hit;
@@ -516,6 +531,8 @@ function resolveOut(p, projectRoot) {
 module.exports = {
   configure, call, runCode, waitTask, ping,
   precheck, lintCSharp, assertLint, guardCSharp, unwrap, resolveOut,
-  resolveProject, loaderCandidates, isUnityProject, readIniSection,
+  resolveProject, loaderCandidates, isUnityProject, readLatestIniSection,
+  // 兼容旧导出名：语义已改为「取最新启动端的节」，第二个参数被忽略。
+  readIniSection: readLatestIniSection,
   namespaceOf, LIMITS,
 };

@@ -1170,3 +1170,25 @@ dotnet 临时工程里全部通过，不等于 Unity 里可用。在真实 Unity
 - 文档同步：`README.md` / `README.zh-CN.md` / `docs/index.html` / `unity-package/Skills/unity-skilled-mcp/SKILL.md` / 状态窗口安装提示词。`dist/unity-skilled-mcp.zip` 内 SKILL.md 副本按惯例未重打包。
 - 验证：`git diff --check` 通过；两个 C# 文件词法括号未闭合 0 / 错配 0。**未在 Unity 内编译/跑自检**（需重载编辑器后跑 `Tools/Unity MCP/Run Discovery Self Tests` 并重启服务查看新 INI）。未 commit/push。
 
+## 本轮：多端 skill.ini 互不覆盖修复（未提交）
+
+- 用户贴出的 INI 只有 `[unity3d-skilled-mcp]` 与 `[project:tdshoweditor]` 两节且逐字段相同；本机 `~/.unity-mcp/skill.ini` 实测一致，只有 1 个在线端（8001 / pid 50316）。**两节相同是设计**：别名节是「最近启动实例」的兼容副本（旧客户端与建模子技能读），新版客户端发现工程节后只读工程节；不是互相覆盖。
+- 真实缺陷：`MergeIni` 原先只按 `project_path` 判定旧节，同一工程路径不同进程/端口的端后启动时，会先删掉先启动端的节（`IsProcessAlive` 在其后执行，救不回来）。改为「同路径 + 同 process_id」才算本端旧节；pid 缺失时按 instance_id、再缺失才按旧格式回退；其它在线端节一律保留。节名冲突后缀由 `PathHash(路径)` 改为 `PathHash(路径|进程号)`，同工程多端不撞节名，本端重启节名稳定。
+- 客户端消歧：同名多端时 `--project` 会匹配多个，JS/Python 报错补「用 --instance-id 锁定实例」提示。
+- 自检：`TestMultiProjectIni` 增同路径双端用例（两节并存、节名不冲突、本端重启不抹掉另一端）。
+- 文档同步：`README.md`（顺带把旧的单节示例同步为双节 + `project_name` / `instance_id`）/ `README.zh-CN.md` 两处。
+- 验证：`git diff --check` 通过；两 C# 文件词法括号 0 错配；Python 客户端 37/37 通过；JS 客户端 64/67（3 项既有失败：`find` 默认 `kind=all` 与参数校验放宽后测试未同步，HEAD 版本同样失败，与本轮无关）。**未在 Unity 内编译/跑 `Run Discovery Self Tests`**。
+- 注意：用户实际运行的是 UPM `PackageCache/io.uframe.unity-skilled-mcp@ac86aa6f48`，源码改动须同步到包后才生效。未 commit/push。
+
+## 本轮：去掉别名节，改由各端 started_at 标识最新（未提交）
+
+- 需求：`skill.ini` 不再写 `[unity3d-skilled-mcp]` 这个「当前实例」组；每个端只在自己的 `[project:<工程名>]` 节里带启动时间，比较即可知谁最新。
+- 服务端：`McpService.Start()` 成功后记录 `serviceStartedAtUtc`（改端口重启会刷新），`PublishConnectionInfo()` 通过新增可选参数 `startedAt` 传给 `McpConnectionInfo`；`StartedAt` 以 UTC ISO8601 同时写入 INI 各节与 `/discovery` 的 `started_at`，`updated_at` 仍是本节最后重写时刻。
+- `ToIni()` 改为返回本端工程节（默认节名），`MergeIni` 只写本端节；历史别名节仍在清理分支里，旧文件残留于下次重写时删除，`AliasSection` 常量仅用于清理。其它在线端节仍按「同路径 + 同 pid 才算本端旧节」保留。
+- 客户端 JS/Python：`ALIAS_SECTION` 只用于读取旧版 INI 兜底（不再要求存在），候选描述带 `started_at`（缺失回退 `updated_at`）；多端仍须 `--project` / `--instance-id` 明确指定，不按时间自动猜测。
+- 建模 / UGUI 子技能 `mcp.js`：`readIniSection` → `readLatestIniSection`，读全部 `[project:...]` 节按 `started_at` 取最新（旧文件回退别名节），用于 `skill_dir` 与 `project_path`；导出保留旧名作兼容别名，避免旧调用方 ReferenceError。
+- 自检：`TestConnectionInfo` 断言 INI/discovery 双写 `started_at`、只发布工程节；`TestMultiProjectIni` 断言旧别名节被清理、两端各自带不同 `started_at` 且可比出最新。
+- 文档同步：`README.md` / `README.zh-CN.md` / `docs/index.html` / 主技能 `SKILL.md` / 两个子技能 `SKILL.md` / 状态窗口安装提示词。
+- 验证：`git diff --check` 通过；`McpDiscovery.cs`、`McpDiscoveryTests.cs` 词法括号 0 错配（`McpService.cs` 的括号检查器误报在 HEAD 同样存在，源于插值字符串花括号，非本轮引入）；3 个 JS 与 1 个 Python 脚本语法检查通过；Python 客户端 37/37；JS 客户端 64/67（3 项既有失败与本轮无关）；两份 `mcp.js` 的「取最新端 / 旧别名兜底 / 忽略残留别名节 / 空文件」各 4 组实测通过。**未在 Unity 内编译或跑 `Run Discovery Self Tests`**。
+- 破坏性：只认 `[unity3d-skilled-mcp]` 的旧版客户端将读不到新版 INI，须同步包后整体升级。用户实际运行的仍是 UPM `PackageCache/io.uframe.unity-skilled-mcp@ac86aa6f48`，未 commit/push。
+

@@ -150,8 +150,8 @@ function expandHome(value) {
     : /^~[\\/]/.test(value) ? path.join(os.homedir(), value.slice(2)) : value;
 }
 
-// 多工程共用一份 INI：别名节 [unity3d-skilled-mcp] 记录最近启动的实例，
-// 每个工程另有 [project:工程名] 节。返回全部节，由 selectConnection 决定用哪个。
+// 多端共用一份 INI：每个在线端只有自己的 [project:工程名] 节，节内 started_at
+// 表示该端服务启动时刻，比较各节即可判断谁最新。返回全部节，由 selectConnection 决定用哪个。
 function readIni(filename) {
   const sections = new Map();
   let section;
@@ -184,6 +184,7 @@ function readIni(filename) {
   return sections;
 }
 
+// 仅用于读取旧版 INI：新版服务不再发布该别名节，重写文件时也会清理它。
 const ALIAS_SECTION = 'unity3d-skilled-mcp';
 const PROJECT_SECTION_PREFIX = 'project:';
 
@@ -213,7 +214,9 @@ function entryProjectName(entry) {
 
 function describeEntry(entry) {
   return entryProjectName(entry) + '（端口 ' + (entry.config.get('port') || '?')
-    + '，pid ' + (entry.config.get('process_id') || '?') + '，节 ' + entry.name + '）';
+    + '，pid ' + (entry.config.get('process_id') || '?')
+    + '，启动 ' + (entry.config.get('started_at') || entry.config.get('updated_at') || '?')
+    + '，节 ' + entry.name + '）';
 }
 
 // 选择次序：--instance-id → --project/UNITY_MCP_PROJECT → --expected-project/cwd → 唯一工程节。
@@ -230,7 +233,7 @@ function selectConnection(entries, selection) {
     const matches = entries.filter(entry => entryProjectName(entry).toLowerCase() === needle);
     if (matches.length === 1) return matches[0];
     throw new ClientError('工程名 "' + selection.project + '" 匹配 ' + matches.length
-      + ' 个；候选：' + candidates + '。', 2);
+      + ' 个；同名多端请用 --instance-id 锁定实例，候选：' + candidates + '。', 2);
   }
   if (selection.expectedProject) {
     const matches = entries.filter(entry => entry.config.has('project_path')
@@ -238,8 +241,8 @@ function selectConnection(entries, selection) {
     if (matches.length === 1) return matches[0];
   }
   if (entries.length === 1) return entries[0];
-  throw new ClientError('连接配置含 ' + entries.length + ' 个工程，请用 --project 或 --expected-project 指定；'
-    + '候选：' + candidates + '。', 2);
+  throw new ClientError('连接配置含 ' + entries.length + ' 个工程，请用 --project / --expected-project 指定，'
+    + '同名多端请用 --instance-id 锁定实例；候选：' + candidates + '。', 2);
 }
 
 function requestHttp(value, timeout, method = 'GET', payload = null, headers = {}, maxBytes = Infinity) {
@@ -332,8 +335,8 @@ async function discover(ini, timeout, selection = {}) {
     const sections = readIni(ini);
     const projects = projectEntries(sections);
     if (projects.length === 0) {
-      // 旧版 INI 只有别名节；无工程节时按别名兜底（保持旧客户端行为）。
-      if (!sections.has(ALIAS_SECTION)) throw new Error('INI 缺少 unity3d-skilled-mcp 节');
+      // 旧版 INI 只有历史别名节；新版服务只写 [project:...] 节，此处仅为兼容旧文件兜底。
+      if (!sections.has(ALIAS_SECTION)) throw new Error('INI 缺少 [project:...] 工程节');
       entry = mergeSection(sections, ALIAS_SECTION);
     } else {
       entry = selectConnection(projects, selection);

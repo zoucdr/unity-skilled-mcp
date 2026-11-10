@@ -52,7 +52,7 @@ In Unity, open **Window → MCP → Status**, review the service settings, and s
 ~/.unity-mcp/skill.ini
 ```
 
-Changing the port takes effect when the service is restarted. **Multiple Unity projects share this single file**: besides the compatibility alias section `[unity3d-skilled-mcp]` (which records the most recently started instance), each project gets its own `[project:<name>]` section that never overwrites the others. When two projects share a name but not a path, the section is disambiguated as `project:<name>#<path-hash>`. Select a target project with `--project NAME` (or the `UNITY_MCP_PROJECT` environment variable); otherwise the client matches by `--expected-project` or the current directory and errors with the candidate list when more than one target is possible.
+Changing the port takes effect when the service is restarted. **Multiple Unity instances share this single file**, but each instance writes **only its own `[project:<name>]` section** — there is no extra "current instance" section. Every section carries `started_at`, the UTC moment that instance's service started, so comparing those values tells you which endpoint is the newest; `updated_at` is the moment that section was last rewritten. Two projects sharing a name but not a path, or two instances running the same project path on different ports, are disambiguated as `project:<name>#<instance-hash>`; use `--instance-id ID` to pin one. Select a target project with `--project NAME` (or the `UNITY_MCP_PROJECT` environment variable); otherwise the client matches by `--expected-project` or the current directory and errors with the candidate list (including each endpoint's start time) when more than one target is possible.
 
 ### 3. Install the Skill
 
@@ -81,18 +81,36 @@ The response-size limit remains **65,536 UTF-8 bytes** even when the item-count 
 Example `~/.unity-mcp/skill.ini`:
 
 ```ini
-[unity3d-skilled-mcp]
+[project:UnityProject]
 base_url=http://localhost:8000
 port=8000
 project_path=/path/to/UnityProject
+project_name=UnityProject
+instance_id=1f0c9e4a-...
 unity_version=2021.3.45f2c1
 render_pipeline=Built-in
 process_id=12345
+started_at=2026-10-30T02:00:00.0000000Z
 updated_at=2026-10-30T02:00:00.0000000Z
+max_details=32
+
+[project:AnotherProject]
+base_url=http://localhost:8001
+port=8001
+project_path=/path/to/AnotherProject
+project_name=AnotherProject
+instance_id=8c2b71e0-...
+unity_version=2021.3.45f2c1
+render_pipeline=URP
+process_id=23456
+started_at=2026-10-30T03:00:00.0000000Z
+updated_at=2026-10-30T03:00:00.0000000Z
 max_details=32
 ```
 
-The file contains local connection metadata and startup settings, but **does not publish `mcp_url`** and no longer publishes a script language. `unity_version` and `render_pipeline` are captured when the service starts: the active pipeline is reported as `Built-in`, `URP`, `HDRP`, or the custom pipeline asset's full type name; changing the pipeline while the service runs requires a restart to refresh them. The Skill client reads the file dynamically on each command and validates the service before proceeding; it does not scan ports or automatically replay failed write operations.
+`AnotherProject` is the newer endpoint because its `started_at` is later. The legacy compatibility section `[unity3d-skilled-mcp]` is no longer published; if an old file still contains it, the next write removes it.
+
+The file contains local connection metadata and startup settings, but **does not publish `mcp_url`** and no longer publishes a script language. `started_at` is captured once per successful service start (a port change / restart refreshes it), while `updated_at` is the last rewrite time. `unity_version` and `render_pipeline` are also captured when the service starts: the active pipeline is reported as `Built-in`, `URP`, `HDRP`, or the custom pipeline asset's full type name; changing the pipeline while the service runs requires a restart to refresh them. The Skill client reads the file dynamically on each command and validates the service before proceeding; it does not scan ports or automatically replay failed write operations.
 
 ## How progressive discovery works
 

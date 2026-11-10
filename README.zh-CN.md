@@ -284,7 +284,7 @@ demo 工程另含 `demo/Assets/Extends/CustomTools/` 下的**自定义扩展工�
 ~/.unity-mcp/skill.ini
 ```
 
-改端口在服务重启后生效。**多个 Unity 工程共用这一份文件**：除兼容用的别名节 `[unity3d-skilled-mcp]`（记录最近启动的实例）外，每个工程各自有一个 `[project:<工程名>]` 节，互不覆盖；同名工程落在不同路径时以 `project:<工程名>#<路径哈希>` 区分。技能端用 `--project NAME` 指定目标工程，未指定时按 `--expected-project` 或当前目录匹配，多个候选且无法消歧时报错列出候选。
+改端口在服务重启后生效。**多个 Unity 端共用这一份文件，但每个端只写自己的 `[project:<工程名>]` 节，不再另设「当前实例」组**。每节都带 `started_at`（该端服务本次启动的 UTC 时刻），比较各节即可判断谁最新；`updated_at` 是该节最后一次重写时间。同名工程落在不同路径，或同一工程路径下多个实例用不同端口时，以 `project:<工程名>#<实例哈希>` 区分，并用 `--instance-id ID` 锁定其一。技能端用 `--project NAME` 指定目标工程，未指定时按 `--expected-project` 或当前目录匹配，多个候选且无法消歧时报错列出候选（含各端启动时间）。
 
 ### 3. Unity 编辑器配置
 
@@ -306,18 +306,6 @@ demo 工程另含 `demo/Assets/Extends/CustomTools/` 下的**自定义扩展工�
 即使数量上限为 `0`，**响应字节上限仍为 65,536 UTF-8 字节**；一次选择全部可用能力会被拒绝；服务不会静默截断超限结果。
 
 ```ini
-[unity3d-skilled-mcp]
-base_url=http://localhost:8000
-port=8000
-project_path=/path/to/UnityProject
-project_name=UnityProject
-instance_id=1f0c9e4a-...
-unity_version=2021.3.45f2c1
-render_pipeline=Built-in
-process_id=12345
-updated_at=2026-11-06T02:00:00.0000000Z
-max_details=32
-
 [project:UnityProject]
 base_url=http://localhost:8000
 port=8000
@@ -327,13 +315,29 @@ instance_id=1f0c9e4a-...
 unity_version=2021.3.45f2c1
 render_pipeline=Built-in
 process_id=12345
+started_at=2026-11-06T02:00:00.0000000Z
 updated_at=2026-11-06T02:00:00.0000000Z
+max_details=32
+
+[project:AnotherProject]
+base_url=http://localhost:8001
+port=8001
+project_path=/path/to/AnotherProject
+project_name=AnotherProject
+instance_id=8c2b71e0-...
+unity_version=2021.3.45f2c1
+render_pipeline=URP
+process_id=23456
+started_at=2026-11-06T03:00:00.0000000Z
+updated_at=2026-11-06T03:00:00.0000000Z
 max_details=32
 ```
 
-INI 只含本地连接元数据与启动设置，**不发布 `mcp_url`**，也不再发布脚本语言字段。服务启动成功时另捕获 `unity_version`（Unity 编辑器版本）与 `render_pipeline`（当前生效渲染管线：`Built-in` / `URP` / `HDRP` / 自定义管线资源类型全名），供技能判断工程环境；运行中切换渲染管线须重启服务才会刷新。技能客户端每次命令重新读取并校验服务；不扫端口、不自动重放写操作。
+第二个端的 `started_at` 更晚，它就是最新启动的端。旧版兼容节 `[unity3d-skilled-mcp]` 不再发布；旧文件里若仍残留，下一次重写时会被清理。
 
-多工程时，别名节 `[unity3d-skilled-mcp]` 始终记录最近启动的实例（保持旧客户端兼容），各工程节 `[project:<工程名>]` 由对应 Unity 实例在服务启动成功时按工程写入，写入前清理同路径旧节与进程已退出的陈旧节，并加命名互斥体后原子替换，互不覆盖彼此。
+INI 只含本地连接元数据与启动设置，**不发布 `mcp_url`**，也不再发布脚本语言字段。`started_at` 在每次服务成功启动时捕获一次（改端口重启会刷新），`updated_at` 是该节最后一次重写时刻。服务启动成功时另捕获 `unity_version`（Unity 编辑器版本）与 `render_pipeline`（当前生效渲染管线：`Built-in` / `URP` / `HDRP` / 自定义管线资源类型全名），供技能判断工程环境；运行中切换渲染管线须重启服务才会刷新。技能客户端每次命令重新读取并校验服务；不扫端口、不自动重放写操作。
+
+各端节 `[project:<工程名>]` 由对应 Unity 实例在服务启动成功时写入：写入前只替换**本端**（同工程路径且同进程）的旧节、清理进程已退出的陈旧节与历史别名节，其它在线端的节一律保留；同名工程或同路径多端以 `#<实例哈希>` 区分节名；加命名互斥体后原子替换，互不覆盖彼此。
 
 ### 5. 基本使用
 
@@ -375,7 +379,7 @@ for (const step of await planFromCatalog(catalog)) {
 - 服务端不做 session 隔离，所有客户端共享工具注册表、5 秒只读响应缓存与 `params.request_id` 幂等账本。`request_id` 必须全局唯一（客户端默认 `randomUUID()`）；同一 id 换 payload 返回 409，同一 id 相同 payload 直接取回已记录结果。
 - 写操作由写执行门串行化：一个工具的回调完成前不启动下一个；普通主线程任务每帧批量出队。只读请求仍可并发。
 - `resources/subscribe` 未启用（能力声明 `subscribe: false`），资源变更需重新读取。
-- 多个 Unity 工程可共用一份 `~/.unity-mcp/skill.ini`：各工程写入自己的 `[project:<工程名>]` 节，别名节 `[unity3d-skilled-mcp]` 记录最近启动的实例。技能端用 `--project NAME`（或环境变量 `UNITY_MCP_PROJECT`）指定目标工程，否则按 `--expected-project` / 当前目录匹配；候选多于一个且无法消歧时报错。请求仍须核对 `X-Mcp-Expected-Project` / `X-Mcp-Instance-Id`，各工程可自行配置不同端口。
+- 多个 Unity 工程可共用一份 `~/.unity-mcp/skill.ini`：各端只写自己的 `[project:<工程名>]` 节，节内 `started_at` 表明启动时刻、比较即可知谁最新，不再发布别名节。技能端用 `--project NAME`（或环境变量 `UNITY_MCP_PROJECT`）指定目标工程，否则按 `--expected-project` / 当前目录匹配；候选多于一个且无法消歧时报错。请求仍须核对 `X-Mcp-Expected-Project` / `X-Mcp-Instance-Id`，各工程可自行配置不同端口。
 
 ---
 

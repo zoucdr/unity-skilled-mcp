@@ -423,8 +423,9 @@ namespace UniMcp
                     string path = Path.Combine(directory, "connection.ini");
                     info.WriteIni(path);
                     string ini = File.ReadAllText(path, Encoding.UTF8);
-                    Check(ini.StartsWith("[unity3d-skilled-mcp]\n", StringComparison.Ordinal)
-                        && ini.Contains("\nmax_details=" + expected.ToString(System.Globalization.CultureInfo.InvariantCulture) + "\n"), "INI发布实际数量");
+                    Check(ini.StartsWith("[project:工程]\n", StringComparison.Ordinal)
+                        && !ini.Contains("[unity3d-skilled-mcp]", StringComparison.Ordinal)
+                        && ini.Contains("\nmax_details=" + expected.ToString(System.Globalization.CultureInfo.InvariantCulture) + "\n"), "仅发布工程节及实际数量");
                     Check(Json.Parse(info.ToJson())["max_details"].AsInt == expected, "discovery发布实际数量");
                     Check(Json.Parse(Response(snapshot, "/groups"))["max_details"].AsInt == expected, "groups与INI数量一致");
                     Check(Details(snapshot, SelectTools(1))["max_details"].AsInt == expected, "details与INI数量一致，0不改写");
@@ -718,11 +719,16 @@ namespace UniMcp
                 && injectedIni.Contains("\nrender_pipeline=URP\\r\\nport=2\n")
                 && !injectedIni.Contains("\nport=1\n") && !injectedIni.Contains("\nport=2\n"),
                 "版本/管线值不注入额外 INI 项");
+            Check(metadata["started_at"].Value.EndsWith("Z", StringComparison.Ordinal)
+                && metadata["started_at"].Value == info.StartedAt
+                && info.ToIni().Contains("\nstarted_at=" + info.StartedAt + "\n"), "启动时间写入 INI/discovery");
+            Check(info.StartedAt == info.UpdatedAt, "未显式传启动时间时等于写入时刻");
             Check(metadata["updated_at"].Value.EndsWith("Z", StringComparison.Ordinal), "UTC ISO8601 时间");
             Check(metadata["tools_url"].Value == info.BaseUrl + "/tools", "工具列表 URL");
             Check(metadata["schema_url_template"].Value == info.BaseUrl + "/tools/{name}/schema", "schema URL 模板");
             Check(metadata["schemas_url"].Value == info.BaseUrl + "/capabilities/schemas", "批量 Schema URL");
-            Check(info.ToIni().StartsWith("[unity3d-skilled-mcp]\nbase_url=" + info.BaseUrl + "\n", StringComparison.Ordinal), "INI 契约");
+            Check(info.ToIni().StartsWith("[project:工程]\nbase_url=" + info.BaseUrl + "\n", StringComparison.Ordinal)
+                && !info.ToIni().Contains("[unity3d-skilled-mcp]", StringComparison.Ordinal), "INI 契约：只发布本端工程节");
             string directory = Path.Combine(Path.GetTempPath(), "unity-mcp-discovery-test-" + Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(directory);
             try
@@ -764,13 +770,18 @@ namespace UniMcp
                 int pid = System.Diagnostics.Process.GetCurrentProcess().Id;
                 var alpha = new McpConnectionInfo(new[] { "http://localhost:8000/" }, "D:/Alpha", pid, DateTime.UtcNow);
                 var beta = new McpConnectionInfo(new[] { "http://localhost:8001/" }, "D:/Beta", pid, DateTime.UtcNow);
+                // 旧版 INI 残留的历史别名节，重写时应被清理，不再发布。
+                File.WriteAllText(path, "[unity3d-skilled-mcp]\nbase_url=http://localhost:9999\nport=9999\n"
+                    + "project_path=D:/Legacy\nprocess_id=" + pid.ToString(System.Globalization.CultureInfo.InvariantCulture) + "\n",
+                    Encoding.UTF8);
                 alpha.WriteIni(path);
                 beta.WriteIni(path);
                 string ini = File.ReadAllText(path, Encoding.UTF8);
                 Check(ini.Contains("[project:Alpha]\n", StringComparison.Ordinal)
                     && ini.Contains("[project:Beta]\n", StringComparison.Ordinal), "多工程各写入独立节");
-                Check(ini.StartsWith("[unity3d-skilled-mcp]\nbase_url=http://localhost:8001\n", StringComparison.Ordinal),
-                    "别名节记录最近启动的实例");
+                Check(!ini.Contains("[unity3d-skilled-mcp]", StringComparison.Ordinal)
+                    && ini.StartsWith("[project:Beta]\n", StringComparison.Ordinal),
+                    "不再发布别名节，旧别名节被清理");
 
                 // 同名工程不同路径：第二个改用 #路径哈希 节名，互不覆盖。
                 var alphaTwin = new McpConnectionInfo(new[] { "http://localhost:8002/" }, "E:/Alpha", pid, DateTime.UtcNow);
@@ -791,6 +802,42 @@ namespace UniMcp
                 beta.WriteIni(path);
                 Check(File.ReadAllText(path, Encoding.UTF8).Contains("[external-tool]\nvalue=keep\n", StringComparison.Ordinal),
                     "未知节原样保留");
+
+                // 同一工程路径、不同进程/端口的两个端：后启动不得抹掉先启动端的配置。
+                int otherPid = pid;
+                foreach (var process in System.Diagnostics.Process.GetProcesses())
+                {
+                    if (process.Id != pid) { otherPid = process.Id; break; }
+                }
+                Check(otherPid != pid, "测试环境存在第二个存活进程");
+                var sharedFirst = new McpConnectionInfo(new[] { "http://localhost:8010/" }, "D:/Shared", pid, DateTime.UtcNow);
+                var sharedSecond = new McpConnectionInfo(new[] { "http://localhost:8011/" }, "D:/Shared", otherPid, DateTime.UtcNow);
+                sharedFirst.WriteIni(path);
+                sharedSecond.WriteIni(path);
+                string sharedIni = File.ReadAllText(path, Encoding.UTF8);
+                Check(sharedIni.Contains("port=8010", StringComparison.Ordinal)
+                    && sharedIni.Contains("port=8011", StringComparison.Ordinal), "同工程两个端各保留独立配置");
+                Check(System.Text.RegularExpressions.Regex.Matches(sharedIni, @"\[project:Shared").Count == 2,
+                    "同工程两端节名按实例区分，不互相覆盖");
+                sharedFirst.WriteIni(path);
+                string afterRestart = File.ReadAllText(path, Encoding.UTF8);
+                Check(System.Text.RegularExpressions.Regex.Matches(afterRestart, @"\[project:Shared").Count == 2
+                    && afterRestart.Contains("port=8011", StringComparison.Ordinal), "本端重启只替换自身节，另一端保留");
+
+                // 启动时间随各端节独立发布：比较 started_at 即可得知谁最新，无需「当前实例」别名节。
+                var olderTime = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+                var newerTime = new DateTime(2026, 1, 2, 0, 0, 0, DateTimeKind.Utc);
+                var older = new McpConnectionInfo(new[] { "http://localhost:8020/" }, "D:/Older", pid, olderTime, startedAt: olderTime);
+                var newer = new McpConnectionInfo(new[] { "http://localhost:8021/" }, "D:/Newer", pid, newerTime, startedAt: newerTime);
+                older.WriteIni(path);
+                newer.WriteIni(path);
+                string timed = File.ReadAllText(path, Encoding.UTF8);
+                Check(timed.Contains("[project:Older]\n", StringComparison.Ordinal)
+                    && timed.Contains("[project:Newer]\n", StringComparison.Ordinal)
+                    && timed.Contains("started_at=2026-01-01T00:00:00.0000000Z\n", StringComparison.Ordinal)
+                    && timed.Contains("started_at=2026-01-02T00:00:00.0000000Z\n", StringComparison.Ordinal)
+                    && string.CompareOrdinal(newer.StartedAt, older.StartedAt) > 0,
+                    "各端节自带启动时间，可比出最新实例");
             }
             finally { Directory.Delete(directory, true); }
         }

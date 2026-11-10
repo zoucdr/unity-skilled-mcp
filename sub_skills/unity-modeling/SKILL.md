@@ -110,7 +110,7 @@ B 的注意事项：`splitSubmeshes` 会**剥掉 ProBuilderMesh**，之后 `mode
 
 1. `configure({ loader })` 显式指定
 2. 环境变量 `UNITY_MCP_LOADER`
-3. 运行中的 Unity 写下的 `~/.unity-mcp/skill.ini` 的 `skill_dir`
+3. `~/.unity-mcp/skill.ini` 中最新启动端（`[project:...]` 节里 `started_at` 最大者）的 `skill_dir`
 4. 从 **当前目录** 与 **技能自身目录** 逐级上溯，找 `unity-package/Skills/unity-skilled-mcp/scripts` 等常见落位
 5. 各工具的用户级技能目录（`~/.workbuddy/skills/`、`~/.claude/skills/` 等）
 
@@ -118,7 +118,7 @@ B 的注意事项：`splitSubmeshes` 会**剥掉 ProBuilderMesh**，之后 `mode
 
 1. `configure({ project })` 或 `--project` 显式指定
 2. 环境变量 `UNITY_PROJECT` / `UNITY_PROJECT_PATH`
-3. `~/.unity-mcp/skill.ini` 的 `project_path`（当前连着的工程）
+3. `~/.unity-mcp/skill.ini` 中最新启动端的 `project_path`（旧版兼容节 `[unity3d-skilled-mcp]` 已不再发布）
 4. 从 cwd 与技能目录上溯，找同时含 `Assets/` 与 `ProjectSettings/` 的目录
 
 解析失败时报错会列出**所有试过的路径**和三种指定方式，不再出现"路径写死但机器不同"的静默错连。

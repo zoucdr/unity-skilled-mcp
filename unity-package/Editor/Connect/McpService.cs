@@ -1841,6 +1841,8 @@ namespace UniMcp
                 DiscoverTools();
                 DiscoverPrompts();
                 DiscoverResources();
+                // 每次成功启动（含改端口重启）刷新启动时刻，各工程节据此比较谁最新。
+                serviceStartedAtUtc = DateTime.UtcNow;
                 isRunning = true;
                 UpdateDiscoverySnapshot();
                 // 发现快照失败不应阻断原有 MCP 协议；仅提示技能发现数据可能过期。

@@ -165,6 +165,7 @@ def read_ini(filename):
     return config
 
 
+# 仅用于读取旧版 INI：新版服务不再发布该别名节，重写文件时也会清理它。
 ALIAS_SECTION = "unity3d-skilled-mcp"
 PROJECT_SECTION_PREFIX = "project:"
 
@@ -175,7 +176,8 @@ def _section_config(config, name):
 
 
 def _project_entries(config):
-    # 多工程共用一份 INI：每个 [project:工程名] 节一个候选。
+    # 多端共用一份 INI：每个在线端只有自己的 [project:工程名] 节，
+    # 节内 started_at 是该端服务启动时刻，比较各节即可判断谁最新。
     return [(name, _section_config(config, name)) for name in config.sections()
             if name.lower().startswith(PROJECT_SECTION_PREFIX)]
 
@@ -189,8 +191,9 @@ def _entry_name(name, config):
 
 
 def _describe_entry(name, config):
-    return "{}（端口 {}，pid {}，节 {}）".format(
-        _entry_name(name, config), config.get("port", "?"), config.get("process_id", "?"), name)
+    return "{}（端口 {}，pid {}，启动 {}，节 {}）".format(
+        _entry_name(name, config), config.get("port", "?"), config.get("process_id", "?"),
+        config.get("started_at") or config.get("updated_at", "?"), name)
 
 
 def _select_connection(entries, selection):
@@ -209,8 +212,8 @@ def _select_connection(entries, selection):
         matches = [item for item in entries if _entry_name(*item).lower() == needle]
         if len(matches) == 1:
             return matches[0]
-        raise ClientError('工程名 "{}" 匹配 {} 个；候选：{}。'.format(project, len(matches), candidates),
-                          EXIT_PARAM)
+        raise ClientError('工程名 "{}" 匹配 {} 个；同名多端请用 --instance-id 锁定实例，候选：{}。'.format(
+            project, len(matches), candidates), EXIT_PARAM)
     expected = selection.get("expectedProject")
     if expected:
         matches = [item for item in entries if item[1].get("project_path")
@@ -219,8 +222,9 @@ def _select_connection(entries, selection):
             return matches[0]
     if len(entries) == 1:
         return entries[0]
-    raise ClientError("连接配置含 {} 个工程，请用 --project 或 --expected-project 指定；候选：{}。".format(
-        len(entries), candidates), EXIT_PARAM)
+    raise ClientError("连接配置含 {} 个工程，请用 --project / --expected-project 指定，"
+                      "同名多端请用 --instance-id 锁定实例；候选：{}。".format(
+                          len(entries), candidates), EXIT_PARAM)
 
 
 def log_info(message):
@@ -234,10 +238,10 @@ def discover(ini, timeout, selection=None):
     sections = read_ini(ini)
     entries = _project_entries(sections)
     if not entries:
-        # 旧版 INI 只有别名节；无工程节时按别名兜底（保持旧客户端行为）。
+        # 旧版 INI 只有历史别名节；新版服务只写 [project:...] 节，此处仅为兼容旧文件兜底。
         if not sections.has_section(ALIAS_SECTION):
             raise ClientError(
-                "无法读取连接配置 {}：INI 缺少 unity3d-skilled-mcp 节；请在 Unity 中启动服务。".format(ini),
+                "无法读取连接配置 {}：INI 缺少 [project:...] 工程节；请在 Unity 中启动服务。".format(ini),
                 EXIT_PARAM)
         entry_name, entry = ALIAS_SECTION, _section_config(sections, ALIAS_SECTION)
     else:

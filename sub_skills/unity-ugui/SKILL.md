@@ -154,9 +154,10 @@ console.log(verify.report(r));
 `unity-modeling/scripts/mcp.js`）：
 
 工程根顺序：显式 `--project` → `UNITY_PROJECT` / `UNITY_PROJECT_PATH`
-→ `~/.unity-mcp/skill.ini` 的 `project_path` → `process.cwd()` 上溯 → 技能目录上溯。
+→ `~/.unity-mcp/skill.ini` 中最新启动端的 `project_path` → `process.cwd()` 上溯 → 技能目录上溯。
 
 客户端顺序：`UNITY_MCP_LOADER` → ini 的 `skill_dir` → 上溯候选 → 用户级技能目录。
+ini 只从 `[project:...]` 各节里取 `started_at` 最大的一端；旧版兼容节 `[unity3d-skilled-mcp]` 已不再发布，仅在旧文件存在时兜底。
 
 跨进程调用必须带 `--expected-project` + `--instance-id`；
 实例漂移要先重新 `discover`，**不自动重放**。

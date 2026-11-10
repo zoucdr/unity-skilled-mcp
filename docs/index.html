@@ -516,17 +516,31 @@ const summary = await unity.workflowContext('TASK', 'DESCRIPTION', async functio
                     <h3>连接信息（服务启动时发布）</h3>
                     <div class="code-block">
                         <pre><code><span class="comment"># ~/.unity-mcp/skill.ini</span>
-[unity3d-skilled-mcp]
+[project:YourUnityProject]
 base_url=http://localhost:8000
 port=8000
 project_path=E:/YourUnityProject
 unity_version=2021.3.45f2c1
 render_pipeline=Built-in
 process_id=12345
+started_at=2026-10-30T02:00:00.0000000Z
 updated_at=2026-10-30T02:00:00.0000000Z
+max_details=32
+
+[project:AnotherProject]
+base_url=http://localhost:8001
+port=8001
+project_path=E:/AnotherProject
+project_name=AnotherProject
+instance_id=8c2b71e0-...
+unity_version=2021.3.45f2c1
+render_pipeline=URP
+process_id=23456
+started_at=2026-10-30T03:00:00.0000000Z
+updated_at=2026-10-30T03:00:00.0000000Z
 max_details=32</code></pre>
                     </div>
-                    <p>启动或改端口重启都会重写该文件；最后成功启动的项目覆盖它。<code>unity_version</code> 与 <code>render_pipeline</code> 是启动时捕获的 Unity 版本与生效渲染管线（Built-in / URP / HDRP / 自定义类型全名）。客户端每次命令都重新读取，不扫描端口，也不自动重试写操作。</p>
+                    <p>每个端只写自己的 <code>[project:工程名]</code> 节，不再发布 <code>[unity3d-skilled-mcp]</code> 兼容节；<code>started_at</code> 是该端服务启动时刻，值最大者即最新启动的端。启动或改端口重启都会重写本端节，其它在线端的节保持不变。<code>unity_version</code> 与 <code>render_pipeline</code> 是启动时捕获的 Unity 版本与生效渲染管线（Built-in / URP / HDRP / 自定义类型全名）。客户端每次命令都重新读取，不扫描端口，也不自动重试写操作。</p>
                 </div>
             </div>
         </div>

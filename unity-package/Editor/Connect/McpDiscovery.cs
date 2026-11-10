@@ -13,6 +13,8 @@ namespace UniMcp
         private volatile McpDiscoverySnapshot discoverySnapshot = new McpDiscoverySnapshot(new ToolInfo[0]);
         private volatile string discoveryJson = "{}";
         private int startedDiscoveryMaxDetails = McpDiscoverySnapshot.DefaultMaxDetails;
+        // 本次服务启动时刻（UTC）：发布到各工程节，用于比较哪个端是最新启动的。
+        private DateTime serviceStartedAtUtc;
         private int discoveryDirty = 1;
         private string discoveryLanguage;
         private string discoveryDisabledTools;
@@ -93,7 +95,8 @@ namespace UniMcp
                 System.Diagnostics.Process.GetCurrentProcess().Id, DateTime.UtcNow,
                 maxDetails: startedDiscoveryMaxDetails, skillDir: skillDir,
                 unityVersion: UnityEngine.Application.unityVersion,
-                renderPipeline: McpConnectionInfo.DetectRenderPipeline());
+                renderPipeline: McpConnectionInfo.DetectRenderPipeline(),
+                startedAt: serviceStartedAtUtc == DateTime.MinValue ? DateTime.UtcNow : serviceStartedAtUtc);
             discoveryJson = info.ToJson();
             try
             {
@@ -748,6 +751,9 @@ namespace UniMcp
         internal int Port { get; }
         internal string ProjectPath { get; }
         internal int ProcessId { get; }
+        /// <summary>本次服务启动时刻（UTC ISO8601）：随每个工程节发布，用于比较哪个端最新。</summary>
+        internal string StartedAt { get; }
+        /// <summary>连接信息写入时刻（UTC ISO8601）；刷新 INI 时更新，启动时刻不变。</summary>
         internal string UpdatedAt { get; }
         internal int MaxDetails { get; }
         /// <summary>技能源目录绝对路径（unity-package/Skills/unity-skilled-mcp）；未导入时为 null。</summary>
@@ -813,7 +819,7 @@ namespace UniMcp
 
         internal McpConnectionInfo(IEnumerable<string> boundPrefixes, string projectPath, int processId, DateTime updatedAt,
             int maxDetails = McpDiscoverySnapshot.DefaultMaxDetails, string skillDir = null,
-            string unityVersion = null, string renderPipeline = null)
+            string unityVersion = null, string renderPipeline = null, DateTime? startedAt = null)
         {
             var prefixes = boundPrefixes.ToArray();
             // 优先选择显式成功绑定的 localhost，其次 127.0.0.1；通配监听只发布回环地址。
@@ -830,6 +836,7 @@ namespace UniMcp
             ProjectPath = projectPath;
             ProjectName = ProjectNameOf(projectPath);
             ProcessId = processId;
+            StartedAt = (startedAt ?? updatedAt).ToUniversalTime().ToString("O", CultureInfo.InvariantCulture);
             UpdatedAt = updatedAt.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture);
             MaxDetails = McpDiscoverySnapshot.NormalizeMaxDetails(maxDetails);
             SkillDir = string.IsNullOrEmpty(skillDir) ? null : skillDir;
@@ -873,6 +880,7 @@ namespace UniMcp
                 { "render_pipeline", new JsonData(RenderPipeline) },
                 { "instance_id", new JsonData(InstanceId) },
                 { "process_id", new JsonData(ProcessId) },
+                { "started_at", new JsonData(StartedAt) },
                 { "updated_at", new JsonData(UpdatedAt) },
                 { "groups_url", new JsonData(BaseUrl + "/groups") },
                 { "prompts_url", new JsonData(BaseUrl + "/prompts") },
@@ -887,17 +895,17 @@ namespace UniMcp
             }.ToString();
         }
 
-        /// <summary>兼容别名节名：始终记录最近启动的实例，供旧客户端按名字读取。</summary>
+        /// <summary>历史兼容别名节名：新版不再发布，仅在重写 INI 时清理旧文件里的残留节。</summary>
         internal const string AliasSection = "unity3d-skilled-mcp";
-        /// <summary>按工程分组的节名前缀；节名形如 project:工程名（同名冲突时追加 #路径哈希）。</summary>
+        /// <summary>按工程分组的节名前缀；节名形如 project:工程名（同名工程或同工程多端冲突时追加 #实例哈希）。</summary>
         internal const string ProjectSectionPrefix = "project:";
         // 跨进程写入互斥体名：多个 Unity 实例同时改写同一份 skill.ini 时串行化。
         private const string IniMutexName = "UniMcp.SkillIni";
 
-        /// <summary>别名节：不指定工程时的兜底，等价于“最近启动的实例”。</summary>
+        /// <summary>本端连接信息的 INI 节（默认工程节名）；WriteIni 节名冲突时会改用带后缀的节名。</summary>
         internal string ToIni()
         {
-            return "[" + AliasSection + "]\n" + SectionBody();
+            return ToProjectIni(ProjectSectionPrefix + SanitizeSectionName(ProjectName));
         }
 
         /// <summary>按工程分组的节；sectionName 由 MergeIni 依工程名与冲突情况决定。</summary>
@@ -906,7 +914,8 @@ namespace UniMcp
             return "[" + sectionName + "]\n" + SectionBody();
         }
 
-        // 别名节与工程节字段顺序保持一致；project_name / instance_id 供多工程选择与陈旧节判定。
+        // 每个端只写自己的工程节；started_at 为本次服务启动时刻，比较各节即可得知谁最新。
+        // project_name / instance_id 供多工程选择与陈旧节判定。
         private string SectionBody()
         {
             return "base_url=" + BaseUrl + "\n"
@@ -918,6 +927,7 @@ namespace UniMcp
                 + "render_pipeline=" + IniValue(RenderPipeline) + "\n"
                 + "skill_dir=" + IniValue(SkillDir) + "\n"
                 + "process_id=" + ProcessId.ToString(CultureInfo.InvariantCulture) + "\n"
+                + "started_at=" + StartedAt + "\n"
                 + "updated_at=" + UpdatedAt + "\n"
                 + "max_details=" + MaxDetails.ToString(CultureInfo.InvariantCulture) + "\n";
         }
@@ -929,8 +939,9 @@ namespace UniMcp
         }
 
         /// <summary>
-        /// 多工程共用一份 skill.ini：读取旧文件 → 删同 project_path 的旧节与进程已亡的陈旧节
-        /// → 重写别名节与本工程节 → 原样保留其它未知节 → 原子替换。全程持命名互斥体，避免多实例互相覆盖。
+        /// 多端共用一份 skill.ini：读取旧文件 → 删本端（同路径且同进程）的旧节、进程已亡的陈旧节与历史别名节
+        /// → 只重写本端工程节 → 原样保留其它在线端的节与未知节 → 原子替换。全程持命名互斥体，避免多实例互相覆盖。
+        /// 不再发布「当前实例」别名节：每个端各自的 started_at 即表明谁是最新启动的。
         /// </summary>
         internal void WriteIni(string path)
         {
@@ -988,26 +999,39 @@ namespace UniMcp
         {
             var blocks = ParseIni(existing);
             string ourKey = ProjectKey(ProjectPath);
+            string ownPid = ProcessId.ToString(CultureInfo.InvariantCulture);
             var preamble = new List<IniBlock>();
             var kept = new List<IniBlock>();
             foreach (var block in blocks)
             {
                 if (block.Name == null) { preamble.Add(block); continue; }
-                // 别名节稍后按本实例重写。
+                // 历史兼容别名节不再发布：重写 INI 时清理旧文件残留。
                 if (string.Equals(block.Name, AliasSection, StringComparison.OrdinalIgnoreCase)) continue;
                 if (block.Name.StartsWith(ProjectSectionPrefix, StringComparison.OrdinalIgnoreCase))
                 {
                     string otherPath = IniField(block, "project_path");
-                    // 同一工程的旧节（含改端口前）直接替换。
-                    if (otherPath != null && string.Equals(ProjectKey(otherPath), ourKey, StringComparison.Ordinal)) continue;
-                    // 进程已亡的陈旧节直接清理。
-                    if (!IsProcessAlive(IniField(block, "process_id"))) continue;
+                    string otherPid = IniField(block, "process_id");
+                    string otherInstance = IniField(block, "instance_id");
+                    bool samePath = otherPath != null
+                        && string.Equals(ProjectKey(otherPath), ourKey, StringComparison.Ordinal);
+                    // 只有「同工程路径 + 同进程/实例」才是本端自己的旧节。
+                    // 同路径的其它 Unity 进程（不同端口/实例）必须保留：否则后启动的端会抹掉先启动的端。
+                    bool ownOldSection = samePath && (
+                        (otherPid != null && string.Equals(otherPid, ownPid, StringComparison.Ordinal))
+                        || (otherPid == null && !string.IsNullOrEmpty(otherInstance)
+                            && string.Equals(otherInstance, InstanceId, StringComparison.Ordinal))
+                        || (otherPid == null && otherInstance == null)); // 无标识的旧格式节
+                    if (ownOldSection) continue;
+                    // 其它端的节：进程已亡的陈旧节才清理；活着的一律保留。
+                    if (!IsProcessAlive(otherPid)) continue;
                 }
                 kept.Add(block);
             }
             string baseName = ProjectSectionPrefix + SanitizeSectionName(ProjectName);
             bool nameTaken = kept.Any(b => string.Equals(b.Name, baseName, StringComparison.OrdinalIgnoreCase));
-            string sectionName = nameTaken ? baseName + "#" + PathHash(ProjectPath) : baseName;
+            // 后缀含进程号：同一工程路径下的不同端不会撞节名，本端重启则保持稳定。
+            string instanceSuffix = PathHash(ProjectKey(ProjectPath) + "|" + ownPid);
+            string sectionName = nameTaken ? baseName + "#" + instanceSuffix : baseName;
 
             var parts = new List<string>();
             foreach (var block in preamble)
@@ -1015,7 +1039,6 @@ namespace UniMcp
                 string body = string.Join("\n", block.Lines).Trim('\n');
                 if (body.Trim().Length > 0) parts.Add(body);
             }
-            parts.Add(ToIni().TrimEnd('\n'));
             parts.Add(ToProjectIni(sectionName).TrimEnd('\n'));
             foreach (var block in kept)
                 parts.Add(("[" + block.Name + "]\n" + string.Join("\n", block.Lines)).Trim('\n'));
@@ -1111,7 +1134,7 @@ namespace UniMcp
             return Path.DirectorySeparatorChar == '\\' ? normalized.ToLowerInvariant() : normalized;
         }
 
-        // 同名工程在不同路径时用其工程键前 8 位十六进制哈希区分节名。
+        // 同名工程或同一工程的不同端，用「工程键+进程号」的哈希前 8 位十六进制区分节名。
         private static string PathHash(string path)
         {
             using (var sha = System.Security.Cryptography.SHA256.Create())

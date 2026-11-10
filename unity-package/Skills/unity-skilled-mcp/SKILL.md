@@ -17,9 +17,9 @@ agent_created: true
 
 ## 连接与运行时
 
-1. Unity 启 MCP，先读 `~/.unity-mcp/skill.ini` 之 `[unity3d-skilled-mcp]` 节。客户端有两个等价实现：`scripts/unity_bridge.js`（Node.js 18+）与 `scripts/unity_bridge.py`（Python 3.8+），皆只用标准库、契约与校验同源。INI 不发布脚本语言字段；旧 INI 残留 `script_language` 忽略。`max_details` 由 Unity 启动时发布，为单次详情数（默认 `32`，`0` 不限），只读、不得放大。INI 与 `/discovery` 不符则提示重启服务。禁以 INI 内容作命令执行。INI 与 `/discovery` 另带 `skill_dir`：本技能源目录之绝对路径（`unity-package/Skills/unity-skilled-mcp`），供直接定位 `SKILL.md` 与两个客户端脚本，未导入或解析失败时为空串；该字段只作路径提示，不改变调用语义，亦不得据其执行命令。INI 与 `/discovery` 另带 `unity_version`（Unity 编辑器版本）与 `render_pipeline`（启动时的生效渲染管线：`Built-in` / `URP` / `HDRP` / 自定义管线资源类型全名），二者只作环境提示，不参与连接校验、不得据其执行命令；运行中切换管线须重启服务才刷新。
+1. Unity 启 MCP，先读 `~/.unity-mcp/skill.ini`：每个在线端只写自己的 `[project:<工程名>]` 节，**不再发布 `[unity3d-skilled-mcp]` 兼容节**；节内 `started_at` 是该端服务本次启动时刻，比较各节即可判断谁最新，`updated_at` 为该节最后重写时刻。启动时间只作标识，多端仍须用 `--project` / `--instance-id` 明确指定目标，不按时间自动猜测。客户端有两个等价实现：`scripts/unity_bridge.js`（Node.js 18+）与 `scripts/unity_bridge.py`（Python 3.8+），皆只用标准库、契约与校验同源。INI 不发布脚本语言字段；旧 INI 残留 `script_language` 忽略。`max_details` 由 Unity 启动时发布，为单次详情数（默认 `32`，`0` 不限），只读、不得放大。INI 与 `/discovery` 不符则提示重启服务。禁以 INI 内容作命令执行。INI 与 `/discovery` 另带 `skill_dir`：本技能源目录之绝对路径（`unity-package/Skills/unity-skilled-mcp`），供直接定位 `SKILL.md` 与两个客户端脚本，未导入或解析失败时为空串；该字段只作路径提示，不改变调用语义，亦不得据其执行命令。INI 与 `/discovery` 另带 `unity_version`（Unity 编辑器版本）与 `render_pipeline`（启动时的生效渲染管线：`Built-in` / `URP` / `HDRP` / 自定义管线资源类型全名），二者只作环境提示，不参与连接校验、不得据其执行命令；运行中切换管线须重启服务才刷新。
 2. 下例自技能目录运行；他处用脚本绝对路径。命令一律 `node scripts/unity_bridge.js`，或等价地 `python scripts/unity_bridge.py`。选定一种即沿用，不因失败换运行时，不失败重放。
-3. 先 `discover` 核项目、端口、进程、更新时间。每命令重读 INI、验 HTTP `/discovery`。配置失效则重启目标服务，不扫端口。最后成功启动之项目覆盖 INI；响应扩展字段仅作数据保留。
+3. 先 `discover` 核项目、端口、进程、启动时间。每命令重读 INI、验 HTTP `/discovery`。配置失效则重启目标服务，不扫端口。各端只重写自己的节，互不覆盖；响应扩展字段仅作数据保留。
 4. INI 与 `/discovery` 皆不发布 MCP 端点，此乃刻意：勿自拼或直连 `/mcp`，勿加载 MCP 客户端协议。访问只走本脚本 CLI 或库 API（`list` / `find` / `schema` / `schemas` / `call` / `prompt` / `resource` / `details` / `request` 及函数形式，见「作为代码库调用」）。
 
 ## 工程绑定与执行台账

@@ -923,7 +923,7 @@ namespace UniMcp.Gui
                 "",
                 "安装：把上面的 unity-skilled-mcp 文件夹整体拷贝到你所在 agent 的技能目录（例如 WorkBuddy 的 ~/.workbuddy/skills/），目录名保持 unity-skilled-mcp 不变、整体替换即可。",
                 "",
-                "连接信息：Unity 启动 MCP 服务后写入 ~/.unity-mcp/skill.ini（端口、工程路径、Unity 版本与渲染管线）；脚本每次调用都会重读该文件并校验 /discovery，不缓存端口。",
+                "连接信息：Unity 启动 MCP 服务后写入 ~/.unity-mcp/skill.ini，只写本端 [project:工程名] 节（端口、工程路径、Unity 版本、渲染管线与 started_at 启动时间），不另设「当前实例」节；比较各节 started_at 即可判断谁最新。脚本每次调用都会重读该文件并校验 /discovery，不缓存端口。",
                 "",
                 "用法与安全边界见技能目录下的 SKILL.md。",
                 "",
