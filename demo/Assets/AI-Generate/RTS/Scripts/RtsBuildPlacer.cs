@@ -62,15 +62,22 @@ namespace IronFront
             if (cam == null || !RtsUtil.ScreenToGround(cam, Input.mousePosition, out ground)) return;
 
             _pos = ground;
-            _valid = Check(ground);
+            _valid = CanPlace(ground);
 
             if (_ghost != null) _ghost.transform.position = ground;
             if (_ghostR != null) _ghostR.sharedMaterial = RtsArt.Ghost(_valid);
         }
 
-        private bool Check(Vector3 p)
+        /// <summary>落点是否合法（不越界、不压建筑与矿点）。建造与 AI 选址共用。</summary>
+        public bool CanPlace(Vector3 p)
         {
-            BuildingDef d = RtsDefs.B(Kind);
+            return CanPlace(Kind, p);
+        }
+
+        /// <summary>按指定建筑类型判断落点是否合法，便于 AI 与测试在不进入建造模式时选址。</summary>
+        public bool CanPlace(BuildingKind kind, Vector3 p)
+        {
+            BuildingDef d = RtsDefs.B(kind);
             if (Mathf.Abs(p.x) > 38f || Mathf.Abs(p.z) > 38f) return false;
 
             RtsGame g = RtsGame.I;
@@ -95,7 +102,27 @@ namespace IronFront
 
         public void Confirm()
         {
+            ConfirmInternal(false);
+        }
+
+        /// <summary>
+        /// 确认放置。fresh=true 时用当前鼠标位置重新校验，避免 Update 与鼠标事件帧序不一致
+        /// 导致「点到的位置」和「预览的位置」错开一帧（快速点击时尤其明显）。
+        /// </summary>
+        private void ConfirmInternal(bool useCachedPosition)
+        {
             if (!Active) return;
+
+            if (!useCachedPosition)
+            {
+                Camera cam = Camera.main;
+                Vector3 ground;
+                if (cam != null && RtsUtil.ScreenToGround(cam, Input.mousePosition, out ground))
+                {
+                    _pos = ground;
+                    _valid = CanPlace(ground);
+                }
+            }
 
             if (!_valid)
             {
@@ -140,9 +167,9 @@ namespace IronFront
         {
             if (!Active) return false;
             _pos = pos;
-            _valid = Check(pos);
+            _valid = CanPlace(pos);
             if (!_valid) return false;
-            Confirm();
+            ConfirmInternal(true);
             return true;
         }
 

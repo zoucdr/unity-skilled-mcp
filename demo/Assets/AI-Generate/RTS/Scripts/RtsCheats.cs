@@ -1,4 +1,6 @@
+using System.Text;
 using UnityEngine;
+using UnityEngine.UI;
 
 namespace IronFront
 {
@@ -177,6 +179,173 @@ namespace IronFront
             return s;
         }
 
+        /// <summary>
+        /// 把 HUD 按钮、单位、资源点、双方总部的屏幕坐标导出为 GameView 左上原点像素，
+        /// 供外部真实输入注入（SendInput）精确定位，避免靠猜坐标点空。
+        /// </summary>
+        public string UiPoints()
+        {
+            RtsGame g = RtsGame.I;
+            Camera cam = Camera.main;
+            float h = Screen.height;
+            StringBuilder sb = new StringBuilder(2048);
+
+            sb.Append("{\"screen\":[").Append(Screen.width).Append(",").Append(Screen.height).Append("]");
+
+            sb.Append(",\"buttons\":[");
+            RtsHUD hud = RtsHUD.I != null ? RtsHUD.I : FindObjectOfType<RtsHUD>();
+            bool first = true;
+            if (hud != null && hud.CmdButtons != null)
+            {
+                Vector3[] c = new Vector3[4];
+                for (int i = 0; i < hud.CmdButtons.Length; i++)
+                {
+                    Button btn = hud.CmdButtons[i];
+                    if (!first) sb.Append(",");
+                    first = false;
+                    if (btn == null) { sb.Append("null"); continue; }
+
+                    RectTransform rt = btn.transform as RectTransform;
+                    rt.GetWorldCorners(c);
+                    float cx = (c[0].x + c[2].x) * 0.5f;
+                    float cy = (c[0].y + c[2].y) * 0.5f;
+                    sb.Append("{\"idx\":").Append(i)
+                      .Append(",\"name\":\"").Append(btn.name).Append("\"")
+                      .Append(",\"center\":[").Append(cx.ToString("F0")).Append(",").Append((h - cy).ToString("F0")).Append("]")
+                      .Append(",\"size\":[").Append((c[2].x - c[0].x).ToString("F0")).Append(",").Append((c[2].y - c[0].y).ToString("F0")).Append("]")
+                      .Append(",\"interactable\":").Append(btn.interactable ? "true" : "false")
+                      .Append("}");
+                }
+            }
+            sb.Append("]");
+
+            if (g != null && cam != null)
+            {
+                sb.Append(",\"units\":[");
+                first = true;
+                for (int i = 0; i < g.Units.Count; i++)
+                {
+                    RtsUnit u = g.Units[i];
+                    if (u == null || !u.IsAlive) continue;
+                    Vector3 sp = cam.WorldToScreenPoint(u.transform.position + Vector3.up * 0.6f);
+                    if (!first) sb.Append(",");
+                    first = false;
+                    sb.Append("{\"team\":\"").Append(u.Team == Team.Blue ? "blue" : "red").Append("\"")
+                      .Append(",\"kind\":\"").Append(u.Kind).Append("\"")
+                      .Append(",\"screen\":[").Append(sp.x.ToString("F0")).Append(",").Append((h - sp.y).ToString("F0")).Append("]")
+                      .Append(",\"behind\":").Append(sp.z < 0f ? "true" : "false")
+                      .Append(",\"pos\":[").Append(u.transform.position.x.ToString("F1")).Append(",").Append(u.transform.position.z.ToString("F1")).Append("]")
+                      .Append("}");
+                }
+                sb.Append("]");
+
+                sb.Append(",\"nodes\":[");
+                first = true;
+                for (int i = 0; i < g.Nodes.Count; i++)
+                {
+                    RtsResourceNode n = g.Nodes[i];
+                    if (n == null || n.Depleted) continue;
+                    Vector3 sp = cam.WorldToScreenPoint(n.transform.position + Vector3.up * 0.5f);
+                    if (!first) sb.Append(",");
+                    first = false;
+                    sb.Append("{\"screen\":[").Append(sp.x.ToString("F0")).Append(",").Append((h - sp.y).ToString("F0")).Append("]")
+                      .Append(",\"pos\":[").Append(n.transform.position.x.ToString("F1")).Append(",").Append(n.transform.position.z.ToString("F1")).Append("]")
+                      .Append(",\"left\":").Append(n.Remaining)
+                      .Append("}");
+                }
+                sb.Append("]");
+
+                AppendScreenPoint(sb, "hq", cam, g.PlayerHQ, h);
+                AppendScreenPoint(sb, "enemyHq", cam, g.EnemyHQ, h);
+
+                RtsBuilding barracks = null;
+                for (int i = 0; i < g.Buildings.Count; i++)
+                {
+                    RtsBuilding b = g.Buildings[i];
+                    if (b != null && b.IsAlive && b.Team == Team.Blue
+                        && b.Kind == BuildingKind.Barracks) { barracks = b; break; }
+                }
+                AppendScreenPoint(sb, "barracks", cam, barracks, h);
+
+                sb.Append(",\"camera\":{\"height\":").Append(cam.transform.position.y.ToString("F1"))
+                  .Append(",\"pos\":[").Append(cam.transform.position.x.ToString("F1")).Append(",")
+                  .Append(cam.transform.position.z.ToString("F1")).Append("]}");
+            }
+
+            sb.Append("}");
+            return sb.ToString();
+        }
+
+        private static void AppendScreenPoint(StringBuilder sb, string key, Camera cam, RtsBuilding b, float h)
+        {
+            sb.Append(",\"").Append(key).Append("\":");
+            if (b == null || !b.IsAlive || cam == null) { sb.Append("null"); return; }
+            Vector3 sp = cam.WorldToScreenPoint(b.transform.position + Vector3.up * 1.5f);
+            sb.Append("[")
+              .Append(sp.x.ToString("F0")).Append(",").Append((h - sp.y).ToString("F0"))
+              .Append("]");
+        }
+
+        /// <summary>
+        /// 在玩家总部周围螺旋搜索一个合法建造落点，返回世界坐标与 GameView 屏幕坐标。
+        /// 供自动试玩与手动调试定位可放置位置，避免点在全是非法区的地方。
+        /// </summary>
+        public string FindSpot(int kind)
+        {
+            RtsGame g = RtsGame.I;
+            Camera cam = Camera.main;
+            if (g == null || g.PlayerHQ == null || cam == null) return "{\"error\":\"no_ctx\"}";
+
+            RtsBuildPlacer placer = FindObjectOfType<RtsBuildPlacer>();
+            if (placer == null) return "{\"error\":\"no_placer\"}";
+
+            Vector3 c = g.PlayerHQ.transform.position;
+            float h = Screen.height;
+
+            for (float r = 7f; r <= 28f; r += 1.5f)
+            {
+                for (int a = 0; a < 24; a++)
+                {
+                    float ang = a * Mathf.PI * 2f / 24f;
+                    Vector3 pos = c + new Vector3(Mathf.Cos(ang) * r, 0f, Mathf.Sin(ang) * r);
+                    if (!placer.CanPlace((BuildingKind)kind, pos)) continue;
+
+                    Vector3 sp = cam.WorldToScreenPoint(pos);
+                    if (sp.z < 0f) continue;
+                    if (sp.x < 24f || sp.x > Screen.width - 24f) continue;
+                    if (sp.y < 90f || sp.y > h - 140f) continue;
+
+                    return "{\"ok\":true,\"world\":[" + pos.x.ToString("F1") + "," + pos.z.ToString("F1")
+                        + "],\"screen\":[" + sp.x.ToString("F0") + "," + (h - sp.y).ToString("F0") + "]}";
+                }
+            }
+            return "{\"ok\":false}";
+        }
+
+        /// <summary>选中构成：总数、工兵数、战斗单位数、建筑数。</summary>
+        public string SelectionInfo()
+        {
+            RtsGame g = RtsGame.I;
+            if (g == null) return "{\"error\":\"no_game\"}";
+
+            int eng = 0, army = 0, bld = 0;
+            for (int i = 0; i < g.Selection.Count; i++)
+            {
+                RtsSelectable s = g.Selection[i];
+                if (s == null) continue;
+                RtsUnit u = s as RtsUnit;
+                if (u != null)
+                {
+                    if (u.Kind == UnitKind.Engineer) eng++;
+                    else army++;
+                }
+                else bld++;
+            }
+
+            return "{\"total\":" + g.Selection.Count + ",\"engineers\":" + eng
+                + ",\"army\":" + army + ",\"buildings\":" + bld + "}";
+        }
+
         public string Probe()
         {
             RtsGame g = RtsGame.I;
@@ -190,7 +359,7 @@ namespace IronFront
             s += ",\"buildings\":" + (g != null ? g.Buildings.Count : -1);
             s += ",\"nodes\":" + (g != null ? g.Nodes.Count : -1);
             s += ",\"placer\":" + (p != null ? "true" : "false");
-            s += ",\"placerActive\":" + (p != null ? p.Active : false);
+            s += ",\"placerActive\":" + (p != null && p.Active ? "true" : "false");
             s += ",\"hud\":" + (h != null ? "true" : "false");
             s += ",\"overlay\":" + (o != null ? "true" : "false");
             s += ",\"state\":\"" + (g != null ? g.State.ToString() : "?") + "\"";
@@ -257,8 +426,8 @@ namespace IronFront
             s += "\"state\":\"" + g.State + "\"";
             s += ",\"crystal\":" + g.Crystal;
             s += ",\"enemyCrystal\":" + g.EnemyCrystal;
-            s += ",\"supply\":" + g.SupplyUsed + "/" + g.SupplyCap;
-            s += ",\"enemySupply\":" + g.EnemySupplyUsed + "/" + g.EnemySupplyCap;
+            s += ",\"supplyUsed\":" + g.SupplyUsed + ",\"supplyCap\":" + g.SupplyCap;
+            s += ",\"enemySupplyUsed\":" + g.EnemySupplyUsed + ",\"enemySupplyCap\":" + g.EnemySupplyCap;
             s += ",\"elapsed\":" + g.Elapsed.ToString("0.0");
             s += ",\"blueUnits\":" + blueUnits;
             s += ",\"redUnits\":" + redUnits;

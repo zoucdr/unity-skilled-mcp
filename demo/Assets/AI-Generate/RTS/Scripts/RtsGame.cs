@@ -55,8 +55,34 @@ namespace IronFront
 
         private void OnEnable()
         {
-            // 域重载（脚本热编译等）会清空静态字段但保留组件，此处自愈，避免全局单例失效。
+            // 域重载会清空静态字段和 readonly 索引，但保留场景对象及序列化游戏状态。
             if (I == null) I = this;
+            if (I != this) return;
+
+            Units.Clear();
+            Buildings.Clear();
+            Nodes.Clear();
+            Selection.Clear();
+
+            // 只恢复索引，不重跑 Init 或人口/资源结算；禁用对象也不会自动注销。
+            foreach (RtsUnit u in UnityEngine.Object.FindObjectsOfType<RtsUnit>(true))
+            {
+                if (!u.IsAlive) continue;
+                Register(u);
+                if (u.IsSelected) Selection.Add(u);
+            }
+
+            foreach (RtsBuilding b in UnityEngine.Object.FindObjectsOfType<RtsBuilding>(true))
+            {
+                if (!b.IsAlive) continue;
+                Register(b);
+                if (b.IsSelected) Selection.Add(b);
+            }
+
+            foreach (RtsResourceNode n in UnityEngine.Object.FindObjectsOfType<RtsResourceNode>(true))
+            {
+                if (!n.Depleted) Register(n);
+            }
         }
 
         private void OnDestroy()

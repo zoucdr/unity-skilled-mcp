@@ -6,10 +6,17 @@ namespace IronFront
     /// <summary>敌方 AI：采矿 → 建兵营 → 造兵 → 定期成波进攻 → 遇袭回防。</summary>
     public class RtsAI : MonoBehaviour
     {
-        public float WaveInterval = 40f;
+        public float WaveInterval = 90f;
+        /// <summary>首波进攻的最早时间；低于它 AI 只造兵不出门，给玩家组织防守的窗口。</summary>
+        public float FirstWaveAt = 70f;
+        /// <summary>每次进攻投入的兵力比例，其余留守基地，避免被反打直接空门。</summary>
+        public float CommitRatio = 0.6f;
+        /// <summary>两次下单之间的最小间隔，模拟 AI 的决策延迟，避免瞬间攒满队列。</summary>
+        public float ProduceCooldown = 6f;
 
         private float _think;
         private float _wave;
+        private float _produceCd;
 
         private void Update()
         {
@@ -35,7 +42,7 @@ namespace IronFront
             if (barracks == null) TryBuildBarracks();
             else if (!barracks.UnderConstruction) TryProduce(barracks);
 
-            if (g.Elapsed > 12f && _wave >= WaveInterval)
+            if (g.Elapsed > FirstWaveAt && _wave >= WaveInterval)
             {
                 if (LaunchAttack()) _wave = 0f;
             }
@@ -86,13 +93,17 @@ namespace IronFront
         {
             RtsGame g = RtsGame.I;
             if (barracks.Queue.Count >= 2) return;
+            if (_produceCd > 0f) { _produceCd -= 0.5f; return; }
 
             int army = CountArmy();
             UnitKind want = UnitKind.Rifleman;
             if (g.EnemyCrystal > 640 && army >= 3) want = UnitKind.Tank;
 
             UnitDef ud = RtsDefs.U(want);
-            if (g.CanAffordOf(Team.Red, ud.Cost, ud.Supply)) barracks.Enqueue(want);
+            if (g.CanAffordOf(Team.Red, ud.Cost, ud.Supply))
+            {
+                if (barracks.Enqueue(want)) _produceCd = ProduceCooldown;
+            }
         }
 
         private int CountArmy()
@@ -117,7 +128,15 @@ namespace IronFront
             List<RtsUnit> army = Army();
             if (army.Count < 2) return false;
 
-            for (int i = 0; i < army.Count; i++) army[i].IssueAttack(target);
+            // 只派前线的一部分，其余留守，避免一次梭哈被反打就空门。
+            Vector3 tp = target.transform.position;
+            army.Sort((a, b) => RtsUtil.Flat(a.transform.position, tp)
+                .CompareTo(RtsUtil.Flat(b.transform.position, tp)));
+
+            int send = Mathf.Max(2, Mathf.CeilToInt(army.Count * Mathf.Clamp01(CommitRatio)));
+            if (send > army.Count) send = army.Count;
+
+            for (int i = 0; i < send; i++) army[i].IssueAttack(target);
             return true;
         }
 
