@@ -29,7 +29,6 @@ namespace UniMcp.Tools
         private static PropertyInfo selectedSizeIndexProperty;
 
         // 输入模拟相关
-        private static List<SimulatedInput> inputQueue = new List<SimulatedInput>();
 
         // 截图相关
         private static RenderTexture screenshotRenderTexture;
@@ -357,29 +356,26 @@ namespace UniMcp.Tools
                 var button = args["button"].AsIntDefault(0);
                 var delay = args["delay"].AsFloatDefault(0f);
 
-                var input = new SimulatedInput
+                if (!NativeInput.IsSupported)
                 {
-                    type = InputType.Click,
-                    position = new Vector2(x, y),
-                    button = button,
-                    delay = delay
-                };
-
-                if (delay > 0)
-                {
-                    EditorApplication.delayCall += () => ExecuteInputSimulation(input);
-                }
-                else
-                {
-                    ExecuteInputSimulation(input);
+                    return Response.Error("Input simulation requires the Windows editor (user32!SendInput).");
                 }
 
-                return Response.Success($"Click simulation queued at ({x}, {y})", new
+                // x/y 为 Game View 内容区像素坐标，左上原点（与截图一致）
+                NativeInput.Click(x, y, button, delay);
+
+                Vector2 origin, size;
+                bool calibrated = NativeInput.TryGetContentRect(out origin, out size);
+                return Response.Success($"Click queued at GameView ({x}, {y})", new
                 {
                     x = x,
                     y = y,
                     button = button,
-                    delay = delay
+                    delay = delay,
+                    coordinate_space = "gameview_top_left",
+                    content_origin = calibrated ? new[] { origin.x, origin.y } : null,
+                    content_size = calibrated ? new[] { size.x, size.y } : null,
+                    screen_point = calibrated ? new[] { origin.x + x, origin.y + y } : null
                 });
             }
             catch (Exception e)
@@ -404,32 +400,22 @@ namespace UniMcp.Tools
                 var duration = args["duration"].AsFloatDefault(1f);
                 var delay = args["delay"].AsFloatDefault(0f);
 
-                var input = new SimulatedInput
+                if (!NativeInput.IsSupported)
                 {
-                    type = InputType.Drag,
-                    position = new Vector2(x, y),
-                    targetPosition = new Vector2(targetX, targetY),
-                    duration = duration,
-                    delay = delay
-                };
-
-                if (delay > 0)
-                {
-                    EditorApplication.delayCall += () => ExecuteInputSimulation(input);
-                }
-                else
-                {
-                    ExecuteInputSimulation(input);
+                    return Response.Error("Input simulation requires the Windows editor (user32!SendInput).");
                 }
 
-                return Response.Success($"Drag simulation queued from ({x}, {y}) to ({targetX}, {targetY})", new
+                NativeInput.Drag(x, y, targetX, targetY, duration, delay);
+
+                return Response.Success($"Drag queued in GameView from ({x}, {y}) to ({targetX}, {targetY})", new
                 {
                     start_x = x,
                     start_y = y,
                     end_x = targetX,
                     end_y = targetY,
                     duration = duration,
-                    delay = delay
+                    delay = delay,
+                    coordinate_space = "gameview_top_left"
                 });
             }
             catch (Exception e)
@@ -438,7 +424,7 @@ namespace UniMcp.Tools
             }
         }
 
-        [ToolAction("simulate_key", Parameters = new string[] { "key_code", "delay" }, Inject = new string[] { "action=simulate_key" })]
+        [ToolAction("simulate_key", Parameters = new string[] { "key_code", "duration", "delay" }, Inject = new string[] { "action=simulate_key" })]
         /// <summary>
         /// 处理按键模拟
         /// </summary>
@@ -450,26 +436,26 @@ namespace UniMcp.Tools
                 var keyCode = args["key_code"]?.Value;
                 if (string.IsNullOrEmpty(keyCode)) keyCode = "";
                 var delay = args["delay"].AsFloatDefault(0f);
+                var hold = args["duration"].AsFloatDefault(0.12f);
 
-                var input = new SimulatedInput
+                if (!NativeInput.IsSupported)
                 {
-                    type = InputType.Key,
-                    keyCode = keyCode,
-                    delay = delay
-                };
-
-                if (delay > 0)
-                {
-                    EditorApplication.delayCall += () => ExecuteInputSimulation(input);
-                }
-                else
-                {
-                    ExecuteInputSimulation(input);
+                    return Response.Error("Input simulation requires the Windows editor (user32!SendInput).");
                 }
 
-                return Response.Success($"Key simulation queued: {keyCode}", new
+                uint vk;
+                if (!NativeInput.TryMapKeyCode(keyCode, out vk))
+                {
+                    return Response.Error($"Unsupported key_code: {keyCode}");
+                }
+
+                NativeInput.Key(keyCode, hold, delay);
+
+                return Response.Success($"Key queued: {keyCode}", new
                 {
                     key = keyCode,
+                    vk = vk,
+                    hold = hold,
                     delay = delay
                 });
             }
@@ -493,29 +479,15 @@ namespace UniMcp.Tools
                 var delta = args["delta"].AsFloatDefault(1f);
                 var delay = args["delay"].AsFloatDefault(0f);
 
-                var input = new SimulatedInput
-                {
-                    type = InputType.Scroll,
-                    position = new Vector2(x, y),
-                    scrollDelta = delta,
-                    delay = delay
-                };
+                NativeInput.Scroll(x, y, delta, delay);
 
-                if (delay > 0)
-                {
-                    EditorApplication.delayCall += () => ExecuteInputSimulation(input);
-                }
-                else
-                {
-                    ExecuteInputSimulation(input);
-                }
-
-                return Response.Success($"Scroll simulation queued at ({x}, {y}) with delta {delta}", new
+                return Response.Success($"Scroll queued at GameView ({x}, {y}) with delta {delta}", new
                 {
                     x = x,
                     y = y,
                     delta = delta,
-                    delay = delay
+                    delay = delay,
+                    coordinate_space = "gameview_top_left"
                 });
             }
             catch (Exception e)
@@ -583,12 +555,38 @@ namespace UniMcp.Tools
                 }
 
                 var info = GetGameViewInfo(gameView);
-                return Response.Success("Game window info retrieved", info);
+                return Response.Success("Game window info retrieved", new
+                {
+                    game_view = info,
+                    input_simulation = BuildInputSimulationInfo()
+                });
             }
             catch (Exception e)
             {
                 return Response.Error($"Get info failed: {e.Message}");
             }
+        }
+
+        /// <summary>输入模拟能力与 Game View 坐标几何自检。</summary>
+        private static object BuildInputSimulationInfo()
+        {
+            Vector2 origin, size;
+            bool calibrated = NativeInput.TryGetContentRect(out origin, out size);
+            Rect win;
+            bool hasWin = NativeInput.TryGetGameViewWindowRect(out win);
+
+            return new
+            {
+                supported = NativeInput.IsSupported,
+                backend = NativeInput.IsSupported ? "user32!SendInput" : "unsupported",
+                coordinate_space = "gameview_top_left",
+                calibrated = calibrated,
+                content_origin = calibrated ? new float[] { origin.x, origin.y } : null,
+                content_size = calibrated ? new float[] { size.x, size.y } : null,
+                window_rect = hasWin ? new float[] { win.x, win.y, win.width, win.height } : null,
+                last_error = NativeInput.LastError,
+                trace = NativeInput.Trace.ToArray()
+            };
         }
 
         [ToolAction("focus_window", Inject = new string[] { "action=focus_window" })]
@@ -920,129 +918,14 @@ namespace UniMcp.Tools
             return info;
         }
 
-        /// <summary>
-        /// 执行输入模拟
-        /// </summary>
-        private void ExecuteInputSimulation(SimulatedInput input)
-        {
-            try
-            {
-                switch (input.type)
-                {
-                    case InputType.Click:
-                        SimulateClick(input.position, input.button);
-                        break;
-                    case InputType.Drag:
-                        SimulateDrag(input.position, input.targetPosition, input.duration);
-                        break;
-                    case InputType.Key:
-                        SimulateKey(input.keyCode);
-                        break;
-                    case InputType.Scroll:
-                        SimulateScroll(input.position, input.scrollDelta);
-                        break;
-                }
-            }
-            catch (Exception e)
-            {
-                Debug.LogError($"[GamePlay] Input simulation failed: {e.Message}");
-            }
-        }
 
-        /// <summary>
-        /// 模拟点击
-        /// </summary>
-        private void SimulateClick(Vector2 position, int button)
-        {
-            // 在游戏运行时通过Event系统模拟点击
-            if (EditorApplication.isPlaying)
-            {
-                var mouseEvent = Event.current;
-                if (mouseEvent != null)
-                {
-                    mouseEvent.type = EventType.MouseDown;
-                    mouseEvent.mousePosition = position;
-                    mouseEvent.button = button;
 
-                    // 发送鼠标按下和松开事件
-                    EditorApplication.delayCall += () =>
-                    {
-                        mouseEvent.type = EventType.MouseUp;
-                    };
-                }
-            }
 
-            McpLogger.Log($"[GamePlay] Simulated click at ({position.x}, {position.y}) with button {button}");
-        }
 
-        /// <summary>
-        /// 模拟拖拽
-        /// </summary>
-        private void SimulateDrag(Vector2 start, Vector2 end, float duration)
-        {
-            // 实现拖拽模拟逻辑
-            var steps = Mathf.Max(10, Mathf.RoundToInt(duration * 60)); // 60fps
-            var stepDuration = duration / steps;
 
-            for (int i = 0; i <= steps; i++)
-            {
-                var t = (float)i / steps;
-                var currentPos = Vector2.Lerp(start, end, t);
 
-                EditorApplication.delayCall += () =>
-                {
-                    // 发送鼠标移动事件
-                    if (Event.current != null)
-                    {
-                        Event.current.type = EventType.MouseDrag;
-                        Event.current.mousePosition = currentPos;
-                    }
-                };
-            }
 
-            McpLogger.Log($"[GamePlay] Simulated drag from ({start.x}, {start.y}) to ({end.x}, {end.y}) over {duration}s");
-        }
 
-        /// <summary>
-        /// 模拟按键
-        /// </summary>
-        private void SimulateKey(string keyCode)
-        {
-            if (EditorApplication.isPlaying && Event.current != null)
-            {
-                Event.current.type = EventType.KeyDown;
-                if (Enum.TryParse<KeyCode>(keyCode, out KeyCode key))
-                {
-                    // 设置按键事件
-                    var keyEvent = Event.KeyboardEvent(keyCode);
-                    if (keyEvent != null)
-                    {
-                        // 发送按键事件
-                        EditorApplication.delayCall += () =>
-                        {
-                            keyEvent.type = EventType.KeyUp;
-                        };
-                    }
-                }
-            }
-
-            McpLogger.Log($"[GamePlay] Simulated key: {keyCode}");
-        }
-
-        /// <summary>
-        /// 模拟滚轮
-        /// </summary>
-        private void SimulateScroll(Vector2 position, float delta)
-        {
-            if (EditorApplication.isPlaying && Event.current != null)
-            {
-                Event.current.type = EventType.ScrollWheel;
-                Event.current.mousePosition = position;
-                Event.current.delta = new Vector2(0, delta);
-            }
-
-            McpLogger.Log($"[GamePlay] Simulated scroll at ({position.x}, {position.y}) with delta {delta}");
-        }
 
         /// <summary>
         /// 执行区域截图

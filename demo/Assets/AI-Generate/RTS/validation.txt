@@ -1,0 +1,18 @@
+=== IRON FRONT VALIDATION ===
+[ OK ] scene file exists
+[ OK ] main camera present
+[ OK ] directional light present
+[ OK ] RtsBootstrap present
+[ OK ] bootstrap.Cam assigned
+[ OK ] bootstrap.Game assigned
+[ OK ] RtsGame component
+[ OK ] RtsInput component
+[ OK ] RtsAI component
+[ OK ] RtsCheats component
+[ OK ] RtsBuildPlacer component
+[ OK ] RtsCamera on camera
+[ OK ] texture T_Ground.png
+[ OK ] texture T_Rock.png
+[ OK ] texture T_Metal.png
+[ OK ] texture T_Crystal.png
+RESULT: PASS

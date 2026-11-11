@@ -610,15 +610,35 @@ namespace UniMcp
                 if (timedOut)
                     LogWarning("[UniMcp] 写执行门超时自动释放，可能有工具未回报完成状态");
 
+                // 关键修复：把写工具的实际执行从 EditorApplication.update 内联调用
+                // 改到 delayCall 延后到下一帧执行，使当前 update 立即返回。
+                // 否则工具内触发 AssetDatabase.Refresh / 请求重编译 / 同步等进程退出时，
+                // Unity 需要重载域却因本帧 update 仍在调用栈上而无法开始，表现为
+                // "Waiting for user code in UniMcp.Editors.dll to finish executing" 卡死。
+                // 写门仍保证同一时刻只有一个写工具处于执行中（writeExecutionActive）。
                 try
                 {
-                    next(generation);
+                    EditorApplication.delayCall += () => ExecuteWriteTask(next, generation);
                 }
                 catch (Exception ex)
                 {
                     ReleaseWriteGate(generation);
-                    LogError($"[UniMcp] 启动写工具失败: {ex.Message}");
+                    LogError($"[UniMcp] 调度写工具失败: {ex.Message}");
                 }
+            }
+        }
+
+        /// <summary>在 delayCall 中执行写工具；写门仍保证同一时刻只有一个写工具处于执行中。</summary>
+        private void ExecuteWriteTask(Action<int> next, int generation)
+        {
+            try
+            {
+                next(generation);
+            }
+            catch (Exception ex)
+            {
+                ReleaseWriteGate(generation);
+                LogError($"[UniMcp] 启动写工具失败: {ex.Message}");
             }
         }
 
