@@ -29,11 +29,15 @@ namespace UniMcp.Tools
             {
                 // Action type
                 new MethodStr("action", L.T("Action type", "操作类型"), false)
-                    .SetEnumValues("get_state", "get_windows", "get_selection", "execute_menu", "get_menu_items")
-                    .AddExamples("get_state", "execute_menu"),
+                    .SetEnumValues("get_state", "get_windows", "get_selection", "execute_menu", "get_menu_items",
+                        "refresh_assets", "save_assets", "set_auto_refresh", "set_run_in_background")
+                    .AddExamples("get_state", "execute_menu", "set_auto_refresh"),
                 
                 // Wait for completion
                 new MethodBool("wait_for_completion", L.T("Whether to wait for operation completion", "是否等待操作完成")),
+                
+                // Enabled state for toggles
+                new MethodBool("enabled", L.T("Target enabled state", "目标启用状态")),
                 
                 // Menu path
                 new MethodStr("menu_path", L.T("Menu path", "菜单路径"))
@@ -89,6 +93,8 @@ namespace UniMcp.Tools
                     applicationPath = EditorApplication.applicationPath,
                     applicationContentsPath = EditorApplication.applicationContentsPath,
                     timeSinceStartup = EditorApplication.timeSinceStartup,
+                    autoRefresh = GetAutoRefreshState(),
+                    runInBackground = PlayerSettings.runInBackground,
                 };
                 return Response.Success("Retrieved editor state.", state);
             }
@@ -97,6 +103,137 @@ namespace UniMcp.Tools
                 return Response.Error($"Error getting editor state: {e.Message}");
             }
         }
+
+        // --- Auto Refresh ---
+        private const string AutoRefreshKey = "kAutoRefresh";
+        private const string AutoRefreshModeKey = "kAutoRefreshMode";
+
+        /// <summary>
+        /// Unity 2020.1+ 使用 kAutoRefreshMode（0=禁用，1=启用，2=仅编辑模式启用），
+        /// 更早的版本使用 kAutoRefresh 布尔值。
+        /// </summary>
+        private static object GetAutoRefreshState()
+        {
+            if (EditorPrefs.HasKey(AutoRefreshModeKey))
+            {
+                int mode = EditorPrefs.GetInt(AutoRefreshModeKey, 1);
+                return new
+                {
+                    enabled = mode != 0,
+                    mode = mode == 0 ? "disabled" : (mode == 2 ? "enabled_outside_playmode" : "enabled"),
+                };
+            }
+
+            bool enabled = !EditorPrefs.HasKey(AutoRefreshKey) || EditorPrefs.GetBool(AutoRefreshKey, true);
+            return new
+            {
+                enabled,
+                mode = enabled ? "enabled" : "disabled",
+            };
+        }
+
+        [ToolAction("set_auto_refresh", Parameters = new string[] { "enabled" }, Required = new string[] { "enabled" }, Inject = new string[] { "action=set_auto_refresh" })]
+        /// <summary>
+        /// 开关Unity资源导入的自动刷新
+        /// </summary>
+        private object HandleSetAutoRefreshAction(JsonClass args)
+        {
+            try
+            {
+                if (!HasArgument(args, "enabled"))
+                    return Response.Error("'enabled' parameter is required for set_auto_refresh.");
+
+                bool enabled = args["enabled"].AsBoolDefault(false);
+                EditorPrefs.SetBool(AutoRefreshKey, enabled);
+                EditorPrefs.SetInt(AutoRefreshModeKey, enabled ? 1 : 0);
+
+                McpLogger.Log($"[BaseEditor] Auto refresh {(enabled ? "enabled" : "disabled")}");
+                return Response.Success(
+                    enabled ? "Auto refresh enabled." : "Auto refresh disabled.",
+                    GetAutoRefreshState());
+            }
+            catch (Exception e)
+            {
+                return Response.Error($"Error setting auto refresh: {e.Message}");
+            }
+        }
+
+        [ToolAction("refresh_assets", Inject = new string[] { "action=refresh_assets" })]
+        /// <summary>
+        /// 强制刷新AssetDatabase，即使关闭了自动刷新也会执行一次
+        /// </summary>
+        private object HandleRefreshAssetsAction(JsonClass args)
+        {
+            try
+            {
+                AssetDatabase.Refresh();
+                McpLogger.Log("[BaseEditor] Asset database refresh requested");
+                return Response.Success("Asset database refresh requested.", new
+                {
+                    isUpdating = EditorApplication.isUpdating,
+                    isCompiling = EditorApplication.isCompiling,
+                });
+            }
+            catch (Exception e)
+            {
+                return Response.Error($"Error refreshing assets: {e.Message}");
+            }
+        }
+
+        [ToolAction("save_assets", Inject = new string[] { "action=save_assets" })]
+        /// <summary>
+        /// 保存所有已修改的资源，避免切换/关闭编辑器时丢失改动
+        /// </summary>
+        private object HandleSaveAssetsAction(JsonClass args)
+        {
+            try
+            {
+                AssetDatabase.SaveAssets();
+                McpLogger.Log("[BaseEditor] Assets saved");
+                return Response.Success("Assets saved.");
+            }
+            catch (Exception e)
+            {
+                return Response.Error($"Error saving assets: {e.Message}");
+            }
+        }
+
+        [ToolAction("set_run_in_background", Parameters = new string[] { "enabled" }, Required = new string[] { "enabled" }, Inject = new string[] { "action=set_run_in_background" })]
+        /// <summary>
+        /// 开关后台运行（Player Settings 与 Application 同时生效）
+        /// </summary>
+        private object HandleSetRunInBackgroundAction(JsonClass args)
+        {
+            try
+            {
+                if (!HasArgument(args, "enabled"))
+                    return Response.Error("'enabled' parameter is required for set_run_in_background.");
+
+                bool enabled = args["enabled"].AsBoolDefault(false);
+                PlayerSettings.runInBackground = enabled;
+                Application.runInBackground = enabled;
+                AssetDatabase.SaveAssets();
+
+                McpLogger.Log($"[BaseEditor] Run in background {(enabled ? "enabled" : "disabled")}");
+                return Response.Success(
+                    enabled ? "Run in background enabled." : "Run in background disabled.",
+                    new
+                    {
+                        playerSettingsRunInBackground = PlayerSettings.runInBackground,
+                        applicationRunInBackground = Application.runInBackground,
+                    });
+            }
+            catch (Exception e)
+            {
+                return Response.Error($"Error setting run in background: {e.Message}");
+            }
+        }
+
+        private static bool HasArgument(JsonClass args, string key)
+        {
+            return args != null && args.ContainsKey(key) && args[key] != null && !args[key].IsNull();
+        }
+
 
         private object GetEditorWindows()
         {

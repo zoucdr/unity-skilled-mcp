@@ -247,8 +247,25 @@ namespace UniMcp.Utils
         }
 
         private static readonly Queue<Step> _steps = new Queue<Step>();
+        private static readonly Queue<Action> _operations = new Queue<Action>();
         private static bool _hooked;
         private static double _blockedUntil;
+        private static int _lastStepFrame = -1;
+
+        /// <summary>待执行步骤及尚未展开的输入操作数；末尾等待 Unity 消费时至少为 1。</summary>
+        public static int PendingSteps
+        {
+            get { return Mathf.Max(_steps.Count + _operations.Count, _hooked ? 1 : 0); }
+        }
+
+        /// <summary>包含最后一步执行后的等待；为 false 后才应读取输入结果。</summary>
+        public static bool Busy { get { return _hooked; } }
+
+        private static void EnqueueOperation(Action operation)
+        {
+            _operations.Enqueue(operation);
+            Hook();
+        }
 
         private static void Hook()
         {
@@ -261,6 +278,47 @@ namespace UniMcp.Utils
         {
             _steps.Enqueue(new Step { Action = step, DelayAfter = 0f });
             Hook();
+        }
+
+        /// <summary>
+        /// 等到 Unity 真正读到指针落在目标（GameView 内容区坐标，左上原点）后再执行后续步骤。
+        /// 编辑器里 GameView 无焦点时帧率可能只有 1-2 FPS，靠「空转 N 帧」并不足以让
+        /// EventSystem 重新做一次 hover 检测；这里改为轮询 Input.mousePosition，到位才继续。
+        /// </summary>
+        private static void EnqueuePointerArrival(float gameViewX, float gameViewY, float timeoutSeconds, Action onArrived)
+        {
+            double deadline = 0;
+            bool started = false;
+
+            Action wait = null;
+            wait = delegate
+            {
+                if (!started)
+                {
+                    deadline = EditorApplication.timeSinceStartup + Mathf.Max(timeoutSeconds, 0.2f);
+                    started = true;
+                }
+                Vector2 mp = Input.mousePosition;
+                Vector2 want = GameViewToMouse(gameViewX, gameViewY);
+                bool arrived = Mathf.Abs(mp.x - want.x) < 2.5f && Mathf.Abs(mp.y - want.y) < 2.5f;
+
+                if (arrived || EditorApplication.timeSinceStartup > deadline)
+                {
+                    if (!arrived) LastError = "指针落位超时，已按当前位置继续";
+                    if (onArrived != null) onArrived();
+                    return;
+                }
+
+                Enqueue(wait);
+            };
+
+            Enqueue(wait);
+        }
+
+        /// <summary>GameView 内容区坐标（左上原点）换算成 Unity 的 Input.mousePosition（左下原点）。</summary>
+        private static Vector2 GameViewToMouse(float gameViewX, float gameViewY)
+        {
+            return new Vector2(gameViewX, Screen.height - gameViewY);
         }
 
         /// <summary>
@@ -277,15 +335,27 @@ namespace UniMcp.Utils
 
         private static void Tick()
         {
-            if (_steps.Count == 0)
+            double now = EditorApplication.timeSinceStartup;
+            if (now < _blockedUntil) return;
+            // 编辑器 update 不等于游戏帧；暂停或低帧率时不能提前报告完成或合并按下/抬起。
+            if (EditorApplication.isPlaying && Time.frameCount == _lastStepFrame)
             {
-                _hooked = false;
-                EditorApplication.update -= Tick;
+                EditorApplication.QueuePlayerLoopUpdate();
                 return;
             }
 
-            double now = EditorApplication.timeSinceStartup;
-            if (now < _blockedUntil) return;
+            if (_steps.Count == 0)
+            {
+                if (_operations.Count == 0)
+                {
+                    _hooked = false;
+                    _lastStepFrame = -1;
+                    EditorApplication.update -= Tick;
+                    return;
+                }
+                // 回调追加的标定、落位和抬键步骤全部走完后，才展开下一次输入。
+                _steps.Enqueue(new Step { Action = _operations.Dequeue() });
+            }
 
             Step s = _steps.Dequeue();
             if (s.Action != null)
@@ -302,7 +372,9 @@ namespace UniMcp.Utils
             }
 
             // 每步至少隔 20ms，确保 Unity 能采到一次完整的按下状态
-            _blockedUntil = now + Mathf.Max(s.DelayAfter, 0.02f);
+            _blockedUntil = EditorApplication.timeSinceStartup + Mathf.Max(s.DelayAfter, 0.02f);
+            _lastStepFrame = Time.frameCount;
+            EditorApplication.QueuePlayerLoopUpdate();
         }
 
         #endregion
@@ -487,13 +559,21 @@ namespace UniMcp.Utils
                 LastError = "当前平台不支持原生输入注入（仅 Windows 编辑器）";
                 return;
             }
-            EnqueueDelay(delaySeconds);
-            EnsureCalibrated(delegate
+            EnqueueOperation(delegate
             {
-                Vector2 s = GameViewToScreen(x, y);
-                Enqueue(delegate { FocusEditor(); MoveToScreen(s.x, s.y); });
-                Enqueue(delegate { SendMouse(ButtonDownFlag(button), 0); });
-                Enqueue(delegate { SendMouse(ButtonUpFlag(button), 0); });
+                EnqueueDelay(delaySeconds);
+                EnsureCalibrated(delegate
+                {
+                    Vector2 s = GameViewToScreen(x, y);
+                    Enqueue(delegate { FocusEditor(); MoveToScreen(s.x, s.y); });
+                    // 必须等 Unity 真读到指针落在按钮上再按下：GameView 无焦点时帧率极低，
+                    // 固定空转几帧并不可靠，会把点击落到上一个 hover 对象（表现为按钮失灵）。
+                    EnqueuePointerArrival(x, y, 1.5f, delegate
+                    {
+                        Enqueue(delegate { SendMouse(ButtonDownFlag(button), 0); });
+                        Enqueue(delegate { SendMouse(ButtonUpFlag(button), 0); });
+                    });
+                });
             });
         }
 
@@ -505,22 +585,29 @@ namespace UniMcp.Utils
                 LastError = "当前平台不支持原生输入注入（仅 Windows 编辑器）";
                 return;
             }
-            EnqueueDelay(delaySeconds);
-            EnsureCalibrated(delegate
+            EnqueueOperation(delegate
             {
-                Vector2 a = GameViewToScreen(x, y);
-                Vector2 b = GameViewToScreen(toX, toY);
-                int steps = Mathf.Clamp(Mathf.RoundToInt(Mathf.Max(durationSeconds, 0.05f) * 60f), 4, 240);
-
-                Enqueue(delegate { FocusEditor(); MoveToScreen(a.x, a.y); });
-                Enqueue(delegate { SendMouse(MOUSEEVENTF_LEFTDOWN, 0); });
-                for (int i = 1; i <= steps; i++)
+                EnqueueDelay(delaySeconds);
+                EnsureCalibrated(delegate
                 {
-                    float t = (float)i / steps;
-                    Vector2 p = Vector2.Lerp(a, b, t);
-                    Enqueue(delegate { MoveToScreen(p.x, p.y); });
-                }
-                Enqueue(delegate { SendMouse(MOUSEEVENTF_LEFTUP, 0); });
+                    Vector2 a = GameViewToScreen(x, y);
+                    Vector2 b = GameViewToScreen(toX, toY);
+                    // 每帧一步，30 步/秒足以让 Unity 采到连续拖动；步数过多会在主线程被 MCP 占住时积压
+                    int steps = Mathf.Clamp(Mathf.RoundToInt(Mathf.Max(durationSeconds, 0.05f) * 30f), 4, 60);
+
+                    Enqueue(delegate { FocusEditor(); MoveToScreen(a.x, a.y); });
+                    EnqueuePointerArrival(x, y, 1.5f, delegate
+                    {
+                        Enqueue(delegate { SendMouse(MOUSEEVENTF_LEFTDOWN, 0); });
+                        for (int i = 1; i <= steps; i++)
+                        {
+                            float t = (float)i / steps;
+                            Vector2 p = Vector2.Lerp(a, b, t);
+                            Enqueue(delegate { MoveToScreen(p.x, p.y); });
+                        }
+                        Enqueue(delegate { SendMouse(MOUSEEVENTF_LEFTUP, 0); });
+                    });
+                });
             });
         }
 
@@ -538,24 +625,27 @@ namespace UniMcp.Utils
                 LastError = "无法识别的按键: " + keyCode;
                 return;
             }
-            EnqueueDelay(delaySeconds);
-            Enqueue(delegate { FocusEditor(); });
-            Enqueue(delegate { SendKey(vk, true); });
-            EnqueueDelay(Mathf.Max(holdSeconds, 0.02f));
-            Enqueue(null);   // 至少隔一帧，保证 Unity 能采到按下状态
-            Enqueue(delegate { SendKey(vk, false); });
-
-            // 兜底：若抬起未被识别（按键卡住会让游戏镜头一直移动），再补发一次。
-            EnqueueDelay(0.06f);
-            Enqueue(delegate
+            EnqueueOperation(delegate
             {
-                if (!EditorApplication.isPlaying) return;
-                KeyCode kc;
-                if (Enum.TryParse<KeyCode>(keyCode, true, out kc) && Input.GetKey(kc))
+                EnqueueDelay(delaySeconds);
+                Enqueue(delegate { FocusEditor(); });
+                Enqueue(delegate { SendKey(vk, true); });
+                EnqueueDelay(Mathf.Max(holdSeconds, 0.02f));
+                Enqueue(null);   // 至少隔一帧，保证 Unity 能采到按下状态
+                Enqueue(delegate { SendKey(vk, false); });
+
+                // 兜底：若抬起未被识别（按键卡住会让游戏镜头一直移动），再补发一次。
+                EnqueueDelay(0.06f);
+                Enqueue(delegate
                 {
-                    SendKey(vk, false);
-                    LastError = "按键 " + keyCode + " 首次抬起未被识别，已补发 keyup";
-                }
+                    if (!EditorApplication.isPlaying) return;
+                    KeyCode kc;
+                    if (Enum.TryParse<KeyCode>(keyCode, true, out kc) && Input.GetKey(kc))
+                    {
+                        SendKey(vk, false);
+                        LastError = "按键 " + keyCode + " 首次抬起未被识别，已补发 keyup";
+                    }
+                });
             });
         }
 
@@ -567,12 +657,15 @@ namespace UniMcp.Utils
                 LastError = "当前平台不支持原生输入注入（仅 Windows 编辑器）";
                 return;
             }
-            EnqueueDelay(delaySeconds);
-            EnsureCalibrated(delegate
+            EnqueueOperation(delegate
             {
-                Vector2 s = GameViewToScreen(x, y);
-                Enqueue(delegate { FocusEditor(); MoveToScreen(s.x, s.y); });
-                Enqueue(delegate { SendMouse(MOUSEEVENTF_WHEEL, Mathf.RoundToInt(delta * 120f)); });
+                EnqueueDelay(delaySeconds);
+                EnsureCalibrated(delegate
+                {
+                    Vector2 s = GameViewToScreen(x, y);
+                    Enqueue(delegate { FocusEditor(); MoveToScreen(s.x, s.y); });
+                    Enqueue(delegate { SendMouse(MOUSEEVENTF_WHEEL, Mathf.RoundToInt(delta * 120f)); });
+                });
             });
         }
 

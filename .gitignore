@@ -33,3 +33,4 @@ SECRET_CLEANUP_GUIDE.md
 /docs/uisourcegen_smoke/towel/
 /docs/uisourcegen_smoke/towel.html
 /.dumate
+/output

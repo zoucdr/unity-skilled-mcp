@@ -375,7 +375,9 @@ namespace UniMcp.Tools
                     coordinate_space = "gameview_top_left",
                     content_origin = calibrated ? new[] { origin.x, origin.y } : null,
                     content_size = calibrated ? new[] { size.x, size.y } : null,
-                    screen_point = calibrated ? new[] { origin.x + x, origin.y + y } : null
+                    screen_point = calibrated ? new[] { origin.x + x, origin.y + y } : null,
+                    pending_steps = NativeInput.PendingSteps,
+                    busy = NativeInput.Busy
                 });
             }
             catch (Exception e)
@@ -415,7 +417,9 @@ namespace UniMcp.Tools
                     end_y = targetY,
                     duration = duration,
                     delay = delay,
-                    coordinate_space = "gameview_top_left"
+                    coordinate_space = "gameview_top_left",
+                    pending_steps = NativeInput.PendingSteps,
+                    busy = NativeInput.Busy
                 });
             }
             catch (Exception e)
@@ -456,7 +460,9 @@ namespace UniMcp.Tools
                     key = keyCode,
                     vk = vk,
                     hold = hold,
-                    delay = delay
+                    delay = delay,
+                    pending_steps = NativeInput.PendingSteps,
+                    busy = NativeInput.Busy
                 });
             }
             catch (Exception e)
@@ -487,7 +493,9 @@ namespace UniMcp.Tools
                     y = y,
                     delta = delta,
                     delay = delay,
-                    coordinate_space = "gameview_top_left"
+                    coordinate_space = "gameview_top_left",
+                    pending_steps = NativeInput.PendingSteps,
+                    busy = NativeInput.Busy
                 });
             }
             catch (Exception e)
@@ -578,6 +586,8 @@ namespace UniMcp.Tools
             return new
             {
                 supported = NativeInput.IsSupported,
+                pending_steps = NativeInput.PendingSteps,
+                busy = NativeInput.Busy,
                 backend = NativeInput.IsSupported ? "user32!SendInput" : "unsupported",
                 coordinate_space = "gameview_top_left",
                 calibrated = calibrated,
